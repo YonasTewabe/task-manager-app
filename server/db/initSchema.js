@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
+  acceptance_criteria JSONB NOT NULL DEFAULT '[]'::jsonb,
   label TEXT NOT NULL DEFAULT '',
   version TEXT NOT NULL DEFAULT '',
   type TEXT NOT NULL DEFAULT 'task',
@@ -192,6 +193,10 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS version TEXT;
 UPDATE tasks SET version = '' WHERE version IS NULL;
 ALTER TABLE tasks ALTER COLUMN version SET NOT NULL;
 ALTER TABLE tasks ALTER COLUMN version SET DEFAULT '';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS acceptance_criteria JSONB;
+UPDATE tasks SET acceptance_criteria = '[]'::jsonb WHERE acceptance_criteria IS NULL;
+ALTER TABLE tasks ALTER COLUMN acceptance_criteria SET NOT NULL;
+ALTER TABLE tasks ALTER COLUMN acceptance_criteria SET DEFAULT '[]'::jsonb;
 
 -- Task keys: PROJECTKEY-sequential (see migrations/002_task_keys.sql).
 CREATE TABLE IF NOT EXISTS project_task_seq (

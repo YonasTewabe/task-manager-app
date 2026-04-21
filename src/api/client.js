@@ -19,8 +19,9 @@ function apiBase() {
 
 export async function apiRequest(path, options = {}) {
   const token = getStoredToken();
+  const isFormData = options.body instanceof FormData;
   const headers = {
-    "Content-Type": "application/json",
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
     ...(options.headers || {}),
   };
   if (token) {

@@ -2,6 +2,7 @@ import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import { fileURLToPath } from "url";
+import path from "path";
 
 import githubRoutes from "./routes/github.js";
 import jenkinsRoutes from "./routes/jenkins.js";
@@ -25,6 +26,10 @@ export function createApp() {
   );
 
   app.use(express.json());
+  app.use(
+    "/uploads",
+    express.static(path.resolve(process.cwd(), process.env.UPLOAD_DIR || "uploads")),
+  );
 
   app.use("/api/auth", authRoutes);
   app.use("/api/github", githubRoutes);

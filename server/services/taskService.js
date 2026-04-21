@@ -1000,6 +1000,9 @@ function mapTaskRow(row) {
     id: row.id,
     title: row.title,
     description: row.description,
+    acceptanceCriteria: Array.isArray(row.acceptanceCriteria)
+      ? row.acceptanceCriteria
+      : [],
     label: row.label || "",
     version: row.version || "",
     type: row.type,
@@ -1015,6 +1018,23 @@ function mapTaskRow(row) {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+function normalizeAcceptanceCriteria(value) {
+  const list = Array.isArray(value) ? value : [];
+  return list
+    .map((item, index) => {
+      const text = String(item?.text || "").trim();
+      if (!text) return null;
+      return {
+        id:
+          String(item?.id || "").trim() ||
+          `ac-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+        text,
+        done: item?.done === true,
+      };
+    })
+    .filter(Boolean);
 }
 
 function normalizeTaskPriority(value) {
@@ -1076,6 +1096,11 @@ export async function getTasks(filters = {}) {
     params.push(filters.priority);
     idx += 1;
   }
+  if (filters.type) {
+    where.push(`t.type = $${idx}`);
+    params.push(String(filters.type).trim().toLowerCase());
+    idx += 1;
+  }
   if (filters.label) {
     where.push(`LOWER(t.label) = LOWER($${idx})`);
     params.push(String(filters.label).trim());
@@ -1090,7 +1115,7 @@ export async function getTasks(filters = {}) {
   }
 
   const query = `
-    SELECT t.id, t.title, t.description, t.label, t.version, t.type, t.priority, t.status,
+    SELECT t.id, t.title, t.description, t.acceptance_criteria AS "acceptanceCriteria", t.label, t.version, t.type, t.priority, t.status,
            t.story_points AS "storyPoints", t.assignee_id AS "assigneeId",
            t.sprint_id AS "sprintId", t.project_id AS "projectId", t.task_number AS "taskNumber",
            p.project_key AS "projectKey",
@@ -1107,7 +1132,7 @@ export async function getTasks(filters = {}) {
 
 export async function getTaskById(id) {
   const result = await dbQuery(
-    `SELECT t.id, t.title, t.description, t.label, t.version, t.type, t.priority, t.status,
+    `SELECT t.id, t.title, t.description, t.acceptance_criteria AS "acceptanceCriteria", t.label, t.version, t.type, t.priority, t.status,
             t.story_points AS "storyPoints", t.assignee_id AS "assigneeId",
             t.sprint_id AS "sprintId", t.project_id AS "projectId", t.task_number AS "taskNumber",
             p.project_key AS "projectKey",
@@ -1172,9 +1197,9 @@ export async function createTask(payload, createdBy) {
   const taskNumber = await allocateNextTaskNumber(payload.projectId);
   const result = await dbQuery(
     `INSERT INTO tasks (
-        title, description, label, version, type, priority, status, story_points, assignee_id, sprint_id, project_id, created_by, task_number
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-     RETURNING id, title, description, label, version, type, priority, status,
+        title, description, acceptance_criteria, label, version, type, priority, status, story_points, assignee_id, sprint_id, project_id, created_by, task_number
+     ) VALUES ($1,$2,$3::jsonb,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+     RETURNING id, title, description, acceptance_criteria AS "acceptanceCriteria", label, version, type, priority, status,
                story_points AS "storyPoints", assignee_id AS "assigneeId",
                sprint_id AS "sprintId", project_id AS "projectId", task_number AS "taskNumber",
                created_by AS "createdBy",
@@ -1182,6 +1207,7 @@ export async function createTask(payload, createdBy) {
     [
       payload.title,
       payload.description || "",
+      JSON.stringify(normalizeAcceptanceCriteria(payload.acceptanceCriteria)),
       payload.label || "",
       payload.version || "",
       normalizeTaskType(payload.type),
@@ -1237,6 +1263,7 @@ export async function updateTask(taskId, patch) {
   const allowedMap = {
     title: "title",
     description: "description",
+    acceptanceCriteria: "acceptance_criteria",
     label: "label",
     version: "version",
     type: "type",
@@ -1256,6 +1283,8 @@ export async function updateTask(taskId, patch) {
     fields.push(`${dbKey} = $${idx}`);
     if (key === "storyPoints") {
       params.push(asInt(patch[key], null));
+    } else if (key === "acceptanceCriteria") {
+      params.push(JSON.stringify(normalizeAcceptanceCriteria(patch[key])));
     } else if (key === "priority") {
       params.push(normalizeTaskPriority(patch[key]));
     } else if (key === "type") {
@@ -1287,7 +1316,7 @@ export async function updateTask(taskId, patch) {
      SET ${fields.join(", ")}
      FROM projects p
      WHERE t.id = $${idx} AND p.id = t.project_id
-     RETURNING t.id, t.title, t.description, t.label, t.version, t.type, t.priority, t.status,
+     RETURNING t.id, t.title, t.description, t.acceptance_criteria AS "acceptanceCriteria", t.label, t.version, t.type, t.priority, t.status,
                t.story_points AS "storyPoints", t.assignee_id AS "assigneeId",
                t.sprint_id AS "sprintId", t.project_id AS "projectId", t.created_by AS "createdBy",
                t.created_at AS "createdAt", t.updated_at AS "updatedAt",
@@ -1416,7 +1445,7 @@ export async function assignTaskToSprint(taskId, sprintId) {
      SET sprint_id = $1, updated_at = NOW()
      FROM projects p
      WHERE t.id = $2 AND p.id = t.project_id
-     RETURNING t.id, t.title, t.description, t.label, t.version, t.type, t.priority, t.status,
+     RETURNING t.id, t.title, t.description, t.acceptance_criteria AS "acceptanceCriteria", t.label, t.version, t.type, t.priority, t.status,
                t.story_points AS "storyPoints", t.assignee_id AS "assigneeId",
                t.sprint_id AS "sprintId", t.project_id AS "projectId", t.created_by AS "createdBy",
                t.created_at AS "createdAt", t.updated_at AS "updatedAt",
@@ -1432,7 +1461,7 @@ export async function removeTaskFromSprint(taskId, sprintId) {
      SET sprint_id = NULL, updated_at = NOW()
      FROM projects p
      WHERE t.id = $1 AND t.sprint_id = $2 AND p.id = t.project_id
-     RETURNING t.id, t.title, t.description, t.label, t.version, t.type, t.priority, t.status,
+     RETURNING t.id, t.title, t.description, t.acceptance_criteria AS "acceptanceCriteria", t.label, t.version, t.type, t.priority, t.status,
                t.story_points AS "storyPoints", t.assignee_id AS "assigneeId",
                t.sprint_id AS "sprintId", t.project_id AS "projectId", t.created_by AS "createdBy",
                t.created_at AS "createdAt", t.updated_at AS "updatedAt",

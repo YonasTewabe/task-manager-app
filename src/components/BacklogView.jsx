@@ -32,6 +32,8 @@ export default function BacklogView({
   tasks,
   sprints,
   allTasks,
+  usersById,
+  userAvatarColor,
   workflowStages,
   selectedSprintId,
   onSelectSprint,
@@ -45,6 +47,8 @@ export default function BacklogView({
   onOpenTask,
   onNotify,
 }) {
+  const assigneeLabel = (task) =>
+    task.assigneeId ? usersById?.get(task.assigneeId) || "Unknown" : "Unassigned";
   const [showCreateSprintModal, setShowCreateSprintModal] = useState(false);
   const [expandedKeys, setExpandedKeys] = useState(() => new Set(["backlog"]));
   const [createDraft, setCreateDraft] = useState({
@@ -71,7 +75,10 @@ export default function BacklogView({
 
   const sprintRows = [...sprints]
     .filter(
-      (sprint) => sprint.status === "active" || sprint.status === "planned",
+      (sprint) =>
+        sprint.status === "active" ||
+        sprint.status === "planned" ||
+        String(sprint.id) === String(selectedSprintId || ""),
     )
     .sort((a, b) => {
       if (a.status !== b.status) {
@@ -102,7 +109,9 @@ export default function BacklogView({
     tasks,
   };
 
-  const rows = [backlogRow, ...sprintRows];
+  const rows = selectedSprintId
+    ? sprintRows.filter((row) => String(row.key) === String(selectedSprintId))
+    : [backlogRow, ...sprintRows];
 
   const toggleExpanded = (key) => {
     setExpandedKeys((prev) => {
@@ -171,7 +180,6 @@ export default function BacklogView({
                   );
                 }}
                 onClick={() => {
-                  onSelectSprint(row.key === "backlog" ? "" : row.key);
                   toggleExpanded(row.key);
                 }}
               >
@@ -229,9 +237,7 @@ export default function BacklogView({
                       </button>
                     </>
                   ) : null}
-                  {row.status === "planned" &&
-                  canManage &&
-                  row.tasks.length === 0 ? (
+                  {row.status === "planned" && canManage ? (
                     <button
                       type="button"
                       className="ghost-btn"
@@ -273,12 +279,33 @@ export default function BacklogView({
                           </span>{" "}
                           {task.title}
                         </span>
-                        <span className="muted">
-                          {task.label ? `[${task.label}] · ` : ""}
-                          {task.priority} · SP{" "}
-                          {task.storyPoints == null || task.storyPoints === ""
-                            ? "-"
-                            : task.storyPoints}
+                        <span className="backlog-task-right">
+                          <span className="muted">
+                            {task.priority} · SP{" "}
+                            {task.storyPoints == null || task.storyPoints === ""
+                              ? "-"
+                              : task.storyPoints}
+                          </span>
+                          {task.assigneeId ? (
+                            <span
+                              className="avatar-bubble"
+                              title={assigneeLabel(task)}
+                              style={{
+                                backgroundColor: userAvatarColor?.(task.assigneeId),
+                              }}
+                            >
+                              {String(assigneeLabel(task))
+                                .split(" ")
+                                .map((part) => part[0] || "")
+                                .join("")
+                                .slice(0, 2)
+                                .toUpperCase()}
+                            </span>
+                          ) : (
+                            <span className="muted backlog-unassigned-pill" title="Unassigned">
+                              U
+                            </span>
+                          )}
                         </span>
                       </button>
                     ))

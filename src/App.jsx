@@ -114,13 +114,16 @@ function App() {
     assigneeId: "",
     priority: "",
     label: "",
+    status: "",
+    type: "",
     search: "",
   });
   const [filterDraft, setFilterDraft] = useState({
     sprintId: "",
-    assigneeId: "",
     priority: "",
     label: "",
+    status: "",
+    type: "",
   });
 
   const notify = (text, tone = "success") =>
@@ -286,6 +289,8 @@ function App() {
     if (activeFilters.priority) params.set("priority", activeFilters.priority);
     if (activeFilters.label.trim())
       params.set("label", activeFilters.label.trim());
+    if (activeFilters.status) params.set("status", activeFilters.status);
+    if (activeFilters.type) params.set("type", activeFilters.type);
     if (activeFilters.search.trim())
       params.set("search", activeFilters.search.trim());
     return `?${params.toString()}`;
@@ -335,8 +340,13 @@ function App() {
   const fetchBacklog = async (
     projectId = currentProjectId,
     activeFilters = filters,
+    sprintId = selectedSprintId,
   ) => {
     if (!projectId) {
+      setBacklogTasks([]);
+      return;
+    }
+    if (sprintId) {
       setBacklogTasks([]);
       return;
     }
@@ -347,6 +357,8 @@ function App() {
     if (activeFilters.priority) params.set("priority", activeFilters.priority);
     if (activeFilters.label.trim())
       params.set("label", activeFilters.label.trim());
+    if (activeFilters.status) params.set("status", activeFilters.status);
+    if (activeFilters.type) params.set("type", activeFilters.type);
     if (activeFilters.search.trim())
       params.set("search", activeFilters.search.trim());
     const query = params.toString();
@@ -360,6 +372,7 @@ function App() {
   const fetchAllTasks = async (
     projectId = currentProjectId,
     activeFilters = filters,
+    sprintId = selectedSprintId,
   ) => {
     if (!projectId) {
       setAllTasks([]);
@@ -367,11 +380,14 @@ function App() {
     }
     const params = new URLSearchParams();
     params.set("projectId", String(projectId));
+    if (sprintId) params.set("sprintId", String(sprintId));
     if (activeFilters.assigneeId)
       params.set("assigneeId", activeFilters.assigneeId);
     if (activeFilters.priority) params.set("priority", activeFilters.priority);
     if (activeFilters.label.trim())
       params.set("label", activeFilters.label.trim());
+    if (activeFilters.status) params.set("status", activeFilters.status);
+    if (activeFilters.type) params.set("type", activeFilters.type);
     if (activeFilters.search.trim())
       params.set("search", activeFilters.search.trim());
     const query = params.toString();
@@ -440,8 +456,8 @@ function App() {
       activeView === "board" && boardSprintId
         ? fetchBoardTotals(boardSprintId, projectId, activeFilters)
         : Promise.resolve(setBoardTotalsByStatus({})),
-      fetchBacklog(projectId, activeFilters),
-      fetchAllTasks(projectId, activeFilters),
+      fetchBacklog(projectId, activeFilters, sprintId),
+      fetchAllTasks(projectId, activeFilters, sprintId),
     ]);
   };
 
@@ -548,6 +564,16 @@ function App() {
   }, [selectedSprintId, activeView, filters, activeSprintId, currentProjectId]);
 
   useEffect(() => {
+    if (!token || loading || !currentProjectId || activeView !== "backlog") return;
+    Promise.all([
+      fetchSprints(currentProjectId),
+      fetchBacklog(currentProjectId, filters, selectedSprintId),
+      fetchAllTasks(currentProjectId, filters, selectedSprintId),
+    ]).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView, currentProjectId, filters, loading, selectedSprintId, token]);
+
+  useEffect(() => {
     if (!token || loading) return;
     if (!visibleProjects.length) {
       setCurrentProjectId("");
@@ -567,13 +593,45 @@ function App() {
     if (!token || loading) return;
     refreshViews(selectedSprintId, currentProjectId, filters).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentProjectId]);
+  }, [currentProjectId, token, loading]);
 
   useEffect(() => {
     if (!token || loading || activeView !== "dashboard") return;
     fetchMyAssignedTasks();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, loading, activeView, currentUser?.id]);
+
+  useEffect(() => {
+    if (activeView !== "board" && activeView !== "backlog") return;
+    setSelectedSprintId("");
+    setFilters((prev) => {
+      if (
+        !prev.assigneeId &&
+        !prev.priority &&
+        !prev.label &&
+        !prev.status &&
+        !prev.type
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        assigneeId: "",
+        priority: "",
+        label: "",
+        status: "",
+        type: "",
+      };
+    });
+    setFilterDraft((prev) => ({
+      ...prev,
+      sprintId: "",
+      priority: "",
+      label: "",
+      status: "",
+      type: "",
+    }));
+  }, [activeView]);
 
   useEffect(() => {
     if (!showFilterModal) return undefined;
@@ -793,6 +851,19 @@ function App() {
     });
     await openTask(taskId);
     await refetchAfterCrud({ includeDashboard: true });
+  };
+
+  const uploadTaskAsset = async (file) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const uploaded = await apiRequest("/task-management/upload", {
+      method: "POST",
+      body: formData,
+    });
+    if (!uploaded?.url) {
+      throw new Error("Upload completed but file URL is missing.");
+    }
+    return uploaded;
   };
 
   const createUser = async (payload) => {
@@ -1234,9 +1305,10 @@ function App() {
                             activeView === "board"
                               ? ""
                               : selectedSprintId || "",
-                          assigneeId: filters.assigneeId,
                           priority: filters.priority,
                           label: filters.label,
+                          status: filters.status,
+                          type: filters.type,
                         });
                         setShowFilterModal((prev) => !prev);
                       }}
@@ -1283,77 +1355,112 @@ function App() {
                               </select>
                             </label>
                           ) : null}
-                          <label>
-                            Assignee
-                            <select
-                              value={filterDraft.assigneeId}
-                              onChange={(event) =>
-                                setFilterDraft((prev) => ({
-                                  ...prev,
-                                  assigneeId: event.target.value,
-                                }))
-                              }
-                            >
-                              <option value="">Select</option>
-                              <option value="unassigned">Unassigned</option>
-                              {projectUsers.map((user) => (
-                                <option key={user.id} value={user.id}>
-                                  {user.name}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <label>
-                            Priority
-                            <select
-                              value={filterDraft.priority}
-                              onChange={(event) =>
-                                setFilterDraft((prev) => ({
-                                  ...prev,
-                                  priority: event.target.value,
-                                }))
-                              }
-                            >
-                              <option value="">Select</option>
-                              {PRIORITY_OPTIONS.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <label className="filter-popover-span">
-                            Label
-                            <select
-                              value={filterDraft.label}
-                              onChange={(event) =>
-                                setFilterDraft((prev) => ({
-                                  ...prev,
-                                  label: event.target.value,
-                                }))
-                              }
-                            >
-                              <option value="">Select</option>
-                              {projectLabels.map((label) => (
-                                <option key={label} value={label}>
-                                  {label}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
+                          {activeView === "board" ? (
+                            <>
+                              <label>
+                                Priority
+                                <select
+                                  value={filterDraft.priority}
+                                  onChange={(event) =>
+                                    setFilterDraft((prev) => ({
+                                      ...prev,
+                                      priority: event.target.value,
+                                    }))
+                                  }
+                                >
+                                  <option value="">Select</option>
+                                  {PRIORITY_OPTIONS.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label className="filter-popover-span">
+                                Label
+                                <select
+                                  value={filterDraft.label}
+                                  onChange={(event) =>
+                                    setFilterDraft((prev) => ({
+                                      ...prev,
+                                      label: event.target.value,
+                                    }))
+                                  }
+                                >
+                                  <option value="">Select</option>
+                                  {projectLabels.map((label) => (
+                                    <option key={label} value={label}>
+                                      {label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label>
+                                Type
+                                <select
+                                  value={filterDraft.type}
+                                  onChange={(event) =>
+                                    setFilterDraft((prev) => ({
+                                      ...prev,
+                                      type: event.target.value,
+                                    }))
+                                  }
+                                >
+                                  <option value="">Select</option>
+                                  {projectTypes.map((type) => (
+                                    <option key={type} value={type}>
+                                      {type}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            </>
+                          ) : (
+                            <label className="filter-popover-span">
+                              Status
+                              <select
+                                value={filterDraft.status}
+                                onChange={(event) =>
+                                  setFilterDraft((prev) => ({
+                                    ...prev,
+                                    status: event.target.value,
+                                  }))
+                                }
+                              >
+                                <option value="">Select</option>
+                                {workflowStages.map((stage) => (
+                                  <option key={stage.key} value={stage.key}>
+                                    {stage.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          )}
                         </div>
                         <div className="filter-popover-actions">
                           <button
                             type="button"
                             className="ghost-btn"
-                            onClick={() =>
-                              setFilterDraft({
+                            onClick={() => {
+                              const clearedDraft = {
                                 sprintId: "",
-                                assigneeId: "",
                                 priority: "",
                                 label: "",
-                              })
-                            }
+                                status: "",
+                                type: "",
+                              };
+                              setFilterDraft(clearedDraft);
+                              if (activeView !== "board") {
+                                setSelectedSprintId("");
+                              }
+                              setFilters((prev) => ({
+                                ...prev,
+                                priority: "",
+                                label: "",
+                                status: "",
+                                type: "",
+                              }));
+                            }}
                           >
                             Reset
                           </button>
@@ -1365,9 +1472,22 @@ function App() {
                               }
                               setFilters((prev) => ({
                                 ...prev,
-                                assigneeId: filterDraft.assigneeId,
-                                priority: filterDraft.priority,
-                                label: filterDraft.label,
+                                priority:
+                                  activeView === "board"
+                                    ? filterDraft.priority
+                                    : "",
+                                label:
+                                  activeView === "board"
+                                    ? filterDraft.label
+                                    : "",
+                                status:
+                                  activeView === "board"
+                                    ? ""
+                                    : filterDraft.status,
+                                type:
+                                  activeView === "board"
+                                    ? filterDraft.type
+                                    : "",
                               }));
                               setShowFilterModal(false);
                             }}
@@ -1538,9 +1658,11 @@ function App() {
         ) : null}
         {activeView === "backlog" ? (
           <BacklogView
-            tasks={backlogTasks}
+            tasks={selectedSprintId ? [] : backlogTasks}
             sprints={sprints}
             allTasks={allTasks}
+            usersById={usersById}
+            userAvatarColor={getUserAvatarColor}
             workflowStages={workflowStages}
             selectedSprintId={selectedSprintId}
             onSelectSprint={setSelectedSprintId}
@@ -1624,6 +1746,7 @@ function App() {
           onClose={() => setTaskBundle(null)}
           onSaveTask={saveTask}
           onAddComment={addComment}
+          onUploadAsset={uploadTaskAsset}
           onNotify={notify}
         />
         <ToastContainer

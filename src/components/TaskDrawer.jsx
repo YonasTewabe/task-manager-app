@@ -1,6 +1,118 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_WORKFLOW_STAGES } from "../workflowDefaults.js";
 import { displayTaskRef } from "../utils/taskDisplay.js";
+import {
+  isRichTextEmpty,
+  toDisplayRichText,
+  toEditorRichText,
+} from "../utils/richText.js";
+
+function RichTextEditor({
+  value,
+  placeholder,
+  uploading,
+  onChange,
+  onUploadImage,
+}) {
+  const editorRef = useRef(null);
+  const fileRef = useRef(null);
+
+  useEffect(() => {
+    if (!editorRef.current) return;
+    if (editorRef.current.innerHTML !== value) {
+      editorRef.current.innerHTML = value || "";
+    }
+  }, [value]);
+
+  const runCommand = (command, commandValue = null) => {
+    editorRef.current?.focus();
+    document.execCommand(command, false, commandValue);
+    onChange(editorRef.current?.innerHTML || "");
+  };
+
+  return (
+    <div className="rich-editor">
+      <div className="rich-editor-toolbar">
+        <button
+          type="button"
+          className="ghost-btn"
+          onClick={() => runCommand("bold")}
+        >
+          B
+        </button>
+        <button
+          type="button"
+          className="ghost-btn"
+          onClick={() => runCommand("italic")}
+        >
+          I
+        </button>
+        <button
+          type="button"
+          className="ghost-btn"
+          onClick={() => runCommand("underline")}
+        >
+          U
+        </button>
+        <button
+          type="button"
+          className="ghost-btn"
+          onClick={() => runCommand("insertUnorderedList")}
+        >
+          • List
+        </button>
+        <button
+          type="button"
+          className="ghost-btn"
+          onClick={() => runCommand("insertOrderedList")}
+        >
+          1. List
+        </button>
+        <button
+          type="button"
+          className="ghost-btn"
+          onClick={() => {
+            const url = window.prompt("Enter URL");
+            if (!url) return;
+            runCommand("createLink", url.trim());
+          }}
+        >
+          Link
+        </button>
+        <button
+          type="button"
+          className="ghost-btn"
+          disabled={uploading}
+          onClick={() => fileRef.current?.click()}
+        >
+          {uploading ? "Uploading..." : "Image"}
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={async (event) => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            const imageUrl = await onUploadImage(file);
+            if (imageUrl) runCommand("insertImage", imageUrl);
+            event.target.value = "";
+          }}
+        />
+      </div>
+      <div
+        ref={editorRef}
+        className="rich-editor-content"
+        role="textbox"
+        aria-multiline="true"
+        contentEditable
+        data-placeholder={placeholder}
+        onInput={(event) => onChange(event.currentTarget.innerHTML)}
+      />
+    </div>
+  );
+}
 
 export default function TaskDrawer({
   taskBundle,
@@ -13,13 +125,45 @@ export default function TaskDrawer({
   onClose,
   onSaveTask,
   onAddComment,
+  onUploadAsset,
   onNotify,
 }) {
+  const normalizeAcceptanceCriteria = useCallback((value) => {
+    const list = Array.isArray(value) ? value : [];
+    return list
+      .map((item, index) => {
+        const text = String(item?.text || "").trim();
+        if (!text) return null;
+        return {
+          id:
+            String(item?.id || "").trim() ||
+            `ac-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+          text,
+          done: item?.done === true,
+        };
+      })
+      .filter(Boolean);
+  }, []);
   const task = taskBundle?.task;
-  const [draft, setDraft] = useState(task || null);
+  const [draft, setDraft] = useState(
+    task
+      ? {
+          ...task,
+          acceptanceCriteria: normalizeAcceptanceCriteria(
+            task.acceptanceCriteria,
+          ),
+        }
+      : null,
+  );
   const [commentBody, setCommentBody] = useState("");
   const [activityTab, setActivityTab] = useState("comments");
   const [devPanel, setDevPanel] = useState(null);
+  const [isUploadingDescription, setIsUploadingDescription] = useState(false);
+  const [isUploadingComment, setIsUploadingComment] = useState(false);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
+  const titleEditorRef = useRef(null);
+  const lastSavedPatchRef = useRef("");
 
   const userMap = useMemo(() => {
     const map = new Map();
@@ -53,13 +197,33 @@ export default function TaskDrawer({
   }, [allowedStatusKeys, stages]);
 
   useEffect(() => {
-    setDraft(task || null);
+    setDraft(
+      task
+        ? {
+            ...task,
+            description: toEditorRichText(task.description),
+            acceptanceCriteria: normalizeAcceptanceCriteria(
+              task.acceptanceCriteria,
+            ),
+          }
+        : null,
+    );
     setCommentBody("");
     setActivityTab("comments");
     setDevPanel(null);
-  }, [task]);
+    setIsEditingTitle(false);
+  }, [normalizeAcceptanceCriteria, task]);
 
-  if (!task || !draft) return null;
+  useEffect(() => {
+    if (!isEditingTitle || !titleEditorRef.current) return;
+    titleEditorRef.current.focus();
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(titleEditorRef.current);
+    range.collapse(false);
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  }, [isEditingTitle]);
 
   const formatDateTime = (value) => {
     if (!value) return "None";
@@ -83,23 +247,75 @@ export default function TaskDrawer({
     }
   };
 
-  const buildPatch = (source) => ({
-    title: source.title,
-    description: source.description,
-    label: source.label || "",
-    status: source.status,
-    storyPoints:
-      source.storyPoints === "" || source.storyPoints == null
-        ? null
-        : Number(source.storyPoints),
-    assigneeId: source.assigneeId ? String(source.assigneeId) : null,
-    priority: source.priority,
-    type: source.type,
-    version: source.version || "",
-  });
+  const buildPatch = useCallback((source) => {
+    return {
+      title: source.title,
+      description: source.description,
+      label: source.label || "",
+      status: source.status,
+      storyPoints:
+        source.storyPoints === "" || source.storyPoints == null
+          ? null
+          : Number(source.storyPoints),
+      assigneeId: source.assigneeId ? String(source.assigneeId) : null,
+      priority: source.priority,
+      type: source.type,
+      version: source.version || "",
+      acceptanceCriteria: normalizeAcceptanceCriteria(source.acceptanceCriteria),
+    };
+  }, [normalizeAcceptanceCriteria]);
+
+  useEffect(() => {
+    if (!task) return;
+    lastSavedPatchRef.current = JSON.stringify(buildPatch(task));
+  }, [buildPatch, task]);
 
   const submitPatch = async () => {
     await onSaveTask(task.id, buildPatch(draft));
+  };
+
+  useEffect(() => {
+    if (!task || !draft) return;
+    const draftPatch = buildPatch(draft);
+    const draftPatchJson = JSON.stringify(draftPatch);
+    const taskPatchJson = JSON.stringify(buildPatch(task));
+    if (
+      draftPatchJson === taskPatchJson ||
+      draftPatchJson === lastSavedPatchRef.current
+    ) {
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        setIsAutoSaving(true);
+        await onSaveTask(task.id, draftPatch);
+        lastSavedPatchRef.current = draftPatchJson;
+      } catch (error) {
+        onNotify?.(error?.message || "Failed to auto-save task updates.", "error");
+      } finally {
+        setIsAutoSaving(false);
+      }
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [buildPatch, draft, onNotify, onSaveTask, task]);
+  if (!task || !draft) return null;
+  const uploadImage = async (file, target) => {
+    if (!file || !onUploadAsset) return;
+    const setLoading =
+      target === "description"
+        ? setIsUploadingDescription
+        : setIsUploadingComment;
+    setLoading(true);
+    try {
+      const uploaded = await onUploadAsset(file);
+      onNotify?.("Image uploaded.");
+      return uploaded.url;
+    } catch (error) {
+      onNotify?.(error?.message || "Failed to upload image.", "error");
+      return null;
+    } finally {
+      setLoading(false);
+    }
   };
   const hasUnsavedChanges =
     JSON.stringify(buildPatch(draft)) !== JSON.stringify(buildPatch(task));
@@ -146,6 +362,7 @@ export default function TaskDrawer({
       version: "Version",
       assigneeId: "Assignee",
       label: "Label",
+      acceptanceCriteria: "Acceptance criteria",
     };
     return labelsByField[field] || field;
   };
@@ -184,9 +401,53 @@ export default function TaskDrawer({
         <div className="task-drawer-head">
           <div>
             <p className="muted task-drawer-ref">{displayTaskRef(task)}</p>
-            <h3>{task.title}</h3>
+            <h3
+              ref={titleEditorRef}
+              className={`task-drawer-title-editable ${isEditingTitle ? "is-editing" : ""}`}
+              role="button"
+              tabIndex={0}
+              contentEditable={isEditingTitle}
+              suppressContentEditableWarning
+              onClick={() => setIsEditingTitle(true)}
+              onBlur={(event) => {
+                const nextTitle = String(
+                  event.currentTarget.textContent || "",
+                ).trim();
+                setDraft((prev) => ({
+                  ...prev,
+                  title: nextTitle || task.title,
+                }));
+                setIsEditingTitle(false);
+              }}
+              onInput={(event) => {
+                const nextTitle = event.currentTarget?.textContent || "";
+                setDraft((prev) => ({
+                  ...prev,
+                  title: nextTitle,
+                }));
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  event.currentTarget.blur();
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setDraft((prev) => ({
+                    ...prev,
+                    title: task.title,
+                  }));
+                  event.currentTarget.textContent = task.title;
+                  event.currentTarget.blur();
+                }
+              }}
+              title="Click to edit title"
+            >
+              {draft.title}
+            </h3>
           </div>
           <div className="task-drawer-head-actions">
+            {isAutoSaving ? <span className="muted">Saving...</span> : null}
             <button type="button" className="ghost-btn" onClick={handleClose}>
               X
             </button>
@@ -198,19 +459,96 @@ export default function TaskDrawer({
             <section className="task-main-pane">
               <div className="task-detail-card">
                 <h4>Description</h4>
-                <label>
-                  <textarea
-                    rows={6}
-                    value={draft.description || ""}
-                    placeholder="Add task details, context, and expected outcome."
-                    onChange={(event) =>
+                <RichTextEditor
+                  value={draft.description || ""}
+                  placeholder="Add task details, context, and expected outcome."
+                  uploading={isUploadingDescription}
+                  onChange={(nextValue) =>
+                    setDraft((prev) => ({ ...prev, description: nextValue }))
+                  }
+                  onUploadImage={(file) => uploadImage(file, "description")}
+                />
+              </div>
+
+              <div className="task-detail-card">
+                <h4>Acceptance criteria</h4>
+                <div className="acceptance-list">
+                  {(draft.acceptanceCriteria || []).length ? (
+                    (draft.acceptanceCriteria || []).map((criterion) => (
+                      <label key={criterion.id} className="acceptance-item">
+                        <input
+                          type="checkbox"
+                          checked={criterion.done === true}
+                          onChange={(event) =>
+                            setDraft((prev) => ({
+                              ...prev,
+                              acceptanceCriteria: (
+                                prev.acceptanceCriteria || []
+                              ).map((item) =>
+                                item.id === criterion.id
+                                  ? { ...item, done: event.target.checked }
+                                  : item,
+                              ),
+                            }))
+                          }
+                        />
+                        <input
+                          className={`acceptance-text-input ${criterion.done ? "is-done" : ""}`}
+                          value={criterion.text}
+                          onChange={(event) =>
+                            setDraft((prev) => ({
+                              ...prev,
+                              acceptanceCriteria: (
+                                prev.acceptanceCriteria || []
+                              ).map((item) =>
+                                item.id === criterion.id
+                                  ? { ...item, text: event.target.value }
+                                  : item,
+                              ),
+                            }))
+                          }
+                        />
+                        <button
+                          type="button"
+                          className="ghost-btn"
+                          onClick={() =>
+                            setDraft((prev) => ({
+                              ...prev,
+                              acceptanceCriteria: (
+                                prev.acceptanceCriteria || []
+                              ).filter((item) => item.id !== criterion.id),
+                            }))
+                          }
+                        >
+                          Remove
+                        </button>
+                      </label>
+                    ))
+                  ) : (
+                    <p className="muted">No acceptance criteria added.</p>
+                  )}
+                </div>
+                <div className="task-activity-actions">
+                  <button
+                    type="button"
+                    className="ghost-btn"
+                    onClick={() =>
                       setDraft((prev) => ({
                         ...prev,
-                        description: event.target.value,
+                        acceptanceCriteria: [
+                          ...(prev.acceptanceCriteria || []),
+                          {
+                            id: `ac-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                            text: "",
+                            done: false,
+                          },
+                        ],
                       }))
                     }
-                  />
-                </label>
+                  >
+                    Add criterion
+                  </button>
+                </div>
               </div>
 
               <div className="task-detail-card">
@@ -241,7 +579,12 @@ export default function TaskDrawer({
                             "Unknown"}{" "}
                           - {formatDateTime(comment.createdAt)}
                         </div>
-                        <div>{comment.body}</div>
+                        <div
+                          className="rich-text-preview"
+                          dangerouslySetInnerHTML={{
+                            __html: toDisplayRichText(comment.body),
+                          }}
+                        />
                       </article>
                     ))
                   ) : visibleActivity.length ? (
@@ -284,18 +627,19 @@ export default function TaskDrawer({
                 </div>
                 {activityTab === "comments" ? (
                   <>
-                    <textarea
-                      rows={3}
+                    <RichTextEditor
                       value={commentBody}
                       placeholder="Add a comment..."
-                      onChange={(event) => setCommentBody(event.target.value)}
+                      uploading={isUploadingComment}
+                      onChange={setCommentBody}
+                      onUploadImage={(file) => uploadImage(file, "comment")}
                     />
                     <div className="task-activity-actions">
                       <button
                         type="button"
                         onClick={() => {
-                          if (!commentBody.trim()) return;
-                          onAddComment(task.id, commentBody.trim());
+                          if (isRichTextEmpty(commentBody)) return;
+                          onAddComment(task.id, commentBody);
                           setCommentBody("");
                         }}
                       >

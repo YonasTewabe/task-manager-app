@@ -1278,6 +1278,25 @@ button:disabled {
   border-radius: 6px;
 }
 
+.backlog-task-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.backlog-unassigned-pill {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid #c7cfde;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.66rem;
+  font-weight: 700;
+  background: #f4f5f7;
+}
+
 .backlog-task-title {
   font-weight: 600;
 }
@@ -1400,6 +1419,23 @@ button:disabled {
   margin: 0;
   font-size: 1.55rem;
   line-height: 1.3;
+}
+
+.task-drawer-title-editable {
+  cursor: text;
+  border-radius: 6px;
+  padding: 0.1rem 0.2rem;
+  margin: -0.1rem -0.2rem 0;
+  outline: none;
+}
+
+.task-drawer-title-editable:hover {
+  background: #f4f5f7;
+}
+
+.task-drawer-title-editable.is-editing {
+  background: #fff;
+  box-shadow: inset 0 0 0 1px #b3bac5;
 }
 
 .task-drawer-body {
@@ -1585,6 +1621,96 @@ textarea {
   font-size: 0.78rem;
   color: #5e6c84;
   margin-bottom: 0.2rem;
+}
+
+.rich-text-toolbar {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.rich-editor {
+  border: 1px solid #dfe1e6;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.rich-editor-toolbar {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  padding: 0.4rem;
+  border-bottom: 1px solid #dfe1e6;
+  background: #f7f8fa;
+}
+
+.rich-editor-content {
+  min-height: 120px;
+  padding: 0.6rem;
+  outline: none;
+  line-height: 1.45;
+}
+
+.rich-editor-content:empty::before {
+  content: attr(data-placeholder);
+  color: #8792a2;
+}
+
+.rich-upload-btn {
+  position: relative;
+  cursor: pointer;
+}
+
+.rich-upload-btn input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.rich-text-preview {
+  border: 1px solid #dfe1e6;
+  border-radius: 6px;
+  background: #fafbfc;
+  padding: 0.5rem;
+  overflow-x: auto;
+}
+
+.rich-text-preview p {
+  margin: 0 0 0.5rem;
+  line-height: 1.4;
+}
+
+.rich-text-preview p:last-child {
+  margin-bottom: 0;
+}
+
+.rich-text-preview img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+}
+
+.rich-text-preview a {
+  color: #0c66e4;
+}
+
+.acceptance-list {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.acceptance-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.acceptance-text-input.is-done {
+  text-decoration: line-through;
+  color: #6b778c;
 }
 
 .app-layout {

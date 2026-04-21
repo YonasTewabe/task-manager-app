@@ -49,7 +49,17 @@ import {
 
 const router = Router();
 router.use(requireAuth);
-const upload = createUploadMiddleware({ subDir: "task-management" });
+const upload = createUploadMiddleware({
+  subDir: "task-management",
+  allowedMimeTypes: [
+    "image/png",
+    "image/jpeg",
+    "image/jpg",
+    "image/gif",
+    "image/webp",
+    "image/svg+xml",
+  ],
+});
 
 const TRACKED_TASK_FIELDS = [
   "title",
@@ -90,7 +100,9 @@ router.get("/bootstrap", async (req, res) => {
     getTasks(),
     getProjects(),
   ]);
-  const settings = projectId ? await getProjectSettings(projectId) : getDefaultSettings();
+  const settings = projectId
+    ? await getProjectSettings(projectId)
+    : getDefaultSettings();
   res.json({
     currentUser: req.user,
     columns: getWorkflowStageKeys(settings),
@@ -106,7 +118,9 @@ router.get("/me/assigned-tasks", async (req, res) => {
   try {
     const tasks = await getTasks({
       assigneeId: req.user.id,
-      ...(req.user.role !== "admin" ? { limitProjectsToMemberUserId: req.user.id } : {}),
+      ...(req.user.role !== "admin"
+        ? { limitProjectsToMemberUserId: req.user.id }
+        : {}),
     });
     return res.json(tasks);
   } catch {
@@ -123,12 +137,15 @@ router.post("/upload", (req, res) => {
       return res.status(400).json({ error: "file is required" });
     }
 
+    const publicPath = `/uploads/task-management/${req.file.filename}`;
+    const publicUrl = `${req.protocol}://${req.get("host")}${publicPath}`;
     return res.status(201).json({
       filename: req.file.filename,
       originalName: req.file.originalname,
       mimetype: req.file.mimetype,
       size: req.file.size,
       path: req.file.path,
+      url: publicUrl,
     });
   });
 });
@@ -155,7 +172,9 @@ router.post("/email/send", async (req, res) => {
       messageId: result?.messageId || null,
     });
   } catch (error) {
-    return res.status(500).json({ error: error.message || "Failed to send email" });
+    return res
+      .status(500)
+      .json({ error: error.message || "Failed to send email" });
   }
 });
 
@@ -165,7 +184,10 @@ router.get("/projects", async (_req, res) => {
 });
 
 router.post("/projects", async (req, res) => {
-  if (!isNonEmptyString(req.body?.name) || !isNonEmptyString(req.body?.projectKey)) {
+  if (
+    !isNonEmptyString(req.body?.name) ||
+    !isNonEmptyString(req.body?.projectKey)
+  ) {
     return res.status(400).json({ error: "name and projectKey are required" });
   }
   try {
@@ -187,8 +209,10 @@ router.post("/projects", async (req, res) => {
 router.patch("/projects/:projectId", async (req, res) => {
   const patch = {};
   if (req.body.name !== undefined) patch.name = String(req.body.name).trim();
-  if (req.body.projectKey !== undefined) patch.projectKey = String(req.body.projectKey).trim().toUpperCase();
-  if (req.body.description !== undefined) patch.description = String(req.body.description);
+  if (req.body.projectKey !== undefined)
+    patch.projectKey = String(req.body.projectKey).trim().toUpperCase();
+  if (req.body.description !== undefined)
+    patch.description = String(req.body.description);
   if (req.body.memberIds !== undefined) patch.memberIds = req.body.memberIds;
 
   try {
@@ -221,18 +245,24 @@ router.get("/projects/:projectId/settings", async (req, res) => {
   return res.json(settings);
 });
 
-router.patch("/projects/:projectId/settings", requireRole("admin"), async (req, res) => {
-  if (!(await projectExists(req.params.projectId))) {
-    return res.status(404).json({ error: "Project not found" });
-  }
-  try {
-    await updateProjectSettings(req.params.projectId, req.body || {});
-    const settings = await getProjectSettings(req.params.projectId);
-    return res.json(settings);
-  } catch (error) {
-    return res.status(400).json({ error: error.message || "Invalid settings" });
-  }
-});
+router.patch(
+  "/projects/:projectId/settings",
+  requireRole("admin"),
+  async (req, res) => {
+    if (!(await projectExists(req.params.projectId))) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+    try {
+      await updateProjectSettings(req.params.projectId, req.body || {});
+      const settings = await getProjectSettings(req.params.projectId);
+      return res.json(settings);
+    } catch (error) {
+      return res
+        .status(400)
+        .json({ error: error.message || "Invalid settings" });
+    }
+  },
+);
 
 router.get("/board", async (req, res) => {
   const sprintId = req.query.sprintId ? String(req.query.sprintId) : "";
@@ -241,10 +271,15 @@ router.get("/board", async (req, res) => {
     assigneeId: req.query.assigneeId,
     status: req.query.status,
     priority: req.query.priority,
+    type: req.query.type,
     label: req.query.label,
     search: req.query.search,
   };
-  const columns = await buildBoard(sprintId || null, projectId || null, filters);
+  const columns = await buildBoard(
+    sprintId || null,
+    projectId || null,
+    filters,
+  );
   return res.json({ columns });
 });
 
@@ -276,34 +311,47 @@ router.post("/user-groups", requireRole("admin"), async (req, res) => {
   }
 });
 
-router.patch("/user-groups/:groupId", requireRole("admin"), async (req, res) => {
-  try {
-    const group = await updateUserGroup(req.params.groupId, {
-      ...(req.body.name !== undefined ? { name: req.body.name } : {}),
-      ...(req.body.memberIds !== undefined ? { memberIds: req.body.memberIds } : {}),
-    });
-    if (!group) return res.status(404).json({ error: "Group not found" });
-    return res.json(group);
-  } catch (error) {
-    if (error.code === "23505") {
-      return res.status(409).json({ error: "Group name already exists" });
+router.patch(
+  "/user-groups/:groupId",
+  requireRole("admin"),
+  async (req, res) => {
+    try {
+      const group = await updateUserGroup(req.params.groupId, {
+        ...(req.body.name !== undefined ? { name: req.body.name } : {}),
+        ...(req.body.memberIds !== undefined
+          ? { memberIds: req.body.memberIds }
+          : {}),
+      });
+      if (!group) return res.status(404).json({ error: "Group not found" });
+      return res.json(group);
+    } catch (error) {
+      if (error.code === "23505") {
+        return res.status(409).json({ error: "Group name already exists" });
+      }
+      return res.status(500).json({ error: "Failed to update group" });
     }
-    return res.status(500).json({ error: "Failed to update group" });
-  }
-});
+  },
+);
 
-router.delete("/user-groups/:groupId", requireRole("admin"), async (req, res) => {
-  const deleted = await deleteUserGroup(req.params.groupId);
-  if (!deleted) return res.status(404).json({ error: "Group not found" });
-  return res.status(204).send();
-});
+router.delete(
+  "/user-groups/:groupId",
+  requireRole("admin"),
+  async (req, res) => {
+    const deleted = await deleteUserGroup(req.params.groupId);
+    if (!deleted) return res.status(404).json({ error: "Group not found" });
+    return res.status(204).send();
+  },
+);
 
 router.post("/users", requireRole("admin"), async (req, res) => {
   const { name, email } = req.body;
   if (!name || !email) {
     return res.status(400).json({ error: "name and email are required" });
   }
-  const passwordHash = await bcrypt.hash(req.body.password || "ChangeMe123!", 10);
+  const passwordHash = await bcrypt.hash(
+    req.body.password || "ChangeMe123!",
+    10,
+  );
   try {
     const created = await createUser({
       name: name.trim(),
@@ -323,7 +371,8 @@ router.post("/users", requireRole("admin"), async (req, res) => {
 router.patch("/users/:userId", requireRole("admin"), async (req, res) => {
   const payload = {};
   if (isNonEmptyString(req.body?.name)) payload.name = req.body.name.trim();
-  if (isNonEmptyString(req.body?.email)) payload.email = req.body.email.trim().toLowerCase();
+  if (isNonEmptyString(req.body?.email))
+    payload.email = req.body.email.trim().toLowerCase();
   if (isNonEmptyString(req.body?.role)) payload.role = req.body.role;
   if (isNonEmptyString(req.body?.password)) {
     payload.passwordHash = await bcrypt.hash(req.body.password, 10);
@@ -331,7 +380,9 @@ router.patch("/users/:userId", requireRole("admin"), async (req, res) => {
 
   const updated = await updateUser(req.params.userId, payload);
   if (!updated) {
-    return res.status(404).json({ error: "User not found or no valid fields to update" });
+    return res
+      .status(404)
+      .json({ error: "User not found or no valid fields to update" });
   }
   return res.json(updated);
 });
@@ -339,7 +390,9 @@ router.patch("/users/:userId", requireRole("admin"), async (req, res) => {
 router.delete("/users/:userId", requireRole("admin"), async (req, res) => {
   const targetUserId = String(req.params.userId);
   if (targetUserId === String(req.user.id)) {
-    return res.status(400).json({ error: "You cannot delete your own account" });
+    return res
+      .status(400)
+      .json({ error: "You cannot delete your own account" });
   }
 
   const deleted = await deleteUser(targetUserId);
@@ -366,7 +419,9 @@ router.post("/sprints", requireRole("admin"), async (req, res) => {
     if (error.message === ACTIVE_SPRINT_CONFLICT_MESSAGE) {
       return res.status(409).json({ error: error.message });
     }
-    return res.status(400).json({ error: error.message || "Failed to create sprint" });
+    return res
+      .status(400)
+      .json({ error: error.message || "Failed to create sprint" });
   }
 });
 
@@ -374,79 +429,106 @@ router.patch("/sprints/:sprintId", requireRole("admin"), async (req, res) => {
   try {
     const sprint = await updateSprint(req.params.sprintId, req.body || {});
     if (!sprint) {
-      return res.status(404).json({ error: "Sprint not found or no fields to update" });
+      return res
+        .status(404)
+        .json({ error: "Sprint not found or no fields to update" });
     }
     return res.json(sprint);
   } catch (error) {
     if (error.message === ACTIVE_SPRINT_CONFLICT_MESSAGE) {
       return res.status(409).json({ error: error.message });
     }
-    return res.status(400).json({ error: error.message || "Failed to update sprint" });
-  }
-});
-
-router.post("/sprints/:sprintId/start", requireRole("admin"), async (req, res) => {
-  try {
-    const sprint = await updateSprint(req.params.sprintId, { status: "active" });
-    if (!sprint) {
-      return res.status(404).json({ error: "Sprint not found" });
-    }
-    return res.json(sprint);
-  } catch (error) {
-    if (error.message === ACTIVE_SPRINT_CONFLICT_MESSAGE) {
-      return res.status(409).json({ error: error.message });
-    }
-    return res.status(400).json({ error: error.message || "Failed to start sprint" });
-  }
-});
-
-router.post("/sprints/:sprintId/complete", requireRole("admin"), async (req, res) => {
-  try {
-    const sprint = await completeSprint(
-      req.params.sprintId,
-      req.body?.moveIncompleteToSprintId || null,
-    );
-    if (!sprint) {
-      return res.status(404).json({ error: "Sprint not found" });
-    }
-    return res.json(sprint);
-  } catch (error) {
     return res
       .status(400)
-      .json({ error: error.message || "Failed to complete sprint" });
+      .json({ error: error.message || "Failed to update sprint" });
   }
 });
 
+router.post(
+  "/sprints/:sprintId/start",
+  requireRole("admin"),
+  async (req, res) => {
+    try {
+      const sprint = await updateSprint(req.params.sprintId, {
+        status: "active",
+      });
+      if (!sprint) {
+        return res.status(404).json({ error: "Sprint not found" });
+      }
+      return res.json(sprint);
+    } catch (error) {
+      if (error.message === ACTIVE_SPRINT_CONFLICT_MESSAGE) {
+        return res.status(409).json({ error: error.message });
+      }
+      return res
+        .status(400)
+        .json({ error: error.message || "Failed to start sprint" });
+    }
+  },
+);
+
+router.post(
+  "/sprints/:sprintId/complete",
+  requireRole("admin"),
+  async (req, res) => {
+    try {
+      const sprint = await completeSprint(
+        req.params.sprintId,
+        req.body?.moveIncompleteToSprintId || null,
+      );
+      if (!sprint) {
+        return res.status(404).json({ error: "Sprint not found" });
+      }
+      return res.json(sprint);
+    } catch (error) {
+      return res
+        .status(400)
+        .json({ error: error.message || "Failed to complete sprint" });
+    }
+  },
+);
+
 router.get("/sprints/:sprintId/tasks", async (req, res) => {
-  const tasks = await getTasks({ sprintId: req.params.sprintId, projectId: req.query.projectId });
+  const tasks = await getTasks({
+    sprintId: req.params.sprintId,
+    projectId: req.query.projectId,
+  });
   return res.json(tasks);
 });
 
-router.post("/sprints/:sprintId/tasks", requireRole("admin"), async (req, res) => {
-  const sprintId = String(req.params.sprintId);
-  const taskIds = Array.isArray(req.body?.taskIds) ? req.body.taskIds : [];
-  if (!taskIds.length) {
-    return res.status(400).json({ error: "taskIds is required" });
-  }
+router.post(
+  "/sprints/:sprintId/tasks",
+  requireRole("admin"),
+  async (req, res) => {
+    const sprintId = String(req.params.sprintId);
+    const taskIds = Array.isArray(req.body?.taskIds) ? req.body.taskIds : [];
+    if (!taskIds.length) {
+      return res.status(400).json({ error: "taskIds is required" });
+    }
 
-  const updatedTasks = [];
-  for (const taskId of taskIds) {
-    const updated = await assignTaskToSprint(String(taskId), sprintId);
-    if (updated) updatedTasks.push(updated);
-  }
-  return res.json({ updatedTasks });
-});
+    const updatedTasks = [];
+    for (const taskId of taskIds) {
+      const updated = await assignTaskToSprint(String(taskId), sprintId);
+      if (updated) updatedTasks.push(updated);
+    }
+    return res.json({ updatedTasks });
+  },
+);
 
-router.delete("/sprints/:sprintId/tasks/:taskId", requireRole("admin"), async (req, res) => {
-  const removed = await removeTaskFromSprint(
-    String(req.params.taskId),
-    String(req.params.sprintId),
-  );
-  if (!removed) {
-    return res.status(404).json({ error: "Task not found in sprint" });
-  }
-  return res.json(removed);
-});
+router.delete(
+  "/sprints/:sprintId/tasks/:taskId",
+  requireRole("admin"),
+  async (req, res) => {
+    const removed = await removeTaskFromSprint(
+      String(req.params.taskId),
+      String(req.params.sprintId),
+    );
+    if (!removed) {
+      return res.status(404).json({ error: "Task not found in sprint" });
+    }
+    return res.json(removed);
+  },
+);
 
 router.delete("/sprints/:sprintId", requireRole("admin"), async (req, res) => {
   try {
@@ -457,7 +539,9 @@ router.delete("/sprints/:sprintId", requireRole("admin"), async (req, res) => {
     if (error.message === SPRINT_DELETE_NOT_EMPTY_MESSAGE) {
       return res.status(409).json({ error: error.message });
     }
-    return res.status(400).json({ error: error.message || "Failed to delete sprint" });
+    return res
+      .status(400)
+      .json({ error: error.message || "Failed to delete sprint" });
   }
 });
 
@@ -468,6 +552,7 @@ router.get("/tasks", async (req, res) => {
     assigneeId: req.query.assigneeId,
     status: req.query.status,
     priority: req.query.priority,
+    type: req.query.type,
     label: req.query.label,
     search: req.query.search,
   });
@@ -481,6 +566,7 @@ router.get("/backlog", async (req, res) => {
     assigneeId: req.query.assigneeId,
     status: req.query.status,
     priority: req.query.priority,
+    type: req.query.type,
     label: req.query.label,
     search: req.query.search,
   });
@@ -501,7 +587,9 @@ router.post("/tasks", async (req, res) => {
 
   try {
     const created = await createTask(req.body, req.user.id);
-    await addTaskActivity(created.id, req.user.id, "task_created", { title: created.title });
+    await addTaskActivity(created.id, req.user.id, "task_created", {
+      title: created.title,
+    });
     return res.status(201).json(created);
   } catch (err) {
     if (err.message === TASK_TITLE_CONFLICT_MESSAGE) {
@@ -529,7 +617,9 @@ router.patch("/tasks/:taskId", async (req, res) => {
   if (req.body?.status !== undefined) {
     const allowed = await canUserMoveTask(current, req.body.status, req.user);
     if (!allowed) {
-      return res.status(403).json({ error: "You are not allowed to move this task to that stage" });
+      return res
+        .status(403)
+        .json({ error: "You are not allowed to move tasks to that stage" });
     }
   }
 
@@ -540,7 +630,9 @@ router.patch("/tasks/:taskId", async (req, res) => {
     }
     const changes = buildTaskChanges(current, updated);
     if (changes.length) {
-      await addTaskActivity(updated.id, req.user.id, "task_updated", { changes });
+      await addTaskActivity(updated.id, req.user.id, "task_updated", {
+        changes,
+      });
     }
     return res.json(updated);
   } catch (err) {
@@ -563,7 +655,9 @@ router.patch("/tasks/:taskId/move", async (req, res) => {
   }
   const allowed = await canUserMoveTask(current, nextStatus, req.user);
   if (!allowed) {
-    return res.status(403).json({ error: "You are not allowed to move this task to that stage" });
+    return res
+      .status(403)
+      .json({ error: "You are not allowed to move tasks to that stage" });
   }
   const updated = await updateTask(req.params.taskId, { status: nextStatus });
   await addTaskActivity(updated.id, req.user.id, "task_moved", {
@@ -590,7 +684,11 @@ router.post("/tasks/:taskId/comments", async (req, res) => {
   if (!task) {
     return res.status(404).json({ error: "Task not found" });
   }
-  const comment = await addTaskComment(req.params.taskId, req.user.id, req.body.body.trim());
+  const comment = await addTaskComment(
+    req.params.taskId,
+    req.user.id,
+    req.body.body.trim(),
+  );
   await addTaskActivity(req.params.taskId, req.user.id, "comment_added", {});
   return res.status(201).json(comment);
 });
