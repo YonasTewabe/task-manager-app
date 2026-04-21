@@ -99,10 +99,12 @@ function App() {
   const [taskPriority, setTaskPriority] = useState("medium");
   const [taskType, setTaskType] = useState("task");
   const [taskLabel, setTaskLabel] = useState("");
+  const [taskVersion, setTaskVersion] = useState("");
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
   const [showFilterModal, setShowFilterModal] = useState(false);
   const filterPopoverRef = useRef(null);
   const latestSettingsProjectIdRef = useRef("");
+  const latestProjectIdRef = useRef("");
   const [taskBundle, setTaskBundle] = useState(null);
   const [activeView, setActiveView] = useState(() =>
     initialActiveView(location.pathname),
@@ -142,6 +144,10 @@ function App() {
         : DEFAULT_WORKFLOW_STAGES,
     [projectSettings?.boardCardFields?.workflowStages],
   );
+  const workflowTransitions = useMemo(() => {
+    const transitions = projectSettings?.workflowRules?.transitions;
+    return Array.isArray(transitions) ? transitions : [];
+  }, [projectSettings?.workflowRules?.transitions]);
 
   const visibleProjects = useMemo(() => {
     if (!currentUser) return [];
@@ -297,6 +303,7 @@ function App() {
     const data = await apiRequest(
       `/task-management/board${buildTaskQuery(sprintId, projectId, activeFilters)}`,
     );
+    if (String(projectId) !== String(latestProjectIdRef.current)) return;
     setColumns(data.columns || []);
   };
 
@@ -317,6 +324,7 @@ function App() {
         filtersWithoutAssignee,
       )}`,
     );
+    if (String(projectId) !== String(latestProjectIdRef.current)) return;
     const totals = {};
     (data.columns || []).forEach((column) => {
       totals[column.status] = (column.tasks || []).length;
@@ -345,6 +353,7 @@ function App() {
     const data = await apiRequest(
       `/task-management/backlog${query ? `?${query}` : ""}`,
     );
+    if (String(projectId) !== String(latestProjectIdRef.current)) return;
     setBacklogTasks(data || []);
   };
 
@@ -369,6 +378,7 @@ function App() {
     const data = await apiRequest(
       `/task-management/tasks${query ? `?${query}` : ""}`,
     );
+    if (String(projectId) !== String(latestProjectIdRef.current)) return;
     setAllTasks(data || []);
   };
 
@@ -380,6 +390,7 @@ function App() {
     const data = await apiRequest(
       `/task-management/sprints?projectId=${encodeURIComponent(projectId)}`,
     );
+    if (String(projectId) !== String(latestProjectIdRef.current)) return [];
     setSprints(data || []);
     return data || [];
   };
@@ -503,11 +514,27 @@ function App() {
       ),
     ];
   }, [projectSettings?.generalRules?.types]);
+  const projectVersions = useMemo(() => {
+    const versions = projectSettings?.generalRules?.versions;
+    if (!Array.isArray(versions)) return [];
+    return [
+      ...new Set(
+        versions
+          .map((version) => String(version || "").trim())
+          .filter(Boolean),
+      ),
+    ];
+  }, [projectSettings?.generalRules?.versions]);
+
+  useEffect(() => {
+    latestProjectIdRef.current = String(currentProjectId || "");
+  }, [currentProjectId]);
 
   useEffect(() => {
     if (!token || loading || !currentProjectId) return;
+    if (activeView !== "board") return;
     const boardSprintId =
-      activeView === "board" ? activeSprintId : selectedSprintId;
+      activeSprintId || selectedSprintId;
     if (!boardSprintId) {
       setColumns([]);
       setBoardTotalsByStatus({});
@@ -712,6 +739,7 @@ function App() {
         priority: taskPriority,
         type: taskType,
         label: taskLabel.trim(),
+        version: taskVersion.trim(),
         projectId: currentProjectId,
         assigneeId: assigneeId || null,
         sprintId: targetSprintId,
@@ -723,6 +751,7 @@ function App() {
     setTaskPriority("medium");
     setTaskType("task");
     setTaskLabel("");
+    setTaskVersion("");
     setShowCreateTaskModal(false);
     if (noActiveSprint) {
       notify("No active sprint found. Task was added to the backlog.");
@@ -731,11 +760,16 @@ function App() {
   };
 
   const moveTask = async (taskId, status) => {
-    await apiRequest(`/task-management/tasks/${taskId}/move`, {
-      method: "PATCH",
-      body: JSON.stringify({ status }),
-    });
-    await refetchAfterCrud({ includeProject: true, includeDashboard: true });
+    try {
+      await apiRequest(`/task-management/tasks/${taskId}/move`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+      await refetchAfterCrud({ includeProject: true, includeDashboard: true });
+    } catch (error) {
+      notify(error?.message || "Failed to move task.", "error");
+      throw error;
+    }
   };
 
   const openTask = async (taskId) => {
@@ -1474,6 +1508,20 @@ function App() {
                     ))}
                   </select>
                 </label>
+                <label>
+                  Version
+                  <select
+                    value={taskVersion}
+                    onChange={(event) => setTaskVersion(event.target.value)}
+                  >
+                    <option value="">None</option>
+                    {projectVersions.map((version) => (
+                      <option key={version} value={version}>
+                        {version}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <div className="modal-actions">
                   <button
                     type="button"
@@ -1568,11 +1616,15 @@ function App() {
         <TaskDrawer
           taskBundle={taskBundle}
           users={users}
+          assigneeUsers={projectUsers}
           workflowStages={workflowStages}
+          workflowTransitions={workflowTransitions}
           labels={projectLabels}
+          versions={projectVersions}
           onClose={() => setTaskBundle(null)}
           onSaveTask={saveTask}
           onAddComment={addComment}
+          onNotify={notify}
         />
         <ToastContainer
           position="top-right"

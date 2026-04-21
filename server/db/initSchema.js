@@ -77,8 +77,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   title TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   label TEXT NOT NULL DEFAULT '',
-  type TEXT NOT NULL DEFAULT 'task' CHECK (type IN ('task', 'story', 'bug')),
-  priority TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high')),
+  version TEXT NOT NULL DEFAULT '',
+  type TEXT NOT NULL DEFAULT 'task',
+  priority TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('lowest', 'low', 'medium', 'high', 'highest')),
   status TEXT NOT NULL DEFAULT 'todo',
   story_points INTEGER,
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -173,8 +174,24 @@ BEGIN
 END $$;
 
 ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_status_check;
+ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_type_check;
+ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_priority_check;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'tasks_priority_check'
+  ) THEN
+    ALTER TABLE tasks
+      ADD CONSTRAINT tasks_priority_check
+      CHECK (priority IN ('lowest', 'low', 'medium', 'high', 'highest'));
+  END IF;
+END $$;
 ALTER TABLE tasks ALTER COLUMN story_points DROP NOT NULL;
 ALTER TABLE tasks ALTER COLUMN story_points DROP DEFAULT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS version TEXT;
+UPDATE tasks SET version = '' WHERE version IS NULL;
+ALTER TABLE tasks ALTER COLUMN version SET NOT NULL;
+ALTER TABLE tasks ALTER COLUMN version SET DEFAULT '';
 
 -- Task keys: PROJECTKEY-sequential (see migrations/002_task_keys.sql).
 CREATE TABLE IF NOT EXISTS project_task_seq (

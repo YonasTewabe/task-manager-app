@@ -93,7 +93,7 @@ function defaultWorkflowTransitions(stages) {
     transitions.push({
       from,
       to,
-      allowAllUsers: false,
+      allowAllUsers: true,
       allowedUserIds: [],
       allowedGroupIds: [],
     });
@@ -248,6 +248,7 @@ const DEFAULT_SETTINGS = {
   generalRules: {
     labels: [],
     types: ["story", "task", "bug", "hot-fix"],
+    versions: [],
   },
 };
 
@@ -284,6 +285,10 @@ function mergeGeneralRules(rowGeneral, rowWorkflow) {
   base.types = sanitizedTypes.length
     ? sanitizedTypes
     : [...DEFAULT_SETTINGS.generalRules.types];
+  const versions = Array.isArray(base.versions) ? base.versions : [];
+  base.versions = [
+    ...new Set(versions.map((version) => String(version || "").trim()).filter(Boolean)),
+  ];
   return base;
 }
 
@@ -832,9 +837,20 @@ export async function canUserMoveTask(task, nextStatus, actor) {
   const allowedGroupIds = Array.isArray(transition.allowedGroupIds)
     ? transition.allowedGroupIds
     : [];
+  const projectMemberIds = await getProjectMemberIds(task.projectId);
+  if (!projectMemberIds.includes(actorId)) return false;
+
+  // Backward-compatible default: if a transition has no explicit user/group
+  // restrictions, allow any project member to move the task.
+  if (
+    transition?.allowAllUsers !== true &&
+    allowedUserIds.length === 0 &&
+    allowedGroupIds.length === 0
+  ) {
+    return true;
+  }
   if (transition?.allowAllUsers === true) {
-    const projectMemberIds = await getProjectMemberIds(task.projectId);
-    return projectMemberIds.includes(actorId);
+    return true;
   }
   if (allowedUserIds.length > 0) {
     if (allowedUserIds.includes(actorId)) return true;
@@ -985,6 +1001,7 @@ function mapTaskRow(row) {
     title: row.title,
     description: row.description,
     label: row.label || "",
+    version: row.version || "",
     type: row.type,
     priority: row.priority,
     status: row.status,
@@ -998,6 +1015,22 @@ function mapTaskRow(row) {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+function normalizeTaskPriority(value) {
+  return String(value || "medium")
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeTaskType(value) {
+  return String(value || "task")
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeTaskStatus(value) {
+  return String(value || "todo").trim();
 }
 
 export async function getTasks(filters = {}) {
@@ -1057,7 +1090,7 @@ export async function getTasks(filters = {}) {
   }
 
   const query = `
-    SELECT t.id, t.title, t.description, t.label, t.type, t.priority, t.status,
+    SELECT t.id, t.title, t.description, t.label, t.version, t.type, t.priority, t.status,
            t.story_points AS "storyPoints", t.assignee_id AS "assigneeId",
            t.sprint_id AS "sprintId", t.project_id AS "projectId", t.task_number AS "taskNumber",
            p.project_key AS "projectKey",
@@ -1074,7 +1107,7 @@ export async function getTasks(filters = {}) {
 
 export async function getTaskById(id) {
   const result = await dbQuery(
-    `SELECT t.id, t.title, t.description, t.label, t.type, t.priority, t.status,
+    `SELECT t.id, t.title, t.description, t.label, t.version, t.type, t.priority, t.status,
             t.story_points AS "storyPoints", t.assignee_id AS "assigneeId",
             t.sprint_id AS "sprintId", t.project_id AS "projectId", t.task_number AS "taskNumber",
             p.project_key AS "projectKey",
@@ -1139,9 +1172,9 @@ export async function createTask(payload, createdBy) {
   const taskNumber = await allocateNextTaskNumber(payload.projectId);
   const result = await dbQuery(
     `INSERT INTO tasks (
-        title, description, label, type, priority, status, story_points, assignee_id, sprint_id, project_id, created_by, task_number
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-     RETURNING id, title, description, label, type, priority, status,
+        title, description, label, version, type, priority, status, story_points, assignee_id, sprint_id, project_id, created_by, task_number
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+     RETURNING id, title, description, label, version, type, priority, status,
                story_points AS "storyPoints", assignee_id AS "assigneeId",
                sprint_id AS "sprintId", project_id AS "projectId", task_number AS "taskNumber",
                created_by AS "createdBy",
@@ -1150,9 +1183,10 @@ export async function createTask(payload, createdBy) {
       payload.title,
       payload.description || "",
       payload.label || "",
-      payload.type || "task",
-      payload.priority || "medium",
-      payload.status || "todo",
+      payload.version || "",
+      normalizeTaskType(payload.type),
+      normalizeTaskPriority(payload.priority),
+      normalizeTaskStatus(payload.status),
       asInt(payload.storyPoints, null),
       asUuid(payload.assigneeId),
       asUuid(payload.sprintId),
@@ -1181,7 +1215,7 @@ export async function updateTask(taskId, patch) {
 
   if (patch.status !== undefined) {
     const settings = await getProjectSettings(existing.projectId);
-    if (!isValidWorkflowStatus(patch.status, settings)) {
+    if (!isValidWorkflowStatus(normalizeTaskStatus(patch.status), settings)) {
       return null;
     }
   }
@@ -1204,6 +1238,7 @@ export async function updateTask(taskId, patch) {
     title: "title",
     description: "description",
     label: "label",
+    version: "version",
     type: "type",
     priority: "priority",
     status: "status",
@@ -1221,6 +1256,12 @@ export async function updateTask(taskId, patch) {
     fields.push(`${dbKey} = $${idx}`);
     if (key === "storyPoints") {
       params.push(asInt(patch[key], null));
+    } else if (key === "priority") {
+      params.push(normalizeTaskPriority(patch[key]));
+    } else if (key === "type") {
+      params.push(normalizeTaskType(patch[key]));
+    } else if (key === "status") {
+      params.push(normalizeTaskStatus(patch[key]));
     } else if (
       key === "assigneeId" ||
       key === "sprintId" ||
@@ -1246,7 +1287,7 @@ export async function updateTask(taskId, patch) {
      SET ${fields.join(", ")}
      FROM projects p
      WHERE t.id = $${idx} AND p.id = t.project_id
-     RETURNING t.id, t.title, t.description, t.label, t.type, t.priority, t.status,
+     RETURNING t.id, t.title, t.description, t.label, t.version, t.type, t.priority, t.status,
                t.story_points AS "storyPoints", t.assignee_id AS "assigneeId",
                t.sprint_id AS "sprintId", t.project_id AS "projectId", t.created_by AS "createdBy",
                t.created_at AS "createdAt", t.updated_at AS "updatedAt",
@@ -1375,7 +1416,7 @@ export async function assignTaskToSprint(taskId, sprintId) {
      SET sprint_id = $1, updated_at = NOW()
      FROM projects p
      WHERE t.id = $2 AND p.id = t.project_id
-     RETURNING t.id, t.title, t.description, t.label, t.type, t.priority, t.status,
+     RETURNING t.id, t.title, t.description, t.label, t.version, t.type, t.priority, t.status,
                t.story_points AS "storyPoints", t.assignee_id AS "assigneeId",
                t.sprint_id AS "sprintId", t.project_id AS "projectId", t.created_by AS "createdBy",
                t.created_at AS "createdAt", t.updated_at AS "updatedAt",
@@ -1391,7 +1432,7 @@ export async function removeTaskFromSprint(taskId, sprintId) {
      SET sprint_id = NULL, updated_at = NOW()
      FROM projects p
      WHERE t.id = $1 AND t.sprint_id = $2 AND p.id = t.project_id
-     RETURNING t.id, t.title, t.description, t.label, t.type, t.priority, t.status,
+     RETURNING t.id, t.title, t.description, t.label, t.version, t.type, t.priority, t.status,
                t.story_points AS "storyPoints", t.assignee_id AS "assigneeId",
                t.sprint_id AS "sprintId", t.project_id AS "projectId", t.created_by AS "createdBy",
                t.created_at AS "createdAt", t.updated_at AS "updatedAt",

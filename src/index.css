@@ -1331,18 +1331,26 @@ button:disabled {
   color: #5e6c84;
 }
 
-.task-drawer {
+.task-detail-overlay {
   position: fixed;
-  top: 0;
-  right: 0;
-  width: min(460px, 100vw);
-  height: 100vh;
+  inset: 0;
+  background: rgba(9, 30, 66, 0.34);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  z-index: 35;
+}
+
+.task-drawer {
+  width: min(1160px, calc(100vw - 2rem));
+  height: min(88vh, 900px);
   background: #fff;
-  border-left: 1px solid #dfe1e6;
-  box-shadow: -6px 0 18px rgba(9, 30, 66, 0.15);
-  z-index: 30;
+  border: 1px solid #dfe1e6;
+  border-radius: 10px;
+  box-shadow: 0 18px 40px rgba(9, 30, 66, 0.25);
   display: grid;
   grid-template-rows: auto 1fr;
+  overflow: hidden;
 }
 
 .modal-overlay {
@@ -1373,13 +1381,13 @@ button:disabled {
   justify-content: space-between;
   align-items: flex-start;
   gap: 0.75rem;
-  padding: 0.8rem;
-  border-bottom: 1px solid #dfe1e6;
+  padding: 0.9rem 1rem;
 }
 
-.task-drawer-head > button {
-  flex-shrink: 0;
-  margin-top: 0.15rem;
+.task-drawer-head-actions {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
 }
 
 .task-drawer-ref {
@@ -1390,14 +1398,161 @@ button:disabled {
 
 .task-drawer-head h3 {
   margin: 0;
-  font-size: 1rem;
+  font-size: 1.55rem;
+  line-height: 1.3;
 }
 
 .task-drawer-body {
-  padding: 0.8rem;
-  overflow: auto;
+  padding: 0.9rem 1rem;
+  overflow: hidden;
   display: grid;
   gap: 0.65rem;
+  min-height: 0;
+}
+
+.task-drawer-topline {
+  margin-top: 0.5rem;
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.task-detail-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(290px, 1fr);
+  gap: 0.95rem;
+  min-height: 0;
+}
+
+.task-main-pane,
+.task-side-pane {
+  display: grid;
+  gap: 0.7rem;
+  align-content: start;
+  min-height: 0;
+  max-height: 100%;
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.task-detail-card {
+  border: 1px solid #dfe1e6;
+  border-radius: 8px;
+  background: #fff;
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.task-detail-card h4 {
+  margin: 0;
+  font-size: 1.02rem;
+}
+
+.task-meta-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.task-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.8rem;
+  font-size: 0.85rem;
+}
+
+.task-activity-feed {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.task-activity-tabs {
+  display: flex;
+  gap: 0.4rem;
+  border-bottom: 1px solid #dfe1e6;
+  padding-bottom: 0.45rem;
+}
+
+.task-activity-tabs .ghost-btn.is-active {
+  border-color: #8bb1ff;
+  background: #edf3ff;
+  color: #0c66e4;
+}
+
+.task-activity-row {
+  border: 1px solid #e5e9f0;
+  border-radius: 6px;
+  background: #f9fafc;
+  padding: 0.45rem 0.5rem;
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.84rem;
+}
+
+.task-activity-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.task-side-link-list {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.dev-actions {
+  position: relative;
+}
+
+.dev-command-popover {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 0.45rem);
+  z-index: 5;
+}
+
+.task-side-link {
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #0c66e4;
+  padding: 0.35rem 0.4rem;
+  border-radius: 6px;
+}
+
+.task-side-link:hover {
+  background: #f4f5f7;
+}
+
+.branch-command-card {
+  border: 1px solid #dfe1e6;
+  border-radius: 8px;
+  padding: 0.55rem;
+  background: #fff;
+  display: grid;
+  gap: 0.45rem;
+  box-shadow: 0 8px 22px rgba(9, 30, 66, 0.16);
+}
+
+.branch-command-title {
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #42526e;
+  font-weight: 700;
+}
+
+.branch-command-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.branch-command-row input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 label {
@@ -1675,6 +1830,15 @@ textarea {
   .board-column {
     width: min(90vw, 320px);
     min-width: min(90vw, 320px);
+  }
+
+  .task-detail-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .task-drawer {
+    width: min(100vw - 1rem, 980px);
+    height: calc(100vh - 1rem);
   }
 
   .app-sidebar {

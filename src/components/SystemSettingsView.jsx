@@ -15,6 +15,7 @@ const DEFAULT_FORM = {
   generalRules: {
     labels: [],
     types: DEFAULT_WORK_TYPE_VALUES,
+    versions: [],
   },
 };
 
@@ -105,6 +106,7 @@ const SETTINGS_TABS = [
   { id: "workflow", label: "Workflow" },
   { id: "labels", label: "Labels" },
   { id: "types", label: "Types" },
+  { id: "versions", label: "Versions" },
 ];
 
 function defaultTransitions(stages) {
@@ -202,8 +204,10 @@ export default function SystemSettingsView({
   });
   const [newLabel, setNewLabel] = useState("");
   const [newType, setNewType] = useState("");
+  const [newVersion, setNewVersion] = useState("");
   const [showAddLabelModal, setShowAddLabelModal] = useState(false);
   const [showAddTypeModal, setShowAddTypeModal] = useState(false);
+  const [showAddVersionModal, setShowAddVersionModal] = useState(false);
   const [stageMigrations, setStageMigrations] = useState({});
   const [stageDeleteDialog, setStageDeleteDialog] = useState(null);
   const dragFromRef = useRef(null);
@@ -219,8 +223,10 @@ export default function SystemSettingsView({
     setNewStageDraft({ name: "", counterGroup: "", afterKey: "" });
     setShowAddLabelModal(false);
     setShowAddTypeModal(false);
+    setShowAddVersionModal(false);
     setNewLabel("");
     setNewType("");
+    setNewVersion("");
     lastSavedSettingsRef.current = JSON.stringify(
       payloadFromForm(nextForm, {}),
     );
@@ -287,6 +293,9 @@ export default function SystemSettingsView({
     form.generalRules.types.length > 0
       ? form.generalRules.types
       : DEFAULT_WORK_TYPE_VALUES;
+  const versions = Array.isArray(form.generalRules?.versions)
+    ? form.generalRules.versions
+    : [];
   const addLabel = () => {
     const next = String(newLabel || "").trim();
     if (!next) return;
@@ -327,6 +336,26 @@ export default function SystemSettingsView({
       "generalRules",
       "types",
       types.filter((type) => type !== typeToRemove),
+    );
+  };
+  const addVersion = () => {
+    const next = String(newVersion || "").trim();
+    if (!next) return;
+    const exists = versions.some(
+      (version) => String(version).toLowerCase() === next.toLowerCase(),
+    );
+    if (exists) {
+      setNewVersion("");
+      return;
+    }
+    setSectionValue("generalRules", "versions", [...versions, next]);
+    setNewVersion("");
+  };
+  const removeVersion = (versionToRemove) => {
+    setSectionValue(
+      "generalRules",
+      "versions",
+      versions.filter((version) => version !== versionToRemove),
     );
   };
 
@@ -837,6 +866,46 @@ export default function SystemSettingsView({
               </div>
             </article>
           ) : null}
+          {activeTab === "versions" ? (
+            <article
+              id="settings-panel-versions"
+              role="tabpanel"
+              aria-labelledby="settings-tab-versions"
+              className="settings-section settings-tab-panel"
+            >
+              <div className="panel-head">
+                <h3>Versions</h3>
+                {canManage ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAddVersionModal(true)}
+                  >
+                    Add Version
+                  </button>
+                ) : null}
+              </div>
+              <div className="member-grid">
+                {versions.length ? (
+                  versions.map((version) => (
+                    <div key={version} className="member-item">
+                      <span className="member-pill">{version}</span>
+                      {canManage ? (
+                        <button
+                          type="button"
+                          className="ghost-btn"
+                          onClick={() => removeVersion(version)}
+                        >
+                          Remove
+                        </button>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <p className="muted">No versions configured yet.</p>
+                )}
+              </div>
+            </article>
+          ) : null}
           {activeTab === "workflow" ? (
             <article
               id="settings-panel-workflow"
@@ -1238,6 +1307,62 @@ export default function SystemSettingsView({
                   }}
                 >
                   Add Type
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {showAddVersionModal ? (
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={() => setShowAddVersionModal(false)}
+        >
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="panel-head">
+              <h3>Add Version</h3>
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={() => setShowAddVersionModal(false)}
+              >
+                X
+              </button>
+            </div>
+            <div className="project-form">
+              <label>
+                <span className="field-label">
+                  Version <span className="required-indicator">*</span>
+                </span>
+                <input
+                  value={newVersion}
+                  placeholder="Enter version name"
+                  onChange={(event) => setNewVersion(event.target.value)}
+                />
+              </label>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => setShowAddVersionModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!String(newVersion || "").trim()) return;
+                    addVersion();
+                    setShowAddVersionModal(false);
+                  }}
+                >
+                  Add Version
                 </button>
               </div>
             </div>

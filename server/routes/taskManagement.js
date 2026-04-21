@@ -48,6 +48,37 @@ import {
 const router = Router();
 router.use(requireAuth);
 
+const TRACKED_TASK_FIELDS = [
+  "title",
+  "description",
+  "status",
+  "storyPoints",
+  "priority",
+  "type",
+  "version",
+  "assigneeId",
+  "label",
+];
+
+function normalizeFieldValue(value) {
+  if (value == null) return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed === "" ? null : trimmed;
+  }
+  return value;
+}
+
+function buildTaskChanges(beforeTask, afterTask) {
+  return TRACKED_TASK_FIELDS.reduce((acc, field) => {
+    const from = normalizeFieldValue(beforeTask?.[field]);
+    const to = normalizeFieldValue(afterTask?.[field]);
+    if (from === to) return acc;
+    acc.push({ field, from, to });
+    return acc;
+  }, []);
+}
+
 router.get("/bootstrap", async (req, res) => {
   const projectId = req.query.projectId ? String(req.query.projectId) : "";
   const [users, sprints, tasks, projects] = await Promise.all([
@@ -459,11 +490,10 @@ router.patch("/tasks/:taskId", async (req, res) => {
     if (!updated) {
       return res.status(400).json({ error: "No valid fields provided" });
     }
-
-    await addTaskActivity(updated.id, req.user.id, "task_updated", {
-      before: current.status,
-      after: updated.status,
-    });
+    const changes = buildTaskChanges(current, updated);
+    if (changes.length) {
+      await addTaskActivity(updated.id, req.user.id, "task_updated", { changes });
+    }
     return res.json(updated);
   } catch (err) {
     if (err.message === TASK_TITLE_CONFLICT_MESSAGE) {
