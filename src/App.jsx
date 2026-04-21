@@ -102,6 +102,7 @@ function App() {
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
   const [showFilterModal, setShowFilterModal] = useState(false);
   const filterPopoverRef = useRef(null);
+  const latestSettingsProjectIdRef = useRef("");
   const [taskBundle, setTaskBundle] = useState(null);
   const [activeView, setActiveView] = useState(() =>
     initialActiveView(location.pathname),
@@ -145,6 +146,14 @@ function App() {
   const visibleProjects = useMemo(() => {
     if (!currentUser) return [];
     if (currentUser.role === "admin") return projects;
+    return projects.filter((project) =>
+      (project.members || []).some(
+        (member) => String(member.id) === String(currentUser.id),
+      ),
+    );
+  }, [projects, currentUser]);
+  const sidebarProjects = useMemo(() => {
+    if (!currentUser) return [];
     return projects.filter((project) =>
       (project.members || []).some(
         (member) => String(member.id) === String(currentUser.id),
@@ -253,7 +262,9 @@ function App() {
     const settings = await apiRequest(
       `/task-management/projects/${encodeURIComponent(projectId)}/settings`,
     );
-    setProjectSettings(settings);
+    if (latestSettingsProjectIdRef.current === String(projectId)) {
+      setProjectSettings(settings);
+    }
   };
 
   const buildTaskQuery = (
@@ -423,6 +434,26 @@ function App() {
     ]);
   };
 
+  const refetchAfterCrud = async ({
+    includeBootstrap = false,
+    includeProject = false,
+    includeDashboard = false,
+    projectId = currentProjectId,
+  } = {}) => {
+    if (includeBootstrap && token) {
+      await fetchBootstrap();
+    }
+    if (includeProject && token && projectId) {
+      await Promise.all([
+        fetchProjectSettings(projectId).catch(() => setProjectSettings(null)),
+        refreshViews(selectedSprintId, projectId, filters),
+      ]);
+    }
+    if (includeDashboard && token && currentUser) {
+      await fetchMyAssignedTasks();
+    }
+  };
+
   useEffect(() => {
     if (!token) {
       setLoading(false);
@@ -433,11 +464,16 @@ function App() {
 
   useEffect(() => {
     if (!token || !currentProjectId) {
+      latestSettingsProjectIdRef.current = "";
       setProjectSettings(null);
       return;
     }
+    latestSettingsProjectIdRef.current = String(currentProjectId);
+    setProjectSettings(null);
     fetchProjectSettings(currentProjectId).catch(() =>
-      setProjectSettings(null),
+      latestSettingsProjectIdRef.current === String(currentProjectId)
+        ? setProjectSettings(null)
+        : null,
     );
   }, [token, currentProjectId]);
 
@@ -664,6 +700,9 @@ function App() {
   const createTask = async (event) => {
     event.preventDefault();
     if (!taskTitle.trim() || !currentProjectId) return;
+    const noActiveSprint = activeView === "board" && !activeSprintId;
+    const targetSprintId =
+      activeView === "board" ? activeSprintId || null : null;
     await apiRequest("/task-management/tasks", {
       method: "POST",
       body: JSON.stringify({
@@ -675,7 +714,7 @@ function App() {
         label: taskLabel.trim(),
         projectId: currentProjectId,
         assigneeId: assigneeId || null,
-        sprintId: activeView === "board" ? activeSprintId || null : null,
+        sprintId: targetSprintId,
       }),
     });
     setTaskTitle("");
@@ -685,7 +724,10 @@ function App() {
     setTaskType("task");
     setTaskLabel("");
     setShowCreateTaskModal(false);
-    await refreshViews(selectedSprintId, currentProjectId, filters);
+    if (noActiveSprint) {
+      notify("No active sprint found. Task was added to the backlog.");
+    }
+    await refetchAfterCrud({ includeProject: true, includeDashboard: true });
   };
 
   const moveTask = async (taskId, status) => {
@@ -693,7 +735,7 @@ function App() {
       method: "PATCH",
       body: JSON.stringify({ status }),
     });
-    await refreshViews(selectedSprintId, currentProjectId, filters);
+    await refetchAfterCrud({ includeProject: true, includeDashboard: true });
   };
 
   const openTask = async (taskId) => {
@@ -707,8 +749,7 @@ function App() {
       body: JSON.stringify(patch),
     });
     await openTask(taskId);
-    await refreshViews(selectedSprintId, currentProjectId, filters);
-    if (activeView === "dashboard") await fetchMyAssignedTasks();
+    await refetchAfterCrud({ includeProject: true, includeDashboard: true });
   };
 
   const addComment = async (taskId, body) => {
@@ -717,16 +758,20 @@ function App() {
       body: JSON.stringify({ body }),
     });
     await openTask(taskId);
-    if (activeView === "dashboard") await fetchMyAssignedTasks();
+    await refetchAfterCrud({ includeDashboard: true });
   };
 
   const createUser = async (payload) => {
     try {
-      const created = await apiRequest("/task-management/users", {
+      await apiRequest("/task-management/users", {
         method: "POST",
         body: JSON.stringify(payload),
       });
-      setUsers((prev) => [created, ...prev]);
+      await refetchAfterCrud({
+        includeBootstrap: true,
+        includeProject: true,
+        includeDashboard: true,
+      });
       notify("User created.");
     } catch (error) {
       notify(error.message || "Failed to create user.", "error");
@@ -745,12 +790,15 @@ function App() {
     }
 
     try {
-      const updated = await apiRequest(`/task-management/users/${userId}`, {
+      await apiRequest(`/task-management/users/${userId}`, {
         method: "PATCH",
         body: JSON.stringify(payload),
       });
-      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
-      setUserGroups(await apiRequest("/task-management/user-groups"));
+      await refetchAfterCrud({
+        includeBootstrap: true,
+        includeProject: true,
+        includeDashboard: true,
+      });
       notify("User updated.");
     } catch (error) {
       notify(error.message || "Failed to update user.", "error");
@@ -763,8 +811,11 @@ function App() {
       await apiRequest(`/task-management/users/${userId}`, {
         method: "DELETE",
       });
-      setUsers((prev) => prev.filter((u) => String(u.id) !== String(userId)));
-      setUserGroups(await apiRequest("/task-management/user-groups"));
+      await refetchAfterCrud({
+        includeBootstrap: true,
+        includeProject: true,
+        includeDashboard: true,
+      });
       notify("User deleted.");
     } catch (error) {
       notify(error.message || "Failed to delete user.", "error");
@@ -774,14 +825,15 @@ function App() {
 
   const createUserGroup = async (payload) => {
     try {
-      const created = await apiRequest("/task-management/user-groups", {
+      await apiRequest("/task-management/user-groups", {
         method: "POST",
         body: JSON.stringify(payload),
       });
-      setUserGroups((prev) =>
-        [created, ...prev].sort((a, b) => a.name.localeCompare(b.name)),
-      );
-      setUsers(await apiRequest("/task-management/users"));
+      await refetchAfterCrud({
+        includeBootstrap: true,
+        includeProject: true,
+        includeDashboard: true,
+      });
       notify("User group created.");
     } catch (error) {
       notify(error.message || "Failed to create user group.", "error");
@@ -791,17 +843,15 @@ function App() {
 
   const updateUserGroup = async (groupId, payload) => {
     try {
-      const updated = await apiRequest(
-        `/task-management/user-groups/${groupId}`,
-        {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        },
-      );
-      setUserGroups((prev) =>
-        prev.map((g) => (String(g.id) === String(groupId) ? updated : g)),
-      );
-      setUsers(await apiRequest("/task-management/users"));
+      await apiRequest(`/task-management/user-groups/${groupId}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      await refetchAfterCrud({
+        includeBootstrap: true,
+        includeProject: true,
+        includeDashboard: true,
+      });
       notify("User group updated.");
     } catch (error) {
       notify(error.message || "Failed to update user group.", "error");
@@ -814,10 +864,11 @@ function App() {
       await apiRequest(`/task-management/user-groups/${groupId}`, {
         method: "DELETE",
       });
-      setUserGroups((prev) =>
-        prev.filter((g) => String(g.id) !== String(groupId)),
-      );
-      setUsers(await apiRequest("/task-management/users"));
+      await refetchAfterCrud({
+        includeBootstrap: true,
+        includeProject: true,
+        includeDashboard: true,
+      });
       notify("User group deleted.");
     } catch (error) {
       notify(error.message || "Failed to delete user group.", "error");
@@ -827,22 +878,29 @@ function App() {
 
   const createSprint = async (draft) => {
     if (!currentProjectId) return;
-    const created = await apiRequest("/task-management/sprints", {
-      method: "POST",
-      body: JSON.stringify({
-        name: draft.name,
-        projectId: currentProjectId,
-        startDate: draft.startDate || null,
-        endDate: draft.endDate || null,
-        status: "planned",
-      }),
-    });
-    setSprints((prev) =>
-      [created, ...prev].sort((a, b) =>
-        String(a.name).localeCompare(String(b.name)),
-      ),
-    );
-    notify("Sprint created.");
+    try {
+      const created = await apiRequest("/task-management/sprints", {
+        method: "POST",
+        body: JSON.stringify({
+          name: draft.name,
+          projectId: currentProjectId,
+          startDate: draft.startDate || null,
+          endDate: draft.endDate || null,
+          status: "planned",
+        }),
+      });
+      setSprints((prev) =>
+        [created, ...prev].sort((a, b) =>
+          String(a.name).localeCompare(String(b.name)),
+        ),
+      );
+      await refetchAfterCrud({ includeProject: true, includeDashboard: true });
+      notify("Sprint created.");
+      return created;
+    } catch (error) {
+      notify(error.message || "Failed to create sprint.", "error");
+      throw error;
+    }
   };
 
   const _updateSprint = async (sprintId, draft) => {
@@ -855,27 +913,50 @@ function App() {
   };
 
   const createProject = async (payload) => {
-    const created = await apiRequest("/task-management/projects", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-    setProjects((prev) => [created, ...prev]);
-    const id = String(created.id);
-    setCurrentProjectId(id);
-    setActiveView("settings");
-    navigate(`/project/${id}/settings`);
-    notify("Project created.");
+    try {
+      const created = await apiRequest("/task-management/projects", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      setProjects((prev) => [created, ...prev]);
+      const id = String(created.id);
+      setCurrentProjectId(id);
+      setActiveView("settings");
+      navigate(`/project/${id}/settings`);
+      await refetchAfterCrud({
+        includeBootstrap: true,
+        includeProject: true,
+        includeDashboard: true,
+        projectId: id,
+      });
+      notify("Project created.");
+      return created;
+    } catch (error) {
+      notify(error.message || "Failed to create project.", "error");
+      throw error;
+    }
   };
 
   const updateProject = async (projectId, draft) => {
-    const updated = await apiRequest(`/task-management/projects/${projectId}`, {
-      method: "PATCH",
-      body: JSON.stringify(draft),
-    });
-    setProjects((prev) =>
-      prev.map((project) => (project.id === updated.id ? updated : project)),
-    );
-    notify("Project updated.");
+    try {
+      const updated = await apiRequest(`/task-management/projects/${projectId}`, {
+        method: "PATCH",
+        body: JSON.stringify(draft),
+      });
+      setProjects((prev) =>
+        prev.map((project) => (project.id === updated.id ? updated : project)),
+      );
+      await refetchAfterCrud({
+        includeBootstrap: true,
+        includeProject: true,
+        includeDashboard: true,
+      });
+      notify("Project updated.");
+      return updated;
+    } catch (error) {
+      notify(error.message || "Failed to update project.", "error");
+      throw error;
+    }
   };
 
   const deleteProject = async (projectId) => {
@@ -890,6 +971,11 @@ function App() {
       setActiveView("dashboard");
       navigate("/dashboard", { replace: true });
     }
+    await refetchAfterCrud({
+      includeBootstrap: true,
+      includeProject: true,
+      includeDashboard: true,
+    });
     notify("Project deleted.");
   };
 
@@ -903,9 +989,7 @@ function App() {
       },
     );
     setProjectSettings(updated);
-    if (token && currentProjectId) {
-      await refreshViews(selectedSprintId, currentProjectId, filters);
-    }
+    await refetchAfterCrud({ includeProject: true, includeDashboard: true });
     return updated;
   };
 
@@ -921,6 +1005,11 @@ function App() {
     setProjects((prev) =>
       prev.map((project) => (project.id === updated.id ? updated : project)),
     );
+    await refetchAfterCrud({
+      includeBootstrap: true,
+      includeProject: true,
+      includeDashboard: true,
+    });
     notify("Project users saved.");
     return updated;
   };
@@ -936,8 +1025,7 @@ function App() {
           `/task-management/sprints?projectId=${encodeURIComponent(currentProjectId)}`,
         ),
       );
-      await fetchSprintTasks(sprintId, currentProjectId);
-      await refreshViews(selectedSprintId, currentProjectId, filters);
+      await refetchAfterCrud({ includeProject: true, includeDashboard: true });
     } catch (error) {
       notify(error.message || "Failed to start sprint.", "error");
     }
@@ -953,8 +1041,7 @@ function App() {
         `/task-management/sprints?projectId=${encodeURIComponent(currentProjectId)}`,
       ),
     );
-    await refreshViews(selectedSprintId, currentProjectId, filters);
-    await fetchSprintTasks(selectedSprintId, currentProjectId);
+    await refetchAfterCrud({ includeProject: true, includeDashboard: true });
   };
 
   const deleteSprint = async (sprintId) => {
@@ -966,7 +1053,7 @@ function App() {
         `/task-management/sprints?projectId=${encodeURIComponent(currentProjectId)}`,
       ),
     );
-    await refreshViews(selectedSprintId, currentProjectId, filters);
+    await refetchAfterCrud({ includeProject: true, includeDashboard: true });
   };
 
   const assignTaskToSprintFromBacklog = async (taskId, sprintId) => {
@@ -975,7 +1062,7 @@ function App() {
         method: "PATCH",
         body: JSON.stringify({ sprintId: sprintId || null }),
       });
-      await refreshViews(selectedSprintId, currentProjectId, filters);
+      await refetchAfterCrud({ includeProject: true, includeDashboard: true });
       notify("Task moved.");
     } catch (error) {
       notify(error.message || "Failed to move task.", "error");
@@ -1040,7 +1127,7 @@ function App() {
       onLogout={logout}
       activeView={activeView}
       currentProjectId={currentProjectId}
-      projects={visibleProjects}
+      projects={sidebarProjects}
       expandedProjectIds={[]}
       onNavigateMain={handleNavigateMain}
       onNavigateProject={handleNavigateProject}
@@ -1417,6 +1504,7 @@ function App() {
             onCreateSprint={createSprint}
             onAddTask={() => setShowCreateTaskModal(true)}
             onOpenTask={openTask}
+            onNotify={notify}
           />
         ) : null}
 
@@ -1442,6 +1530,7 @@ function App() {
             onConfigureProject={(projectId) =>
               handleNavigateProject(projectId, "settings")
             }
+            onNotify={notify}
           />
         ) : null}
 

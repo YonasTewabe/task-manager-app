@@ -1,7 +1,7 @@
 import { useLocation } from "react-router-dom";
 
 const mainNavItems = [
-  { key: "dashboard", label: "Dashboard" },
+  { key: "dashboard", label: "Overview" },
   { key: "projects", label: "Projects" },
   { key: "users", label: "Users" },
 ];
@@ -9,7 +9,6 @@ const mainNavItems = [
 const PROJECT_SUB_ROUTE = /^\/project\/([^/]+)\/(board|backlog|settings)$/;
 
 export default function Sidebar({
-  collapsed,
   activeView,
   currentProjectId,
   projects,
@@ -34,10 +33,10 @@ export default function Sidebar({
   };
 
   return (
-    <aside className={`app-sidebar ${collapsed ? "collapsed" : ""}`}>
+    <aside className="app-sidebar">
       <div className="sidebar-brand">
         <div className="brand-icon">TM</div>
-        {!collapsed ? <div className="brand-text">Task Manager</div> : null}
+        <div className="brand-text">Task Manager</div>
       </div>
 
       <div className="sidebar-scroll">
@@ -50,7 +49,7 @@ export default function Sidebar({
               onClick={() => onNavigateMain(item.key)}
               title={item.label}
             >
-              {!collapsed ? item.label : item.label.slice(0, 1)}
+              {item.label}
             </button>
           ))}
         </nav>
@@ -58,9 +57,7 @@ export default function Sidebar({
         <div className="sidebar-divider" role="separator" />
 
         <div className="sidebar-projects">
-          {!collapsed ? (
-            <div className="sidebar-section-title">Your projects</div>
-          ) : null}
+          <div className="sidebar-section-title">Your projects</div>
           <div className="sidebar-project-tree">
             {projects.map((project) => {
               const expanded = showProjectSubs(project.id);
@@ -73,18 +70,12 @@ export default function Sidebar({
                     onClick={() => onNavigateProject(project.id, "board")}
                     title={project.name}
                   >
-                    {!collapsed ? (
-                      <>
-                        <span className={`sidebar-chevron ${expanded ? "open" : ""}`} aria-hidden>
-                          ›
-                        </span>
-                        <span className="sidebar-project-name">{project.name}</span>
-                      </>
-                    ) : (
-                      (project.projectKey || project.name || "P").slice(0, 1)
-                    )}
+                    <span className={`sidebar-chevron ${expanded ? "open" : ""}`} aria-hidden>
+                      ›
+                    </span>
+                    <span className="sidebar-project-name">{project.name}</span>
                   </button>
-                  {!collapsed && expanded ? (
+                  {expanded ? (
                     <div className="sidebar-project-subs">
                       <button
                         type="button"

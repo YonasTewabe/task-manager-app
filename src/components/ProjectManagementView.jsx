@@ -13,13 +13,13 @@ export default function ProjectManagementView({
   onUpdateProject,
   onDeleteProject,
   onConfigureProject,
+  onNotify,
 }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [editForm, setEditForm] = useState(EMPTY_FORM);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingProjectId, setEditingProjectId] = useState(null);
-
   const closeEditModal = () => {
     setShowEditModal(false);
     setEditingProjectId(null);
@@ -48,7 +48,8 @@ export default function ProjectManagementView({
 
       {!canManage ? (
         <p className="muted project-page-note">
-          You can view projects you belong to. Only administrators can create or edit projects.
+          You can view projects you belong to. Only administrators can create or
+          edit projects.
         </p>
       ) : null}
 
@@ -71,7 +72,9 @@ export default function ProjectManagementView({
                 <strong>
                   {project.name} ({project.projectKey})
                 </strong>
-                <div className="muted">{project.description || "No description"}</div>
+                <div className="muted">
+                  {project.description || "No description"}
+                </div>
                 <div className="project-members">
                   {(project.members || []).map((member) => (
                     <span key={member.id} className="member-pill">
@@ -82,10 +85,17 @@ export default function ProjectManagementView({
               </button>
               {canManage ? (
                 <div className="inline-form">
-                  <button type="button" className="ghost-btn" onClick={() => startEdit(project)}>
+                  <button
+                    type="button"
+                    className="ghost-btn"
+                    onClick={() => startEdit(project)}
+                  >
                     Edit
                   </button>
-                  <button type="button" onClick={() => onDeleteProject(project.id)}>
+                  <button
+                    type="button"
+                    onClick={() => onDeleteProject(project.id)}
+                  >
                     Delete
                   </button>
                 </div>
@@ -95,11 +105,24 @@ export default function ProjectManagementView({
         ))}
       </div>
       {canManage && showCreateModal ? (
-        <div className="modal-overlay" role="presentation" onClick={() => setShowCreateModal(false)}>
-          <div className="modal-card" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={() => setShowCreateModal(false)}
+        >
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="panel-head">
               <h3>Create Project</h3>
-              <button type="button" className="ghost-btn" onClick={() => setShowCreateModal(false)}>
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={() => setShowCreateModal(false)}
+              >
                 X
               </button>
             </div>
@@ -111,7 +134,9 @@ export default function ProjectManagementView({
                 <input
                   placeholder="Enter project name"
                   value={form.name}
-                  onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, name: e.target.value }))
+                  }
                 />
               </label>
               <label>
@@ -122,7 +147,10 @@ export default function ProjectManagementView({
                   placeholder="e.g. OPS"
                   value={form.projectKey}
                   onChange={(e) =>
-                    setForm((prev) => ({ ...prev, projectKey: e.target.value.toUpperCase() }))
+                    setForm((prev) => ({
+                      ...prev,
+                      projectKey: e.target.value.toUpperCase(),
+                    }))
                   }
                 />
               </label>
@@ -132,7 +160,12 @@ export default function ProjectManagementView({
                   rows={3}
                   placeholder="Enter description"
                   value={form.description}
-                  onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      description: e.target.value,
+                    }))
+                  }
                 />
               </label>
               <div className="modal-actions">
@@ -145,15 +178,44 @@ export default function ProjectManagementView({
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
                     if (!form.name.trim() || !form.projectKey.trim()) return;
-                    onCreateProject({
-                      name: form.name.trim(),
-                      projectKey: form.projectKey.trim().toUpperCase(),
-                      description: form.description,
-                    });
-                    setForm(EMPTY_FORM);
-                    setShowCreateModal(false);
+                    const normalizedName = form.name.trim().toLowerCase();
+                    const normalizedKey = form.projectKey.trim().toUpperCase();
+                    const nameExists = projects.some(
+                      (project) =>
+                        String(project.name || "")
+                          .trim()
+                          .toLowerCase() === normalizedName,
+                    );
+                    if (nameExists) {
+                      onNotify?.("Project name already in use.", "error");
+                      return;
+                    }
+                    const keyExists = projects.some(
+                      (project) =>
+                        String(project.projectKey || "")
+                          .trim()
+                          .toUpperCase() === normalizedKey,
+                    );
+                    if (keyExists) {
+                      onNotify?.("Project short code already in use.", "error");
+                      return;
+                    }
+                    try {
+                      await onCreateProject({
+                        name: form.name.trim(),
+                        projectKey: normalizedKey,
+                        description: form.description,
+                      });
+                      setForm(EMPTY_FORM);
+                      setShowCreateModal(false);
+                    } catch (error) {
+                      onNotify?.(
+                        error?.message || "Failed to create project.",
+                        "error",
+                      );
+                    }
                   }}
                 >
                   Create Project
@@ -164,11 +226,24 @@ export default function ProjectManagementView({
         </div>
       ) : null}
       {canManage && showEditModal && editingProjectId ? (
-        <div className="modal-overlay" role="presentation" onClick={closeEditModal}>
-          <div className="modal-card" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={closeEditModal}
+        >
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="panel-head">
               <h3>Edit project</h3>
-              <button type="button" className="ghost-btn" onClick={closeEditModal}>
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={closeEditModal}
+              >
                 X
               </button>
             </div>
@@ -180,18 +255,25 @@ export default function ProjectManagementView({
                 <input
                   placeholder="Enter project name"
                   value={editForm.name}
-                  onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({ ...prev, name: e.target.value }))
+                  }
                 />
               </label>
               <label>
                 <span className="field-label">
                   Short code <span className="required-indicator">*</span>
                 </span>
+
                 <input
                   placeholder="e.g. OPS"
                   value={editForm.projectKey}
+                  disabled
                   onChange={(e) =>
-                    setEditForm((prev) => ({ ...prev, projectKey: e.target.value.toUpperCase() }))
+                    setEditForm((prev) => ({
+                      ...prev,
+                      projectKey: e.target.value.toUpperCase(),
+                    }))
                   }
                 />
               </label>
@@ -201,20 +283,68 @@ export default function ProjectManagementView({
                   rows={3}
                   placeholder="Enter description"
                   value={editForm.description}
-                  onChange={(e) => setEditForm((prev) => ({ ...prev, description: e.target.value }))}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({
+                      ...prev,
+                      description: e.target.value,
+                    }))
+                  }
                 />
               </label>
               <div className="modal-actions">
                 <button
                   type="button"
-                  onClick={() => {
-                    onUpdateProject(editingProjectId, editForm);
-                    closeEditModal();
+                  onClick={async () => {
+                    const normalizedName = String(editForm.name || "")
+                      .trim()
+                      .toLowerCase();
+                    const normalizedKey = String(editForm.projectKey || "")
+                      .trim()
+                      .toUpperCase();
+                    const duplicateName = projects.some(
+                      (project) =>
+                        String(project.id) !== String(editingProjectId) &&
+                        String(project.name || "")
+                          .trim()
+                          .toLowerCase() === normalizedName,
+                    );
+                    if (duplicateName) {
+                      onNotify?.("Project name already in use.", "error");
+                      return;
+                    }
+                    const duplicateKey = projects.some(
+                      (project) =>
+                        String(project.id) !== String(editingProjectId) &&
+                        String(project.projectKey || "")
+                          .trim()
+                          .toUpperCase() === normalizedKey,
+                    );
+                    if (duplicateKey) {
+                      onNotify?.("Project short code already in use.", "error");
+                      return;
+                    }
+                    try {
+                      await onUpdateProject(editingProjectId, {
+                        ...editForm,
+                        name: String(editForm.name || "").trim(),
+                        projectKey: normalizedKey,
+                      });
+                      closeEditModal();
+                    } catch (error) {
+                      onNotify?.(
+                        error?.message || "Failed to update project.",
+                        "error",
+                      );
+                    }
                   }}
                 >
                   Save
                 </button>
-                <button type="button" className="ghost-btn" onClick={closeEditModal}>
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={closeEditModal}
+                >
                   Cancel
                 </button>
               </div>

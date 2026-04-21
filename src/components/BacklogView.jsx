@@ -43,6 +43,7 @@ export default function BacklogView({
   onCreateSprint,
   onAddTask,
   onOpenTask,
+  onNotify,
 }) {
   const [showCreateSprintModal, setShowCreateSprintModal] = useState(false);
   const [expandedKeys, setExpandedKeys] = useState(() => new Set(["backlog"]));
@@ -69,7 +70,9 @@ export default function BacklogView({
   });
 
   const sprintRows = [...sprints]
-    .filter((sprint) => sprint.status === "active" || sprint.status === "planned")
+    .filter(
+      (sprint) => sprint.status === "active" || sprint.status === "planned",
+    )
     .sort((a, b) => {
       if (a.status !== b.status) {
         if (a.status === "active") return -1;
@@ -226,7 +229,9 @@ export default function BacklogView({
                       </button>
                     </>
                   ) : null}
-                  {row.status === "planned" && canManage && row.tasks.length === 0 ? (
+                  {row.status === "planned" &&
+                  canManage &&
+                  row.tasks.length === 0 ? (
                     <button
                       type="button"
                       className="ghost-btn"
@@ -250,7 +255,10 @@ export default function BacklogView({
                         className="backlog-task-item"
                         draggable={canManage}
                         onDragStart={(event) => {
-                          event.dataTransfer.setData("text/task-id", String(task.id));
+                          event.dataTransfer.setData(
+                            "text/task-id",
+                            String(task.id),
+                          );
                           event.dataTransfer.setData(
                             "text/source-sprint-id",
                             String(row.key),
@@ -275,7 +283,11 @@ export default function BacklogView({
                       </button>
                     ))
                   ) : (
-                    <div className="muted">No tasks in this sprint.</div>
+                    <div className="muted">
+                      {row.key === "backlog"
+                        ? "No backlog tasks."
+                        : "No tasks in this sprint."}
+                    </div>
                   )}
                 </div>
               ) : null}
@@ -359,11 +371,37 @@ export default function BacklogView({
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    if (!createDraft.name.trim()) return;
-                    onCreateSprint(createDraft);
-                    setCreateDraft({ name: "", startDate: "", endDate: "" });
-                    setShowCreateSprintModal(false);
+                  onClick={async () => {
+                    const normalizedName = String(
+                      createDraft.name || "",
+                    ).trim();
+                    if (!normalizedName) return;
+                    const exists = sprints.some(
+                      (sprint) =>
+                        String(sprint.name || "")
+                          .trim()
+                          .toLowerCase() === normalizedName.toLowerCase(),
+                    );
+                    if (exists) {
+                      onNotify?.(
+                        "Sprint name already in use within this project.",
+                        "error",
+                      );
+                      return;
+                    }
+                    try {
+                      await onCreateSprint({
+                        ...createDraft,
+                        name: normalizedName,
+                      });
+                      setCreateDraft({ name: "", startDate: "", endDate: "" });
+                      setShowCreateSprintModal(false);
+                    } catch (error) {
+                      onNotify?.(
+                        error?.message || "Failed to create sprint.",
+                        "error",
+                      );
+                    }
                   }}
                 >
                   Create Sprint

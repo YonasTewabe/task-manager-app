@@ -656,101 +656,126 @@ button:disabled {
 }
 
 .dashboard-page {
+  display: grid;
+  gap: 1.15rem;
+}
+
+.dashboard-block {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.dashboard-overview-title {
+  margin: 0;
+  font-size: 1.45rem;
+  color: #172b4d;
+}
+
+.dashboard-block-divider {
+  border-top: 1px solid #d7dce5;
+  padding-top: 1rem;
+}
+
+.dashboard-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.dashboard-heading {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #172b4d;
+}
+
+.dashboard-text-link {
+  border: none;
+  background: none;
+  color: #42526e;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0.1rem 0.2rem;
+}
+
+.dashboard-text-link:hover {
+  color: #0052cc;
+}
+
+.dashboard-space-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 0.75rem;
 }
 
-.dashboard-sections {
-  display: grid;
-  gap: 1.5rem;
-  margin-top: 0.5rem;
-}
-
-.dashboard-section-title {
-  margin: 0 0 0.6rem;
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: #172b4d;
-}
-
-.dashboard-welcome {
-  margin: 0;
-  max-width: 42rem;
-}
-
-.dashboard-project-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 0.5rem;
-  max-width: 32rem;
-}
-
-.dashboard-project-link {
+.dashboard-space-card {
   display: flex;
   align-items: center;
   gap: 0.65rem;
-  width: 100%;
-  text-align: left;
-  padding: 0.65rem 0.75rem;
-  border-radius: 8px;
+  padding: 0.65rem;
   border: 1px solid #dfe1e6;
+  border-radius: 8px;
   background: #fff;
-  color: #172b4d;
+  text-align: left;
   cursor: pointer;
 }
 
-.dashboard-project-link:hover {
-  background: #f4f5f7;
+.dashboard-space-card:hover {
   border-color: #c1c7d0;
+  background: #f8f9fb;
 }
 
-.dashboard-project-key {
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: #0052cc;
-  background: #deebff;
-  padding: 0.2rem 0.45rem;
-  border-radius: 4px;
-}
-
-.dashboard-task-table-wrap {
-  overflow-x: auto;
-  border: 1px solid #dfe1e6;
+.dashboard-space-icon {
+  width: 34px;
+  height: 34px;
   border-radius: 8px;
-  background: #fff;
+  background: linear-gradient(135deg, #1d4ed8, #0ea5e9);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.72rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
-.dashboard-task-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.88rem;
+.dashboard-space-meta {
+  display: grid;
+  min-width: 0;
 }
 
-.dashboard-task-table th,
-.dashboard-task-table td {
-  padding: 0.55rem 0.75rem;
-  text-align: left;
+.dashboard-space-title {
+  font-size: 0.9rem;
+  color: #1f2937;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dashboard-task-list {
+  border-top: 1px solid #ebecf0;
+}
+
+.dashboard-task-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.62rem 0;
   border-bottom: 1px solid #ebecf0;
-  vertical-align: top;
 }
 
-.dashboard-task-table th {
-  background: #f4f5f7;
-  color: #5e6c84;
-  font-weight: 600;
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
+.dashboard-task-item-link {
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
 }
 
-.dashboard-task-table tr:last-child td {
-  border-bottom: none;
-}
-
-.dashboard-num {
-  text-align: right;
-  width: 3rem;
+.dashboard-task-item-link:hover .dashboard-task-title-btn {
+  color: #0747a6;
 }
 
 .dashboard-task-title-btn {
@@ -776,6 +801,18 @@ button:disabled {
   margin-top: 0.2rem;
 }
 
+.dashboard-task-main {
+  min-width: 0;
+}
+
+.dashboard-task-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.83rem;
+  margin-top: 0.15rem;
+}
+
 .dashboard-task-project-btn {
   display: inline;
   text-align: left;
@@ -790,6 +827,20 @@ button:disabled {
 .dashboard-task-project-btn:hover {
   color: #0052cc;
   text-decoration: underline;
+}
+
+.dashboard-status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  background: #deebff;
+  color: #0747a6;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.22rem 0.45rem;
+  white-space: nowrap;
 }
 
 .project-form {
@@ -838,6 +889,12 @@ button:disabled {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.4rem;
+}
+
+.settings-users-scroll {
+  max-height: 5.75rem;
+  overflow-y: auto;
+  padding-right: 0.25rem;
 }
 
 .member-item {
@@ -1498,7 +1555,6 @@ textarea {
   align-items: center;
   gap: 0.6rem;
   padding: 0 1rem;
-  border-bottom: 1px solid #dfe1e6;
 }
 
 .brand-icon {

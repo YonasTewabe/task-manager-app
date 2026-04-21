@@ -40,6 +40,12 @@ export const ACTIVE_SPRINT_CONFLICT_MESSAGE =
   "Please complete the active sprint before starting a new one";
 export const SPRINT_DELETE_NOT_EMPTY_MESSAGE =
   "Only empty sprints can be deleted";
+export const PROJECT_NAME_CONFLICT_MESSAGE =
+  "A project with this name already exists.";
+export const PROJECT_KEY_CONFLICT_MESSAGE =
+  "A project with this short code already exists.";
+export const SPRINT_NAME_CONFLICT_MESSAGE =
+  "A sprint with this name already exists in this project.";
 
 function inferCounterGroup(key) {
   if (key === "done") return "done";
@@ -148,6 +154,7 @@ export function validateWorkflowStagesForSave(raw) {
     throw new Error("At least one workflow stage is required");
   }
   const keys = new Set();
+  const names = new Set();
   for (const item of raw) {
     const key = String(item?.key || "").trim();
     if (!/^[a-z][a-z0-9_-]{0,62}$/.test(key)) {
@@ -160,6 +167,13 @@ export function validateWorkflowStagesForSave(raw) {
     if (!String(item?.name || "").trim()) {
       throw new Error(`Stage "${key}" needs a display name`);
     }
+    const nameKey = String(item?.name || "")
+      .trim()
+      .toLowerCase();
+    if (names.has(nameKey)) {
+      throw new Error(`Duplicate stage name: ${String(item?.name || "").trim()}`);
+    }
+    names.add(nameKey);
     if (
       item?.counterGroup !== "upcoming" &&
       item?.counterGroup !== "active" &&
@@ -233,7 +247,7 @@ const DEFAULT_SETTINGS = {
   workflowRules: {},
   generalRules: {
     labels: [],
-    types: ["story", "task", "bug", "epic", "hot-fix", "issues", "enhancement"],
+    types: ["story", "task", "bug", "hot-fix"],
   },
 };
 
@@ -258,7 +272,13 @@ function mergeGeneralRules(rowGeneral, rowWorkflow) {
   const types = Array.isArray(base.types) ? base.types : [];
   const sanitizedTypes = [
     ...new Set(
-      types.map((type) => String(type || "").trim().toLowerCase()).filter(Boolean),
+      types
+        .map((type) =>
+          String(type || "")
+            .trim()
+            .toLowerCase(),
+        )
+        .filter(Boolean),
     ),
   ];
   base.types = sanitizedTypes.length
@@ -614,6 +634,41 @@ async function setProjectMembers(projectId, memberIds) {
   );
 }
 
+async function assertUniqueProjectIdentity({
+  name,
+  projectKey,
+  excludeProjectId = null,
+}) {
+  const normalizedName = String(name || "").trim();
+  const normalizedKey = String(projectKey || "").trim();
+  if (!normalizedName || !normalizedKey) return;
+  const params = [normalizedName, normalizedKey];
+  let whereExclusion = "";
+  if (excludeProjectId) {
+    params.push(asUuid(excludeProjectId));
+    whereExclusion = ` AND id <> $3`;
+  }
+  const result = await dbQuery(
+    `SELECT id, name, project_key AS "projectKey"
+     FROM projects
+     WHERE (
+       LOWER(TRIM(name)) = LOWER($1)
+       OR LOWER(TRIM(project_key)) = LOWER($2)
+     )${whereExclusion}
+     LIMIT 1`,
+    params,
+  );
+  const existing = result.rows[0];
+  if (!existing) return;
+  if (
+    String(existing.name || "").trim().toLowerCase() ===
+    normalizedName.toLowerCase()
+  ) {
+    throw new Error(PROJECT_NAME_CONFLICT_MESSAGE);
+  }
+  throw new Error(PROJECT_KEY_CONFLICT_MESSAGE);
+}
+
 export async function getProjects() {
   const result = await dbQuery(
     `SELECT
@@ -643,6 +698,7 @@ export async function createProject({
   description,
   memberIds,
 }) {
+  await assertUniqueProjectIdentity({ name, projectKey });
   const result = await dbQuery(
     `INSERT INTO projects (name, project_key, description)
      VALUES ($1, $2, $3)
@@ -657,6 +713,26 @@ export async function createProject({
 }
 
 export async function updateProject(projectId, patch) {
+  const projectIdNormalized = asUuid(projectId);
+  const current = await dbQuery(
+    `SELECT id, name, project_key AS "projectKey"
+     FROM projects
+     WHERE id = $1
+     LIMIT 1`,
+    [projectIdNormalized],
+  );
+  const currentProject = current.rows[0];
+  if (!currentProject) return null;
+  const nextName =
+    patch.name !== undefined ? patch.name : currentProject.name;
+  const nextProjectKey =
+    patch.projectKey !== undefined ? patch.projectKey : currentProject.projectKey;
+  await assertUniqueProjectIdentity({
+    name: nextName,
+    projectKey: nextProjectKey,
+    excludeProjectId: projectIdNormalized,
+  });
+
   const fields = [];
   const params = [];
   let idx = 1;
@@ -678,7 +754,7 @@ export async function updateProject(projectId, patch) {
   }
 
   if (fields.length) {
-    params.push(projectId);
+    params.push(projectIdNormalized);
     const updated = await dbQuery(
       `UPDATE projects SET ${fields.join(", ")}
        WHERE id = $${idx}
@@ -781,8 +857,19 @@ export async function createSprint({
   endDate,
   status,
 }) {
+  const normalizedName = String(name || "").trim();
   const normalizedProjectId = asUuid(projectId);
   const normalizedStatus = status || "planned";
+  const existingSprintByName = await dbQuery(
+    `SELECT 1
+     FROM sprints
+     WHERE project_id = $1 AND LOWER(TRIM(name)) = LOWER($2)
+     LIMIT 1`,
+    [normalizedProjectId, normalizedName],
+  );
+  if (existingSprintByName.rows[0]) {
+    throw new Error(SPRINT_NAME_CONFLICT_MESSAGE);
+  }
   if (normalizedStatus === "active") {
     const conflict = await dbQuery(
       `SELECT id
@@ -801,7 +888,7 @@ export async function createSprint({
      RETURNING id, name, project_id AS "projectId", start_date AS "startDate", end_date AS "endDate",
                status, created_at AS "createdAt"`,
     [
-      name,
+      normalizedName,
       normalizedProjectId,
       startDate || null,
       endDate || null,
@@ -828,6 +915,7 @@ export async function updateSprint(id, patch) {
       : asUuid(currentSprint.projectId);
   const nextStatus =
     patch.status !== undefined ? patch.status : currentSprint.status;
+  const nextName = patch.name !== undefined ? patch.name : undefined;
   if (nextStatus === "active") {
     const conflict = await dbQuery(
       `SELECT id
@@ -838,6 +926,18 @@ export async function updateSprint(id, patch) {
     );
     if (conflict.rows[0]) {
       throw new Error(ACTIVE_SPRINT_CONFLICT_MESSAGE);
+    }
+  }
+  if (nextName !== undefined) {
+    const sprintNameConflict = await dbQuery(
+      `SELECT 1
+       FROM sprints
+       WHERE project_id = $1 AND LOWER(TRIM(name)) = LOWER($2) AND id <> $3
+       LIMIT 1`,
+      [nextProjectId, String(nextName || "").trim(), asUuid(id)],
+    );
+    if (sprintNameConflict.rows[0]) {
+      throw new Error(SPRINT_NAME_CONFLICT_MESSAGE);
     }
   }
 
@@ -1221,7 +1321,10 @@ export async function buildBoard(sprintId, projectId, filters = {}) {
   }));
 }
 
-export async function completeSprint(sprintId, moveIncompleteToSprintId = null) {
+export async function completeSprint(
+  sprintId,
+  moveIncompleteToSprintId = null,
+) {
   const updatedSprint = await updateSprint(sprintId, { status: "completed" });
   if (!updatedSprint) return null;
 

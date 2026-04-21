@@ -100,9 +100,9 @@ function sortStagesByRollup(stages) {
 }
 
 const SETTINGS_TABS = [
+  { id: "users", label: "Users" },
   { id: "board-columns", label: "Board columns" },
   { id: "workflow", label: "Workflow" },
-  { id: "users", label: "Users" },
   { id: "labels", label: "Labels" },
   { id: "types", label: "Types" },
 ];
@@ -283,7 +283,8 @@ export default function SystemSettingsView({
     ? form.generalRules.labels
     : [];
   const types =
-    Array.isArray(form.generalRules?.types) && form.generalRules.types.length > 0
+    Array.isArray(form.generalRules?.types) &&
+    form.generalRules.types.length > 0
       ? form.generalRules.types
       : DEFAULT_WORK_TYPE_VALUES;
   const addLabel = () => {
@@ -330,6 +331,24 @@ export default function SystemSettingsView({
   };
 
   const updateStageAt = (index, partial) => {
+    if (partial?.name !== undefined) {
+      const nextName = String(partial.name || "")
+        .trim()
+        .toLowerCase();
+      if (nextName) {
+        const duplicate = form.boardCardFields.workflowStages.some(
+          (stage, stageIndex) =>
+            stageIndex !== index &&
+            String(stage?.name || "")
+              .trim()
+              .toLowerCase() === nextName,
+        );
+        if (duplicate) {
+          onNotify?.("Column name already in use in this project.", "error");
+          return;
+        }
+      }
+    }
     setForm((prev) => {
       const stages = [...prev.boardCardFields.workflowStages];
       const current = stages[index];
@@ -388,6 +407,16 @@ export default function SystemSettingsView({
     const nextName = String(newStageDraft.name || "").trim();
     const nextGroup = String(newStageDraft.counterGroup || "").trim();
     if (!nextName || !nextGroup) return;
+    const duplicateName = (form.boardCardFields.workflowStages || []).some(
+      (stage) =>
+        String(stage?.name || "")
+          .trim()
+          .toLowerCase() === nextName.toLowerCase(),
+    );
+    if (duplicateName) {
+      onNotify?.("Column name already in use in this project.", "error");
+      return;
+    }
     const newKeyBase = "stage";
     setForm((prev) => {
       const existing = [...prev.boardCardFields.workflowStages];
@@ -415,6 +444,29 @@ export default function SystemSettingsView({
       }
       nextStages.splice(insertAt, 0, newStage);
       const sortedStages = sortStagesByRollup(nextStages);
+      const newStageIndex = sortedStages.findIndex(
+        (stage) => stage.key === newStage.key,
+      );
+      const nextStage = sortedStages[newStageIndex + 1];
+      const nextTransitions = normalizeTransitions(
+        prev.workflowRules?.transitions,
+        sortedStages,
+      );
+      if (
+        nextStage &&
+        !nextTransitions.some(
+          (transition) =>
+            transition.from === newStage.key && transition.to === nextStage.key,
+        )
+      ) {
+        nextTransitions.push({
+          from: newStage.key,
+          to: nextStage.key,
+          allowAllUsers: false,
+          allowedUserIds: [],
+          allowedGroupIds: [],
+        });
+      }
       return {
         ...prev,
         boardCardFields: {
@@ -423,10 +475,7 @@ export default function SystemSettingsView({
         },
         workflowRules: {
           ...(prev.workflowRules || {}),
-          transitions: normalizeTransitions(
-            prev.workflowRules?.transitions,
-            sortedStages,
-          ),
+          transitions: normalizeTransitions(nextTransitions, sortedStages),
         },
       };
     });
@@ -952,7 +1001,9 @@ export default function SystemSettingsView({
               <p className="muted">
                 Assign who can access and work in this project.
               </p>
-              <div className="member-grid">
+              <div
+                className={`member-grid ${sortedUsers.length > 6 ? "settings-users-scroll" : ""}`}
+              >
                 {sortedUsers.map((user) => (
                   <label key={user.id} className="member-item">
                     <input
