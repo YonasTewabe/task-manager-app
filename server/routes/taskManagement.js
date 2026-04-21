@@ -3,6 +3,8 @@ import bcrypt from "bcryptjs";
 import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/roles.js";
 import { isNonEmptyString } from "../utils/validation.js";
+import { createUploadMiddleware, handleUploadError } from "../utils/upload.js";
+import { sendEmail } from "../utils/email.js";
 import {
   addTaskActivity,
   addTaskComment,
@@ -47,6 +49,7 @@ import {
 
 const router = Router();
 router.use(requireAuth);
+const upload = createUploadMiddleware({ subDir: "task-management" });
 
 const TRACKED_TASK_FIELDS = [
   "title",
@@ -108,6 +111,51 @@ router.get("/me/assigned-tasks", async (req, res) => {
     return res.json(tasks);
   } catch {
     return res.status(500).json({ error: "Failed to load assigned tasks" });
+  }
+});
+
+router.post("/upload", (req, res) => {
+  const middleware = upload.single("file");
+  middleware(req, res, (error) => {
+    const uploadErrorResponse = handleUploadError(error, res);
+    if (uploadErrorResponse) return uploadErrorResponse;
+    if (!req.file) {
+      return res.status(400).json({ error: "file is required" });
+    }
+
+    return res.status(201).json({
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      path: req.file.path,
+    });
+  });
+});
+
+router.post("/email/send", async (req, res) => {
+  const { to, subject, text, html, from } = req.body || {};
+  if (!isNonEmptyString(to) || !isNonEmptyString(subject)) {
+    return res.status(400).json({ error: "to and subject are required" });
+  }
+  if (!isNonEmptyString(text) && !isNonEmptyString(html)) {
+    return res.status(400).json({ error: "text or html is required" });
+  }
+
+  try {
+    const result = await sendEmail({
+      to: String(to).trim(),
+      subject: String(subject).trim(),
+      text: isNonEmptyString(text) ? String(text) : undefined,
+      html: isNonEmptyString(html) ? String(html) : undefined,
+      from: isNonEmptyString(from) ? String(from).trim() : undefined,
+    });
+    return res.status(200).json({
+      message: "Email sent successfully",
+      messageId: result?.messageId || null,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message || "Failed to send email" });
   }
 });
 
