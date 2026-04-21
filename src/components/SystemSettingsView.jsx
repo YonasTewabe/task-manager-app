@@ -3,15 +3,18 @@ import {
   BUILTIN_STAGE_KEYS,
   DEFAULT_WORKFLOW_STAGES,
 } from "../workflowDefaults.js";
+import {
+  DEFAULT_WORK_TYPE_VALUES,
+  getWorkTypeMeta,
+} from "../constants/workTypes.js";
 
 const DEFAULT_FORM = {
   boardCardFields: {
     workflowStages: DEFAULT_WORKFLOW_STAGES.map((s) => ({ ...s })),
   },
   generalRules: {
-    defaultStoryPoints: 3,
-    requireAssigneeForInProgress: true,
-    autoMoveToBacklogOnSprintComplete: true,
+    labels: [],
+    types: DEFAULT_WORK_TYPE_VALUES,
   },
 };
 
@@ -21,15 +24,16 @@ function toForm(settings) {
     settings.boardCardFields.workflowStages.length > 0
       ? settings.boardCardFields.workflowStages.map((s) => ({ ...s }))
       : DEFAULT_WORKFLOW_STAGES.map((s) => ({ ...s }));
+  const sortedWf = sortStagesByRollup(wf);
 
   return {
     boardCardFields: {
-      workflowStages: wf,
+      workflowStages: sortedWf,
     },
     workflowRules: {
       transitions: normalizeTransitions(
         settings?.workflowRules?.transitions,
-        wf,
+        sortedWf,
       ),
     },
     generalRules: {
@@ -82,11 +86,25 @@ function toUniqueStageKey(name, stages, skipIndex = -1) {
   return `${base}-${counter}`;
 }
 
+function sortStagesByRollup(stages) {
+  const rank = { upcoming: 0, active: 1, done: 2 };
+  return [...(stages || [])]
+    .map((stage, index) => ({ stage, index }))
+    .sort((a, b) => {
+      const aRank = rank[a.stage?.counterGroup] ?? 1;
+      const bRank = rank[b.stage?.counterGroup] ?? 1;
+      if (aRank !== bRank) return aRank - bRank;
+      return a.index - b.index;
+    })
+    .map((entry) => entry.stage);
+}
+
 const SETTINGS_TABS = [
-  { id: "general", label: "General" },
-  { id: "users", label: "Users" },
   { id: "board-columns", label: "Board columns" },
   { id: "workflow", label: "Workflow" },
+  { id: "users", label: "Users" },
+  { id: "labels", label: "Labels" },
+  { id: "types", label: "Types" },
 ];
 
 function defaultTransitions(stages) {
@@ -134,8 +152,8 @@ function normalizeTransitions(transitions, stages) {
   return cleaned.length ? cleaned : defaultTransitions(stages);
 }
 
-function payloadFromForm(form) {
-  return {
+function payloadFromForm(form, workflowStageMigrations = {}) {
+  const payload = {
     boardCardFields: {
       workflowStages: form.boardCardFields.workflowStages,
     },
@@ -147,6 +165,13 @@ function payloadFromForm(form) {
     },
     generalRules: form.generalRules,
   };
+  const migrationEntries = Object.entries(workflowStageMigrations || {}).filter(
+    ([from, to]) => String(from || "").trim() && String(to || "").trim(),
+  );
+  if (migrationEntries.length > 0) {
+    payload.workflowStageMigrations = Object.fromEntries(migrationEntries);
+  }
+  return payload;
 }
 
 export default function SystemSettingsView({
@@ -164,19 +189,85 @@ export default function SystemSettingsView({
   const [memberIds, setMemberIds] = useState(
     projectMembers.map((member) => member.id),
   );
-  const [saving, setSaving] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [savingMembers, setSavingMembers] = useState(false);
   const [activeTab, setActiveTab] = useState(SETTINGS_TABS[0].id);
   const [workflowFromKey, setWorkflowFromKey] = useState("");
   const [workflowToKey, setWorkflowToKey] = useState("");
+  const [showAddStageModal, setShowAddStageModal] = useState(false);
+  const [newStageDraft, setNewStageDraft] = useState({
+    name: "",
+    counterGroup: "",
+    afterKey: "",
+  });
+  const [newLabel, setNewLabel] = useState("");
+  const [newType, setNewType] = useState("");
+  const [showAddLabelModal, setShowAddLabelModal] = useState(false);
+  const [showAddTypeModal, setShowAddTypeModal] = useState(false);
+  const [stageMigrations, setStageMigrations] = useState({});
+  const [stageDeleteDialog, setStageDeleteDialog] = useState(null);
   const dragFromRef = useRef(null);
+  const lastSavedSettingsRef = useRef("");
+  const lastSavedMembersRef = useRef("");
 
   useEffect(() => {
-    setForm(toForm(settings));
+    const nextForm = toForm(settings);
+    setForm(nextForm);
+    setStageMigrations({});
+    setStageDeleteDialog(null);
+    setShowAddStageModal(false);
+    setNewStageDraft({ name: "", counterGroup: "", afterKey: "" });
+    setShowAddLabelModal(false);
+    setShowAddTypeModal(false);
+    setNewLabel("");
+    setNewType("");
+    lastSavedSettingsRef.current = JSON.stringify(
+      payloadFromForm(nextForm, {}),
+    );
   }, [settings]);
 
   useEffect(() => {
     setMemberIds(projectMembers.map((member) => member.id));
+    lastSavedMembersRef.current = JSON.stringify(
+      projectMembers.map((member) => member.id).sort(),
+    );
   }, [projectMembers]);
+
+  useEffect(() => {
+    if (!canManage) return undefined;
+    const signature = JSON.stringify(payloadFromForm(form, stageMigrations));
+    if (signature === lastSavedSettingsRef.current) return undefined;
+    const timer = setTimeout(async () => {
+      setSavingSettings(true);
+      try {
+        await onSave(payloadFromForm(form, stageMigrations));
+        lastSavedSettingsRef.current = signature;
+      } catch (error) {
+        onNotify?.(error.message || "Failed to save settings.", "error");
+      } finally {
+        setSavingSettings(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [canManage, form, stageMigrations, onSave, onNotify]);
+
+  useEffect(() => {
+    if (!canManage) return undefined;
+    const signature = JSON.stringify([...memberIds].sort());
+    if (signature === lastSavedMembersRef.current) return undefined;
+    const timer = setTimeout(async () => {
+      setSavingMembers(true);
+      try {
+        await onSaveMembers(memberIds);
+        lastSavedMembersRef.current = signature;
+      } catch (error) {
+        onNotify?.(error.message || "Failed to save project users.", "error");
+      } finally {
+        setSavingMembers(false);
+      }
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [canManage, memberIds, onSaveMembers, onNotify]);
 
   const setSectionValue = (section, key, value) => {
     setForm((prev) => ({
@@ -188,98 +279,168 @@ export default function SystemSettingsView({
     }));
   };
 
+  const labels = Array.isArray(form.generalRules?.labels)
+    ? form.generalRules.labels
+    : [];
+  const types =
+    Array.isArray(form.generalRules?.types) && form.generalRules.types.length > 0
+      ? form.generalRules.types
+      : DEFAULT_WORK_TYPE_VALUES;
+  const addLabel = () => {
+    const next = String(newLabel || "").trim();
+    if (!next) return;
+    const exists = labels.some(
+      (label) => String(label).toLowerCase() === next.toLowerCase(),
+    );
+    if (exists) {
+      setNewLabel("");
+      return;
+    }
+    setSectionValue("generalRules", "labels", [...labels, next]);
+    setNewLabel("");
+  };
+  const removeLabel = (labelToRemove) => {
+    setSectionValue(
+      "generalRules",
+      "labels",
+      labels.filter((label) => label !== labelToRemove),
+    );
+  };
+  const addType = () => {
+    const next = String(newType || "")
+      .trim()
+      .toLowerCase();
+    if (!next) return;
+    const exists = types.some(
+      (type) => String(type).toLowerCase() === next.toLowerCase(),
+    );
+    if (exists) {
+      setNewType("");
+      return;
+    }
+    setSectionValue("generalRules", "types", [...types, next]);
+    setNewType("");
+  };
+  const removeType = (typeToRemove) => {
+    setSectionValue(
+      "generalRules",
+      "types",
+      types.filter((type) => type !== typeToRemove),
+    );
+  };
+
   const updateStageAt = (index, partial) => {
     setForm((prev) => {
       const stages = [...prev.boardCardFields.workflowStages];
       const current = stages[index];
-      const nextPartial = { ...partial };
-      if (
-        partial.name !== undefined &&
-        current &&
-        !BUILTIN_STAGE_KEYS.has(current.key)
-      ) {
-        nextPartial.key = toUniqueStageKey(partial.name, stages, index);
-      }
-      stages[index] = { ...current, ...nextPartial };
+      stages[index] = { ...current, ...partial };
+      const sortedStages = sortStagesByRollup(stages);
       const transitions = normalizeTransitions(
         prev.workflowRules?.transitions,
-        stages,
-      );
-      return {
-        ...prev,
-        boardCardFields: { ...prev.boardCardFields, workflowStages: stages },
-        workflowRules: { ...(prev.workflowRules || {}), transitions },
-      };
-    });
-  };
-
-  const removeStageAt = (index) => {
-    const stage = form.boardCardFields.workflowStages[index];
-    if (!stage || BUILTIN_STAGE_KEYS.has(stage.key)) return;
-    setForm((prev) => {
-      const stages = prev.boardCardFields.workflowStages.filter(
-        (_, i) => i !== index,
-      );
-      const transitions = normalizeTransitions(
-        prev.workflowRules?.transitions,
-        stages,
+        sortedStages,
       );
       return {
         ...prev,
         boardCardFields: {
           ...prev.boardCardFields,
-          workflowStages: stages,
+          workflowStages: sortedStages,
         },
         workflowRules: { ...(prev.workflowRules || {}), transitions },
       };
     });
   };
 
+  const removeStageAt = (index, moveToKey) => {
+    const stage = form.boardCardFields.workflowStages[index];
+    if (!stage || BUILTIN_STAGE_KEYS.has(stage.key)) return;
+    setForm((prev) => {
+      const stages = prev.boardCardFields.workflowStages.filter(
+        (_, i) => i !== index,
+      );
+      const sortedStages = sortStagesByRollup(stages);
+      const transitions = normalizeTransitions(
+        prev.workflowRules?.transitions,
+        sortedStages,
+      );
+      return {
+        ...prev,
+        boardCardFields: {
+          ...prev.boardCardFields,
+          workflowStages: sortedStages,
+        },
+        workflowRules: { ...(prev.workflowRules || {}), transitions },
+      };
+    });
+    if (moveToKey) {
+      setStageMigrations((prev) => ({
+        ...prev,
+        [stage.key]: moveToKey,
+      }));
+    }
+  };
+
   const addStage = () => {
-    const defaultName = "New stage";
-    setForm((prev) => ({
-      ...prev,
-      boardCardFields: {
-        ...prev.boardCardFields,
-        workflowStages: [
-          ...prev.boardCardFields.workflowStages,
-          {
-            key: toUniqueStageKey(
-              defaultName,
-              prev.boardCardFields.workflowStages,
-            ),
-            name: defaultName,
-            badge: "",
-            counterGroup: "upcoming",
-          },
-        ],
-      },
-      workflowRules: {
-        ...(prev.workflowRules || {}),
-        transitions: normalizeTransitions(prev.workflowRules?.transitions, [
-          ...prev.boardCardFields.workflowStages,
-          {
-            key: toUniqueStageKey(
-              defaultName,
-              prev.boardCardFields.workflowStages,
-            ),
-            name: defaultName,
-            badge: "",
-            counterGroup: "upcoming",
-          },
-        ]),
-      },
-    }));
+    setShowAddStageModal(true);
+    setNewStageDraft({ name: "", counterGroup: "", afterKey: "" });
+  };
+
+  const createStageFromDraft = () => {
+    const nextName = String(newStageDraft.name || "").trim();
+    const nextGroup = String(newStageDraft.counterGroup || "").trim();
+    if (!nextName || !nextGroup) return;
+    const newKeyBase = "stage";
+    setForm((prev) => {
+      const existing = [...prev.boardCardFields.workflowStages];
+      const newStage = {
+        key: toUniqueStageKey(newKeyBase, existing),
+        name: nextName,
+        counterGroup: nextGroup,
+      };
+      const nextStages = [...existing];
+      const afterKey = String(newStageDraft.afterKey || "").trim();
+      let insertAt = -1;
+      if (afterKey) {
+        const afterIndex = nextStages.findIndex(
+          (stage) => stage.key === afterKey,
+        );
+        insertAt = afterIndex >= 0 ? afterIndex + 1 : -1;
+      }
+      if (insertAt < 0) {
+        const rank = { upcoming: 0, active: 1, done: 2 };
+        const nextRank = rank[nextGroup] ?? 1;
+        insertAt = nextStages.findIndex(
+          (stage) => (rank[stage.counterGroup] ?? 1) > nextRank,
+        );
+        if (insertAt < 0) insertAt = nextStages.length;
+      }
+      nextStages.splice(insertAt, 0, newStage);
+      const sortedStages = sortStagesByRollup(nextStages);
+      return {
+        ...prev,
+        boardCardFields: {
+          ...prev.boardCardFields,
+          workflowStages: sortedStages,
+        },
+        workflowRules: {
+          ...(prev.workflowRules || {}),
+          transitions: normalizeTransitions(
+            prev.workflowRules?.transitions,
+            sortedStages,
+          ),
+        },
+      };
+    });
+    setShowAddStageModal(false);
+    setNewStageDraft({ name: "", counterGroup: "", afterKey: "" });
   };
 
   const stages = form.boardCardFields.workflowStages || [];
+  const addStagePlacementOptions = newStageDraft.counterGroup
+    ? stages.filter(
+        (stage) => stage.counterGroup === newStageDraft.counterGroup,
+      )
+    : [];
   const sortedUsers = [...users].sort((a, b) => a.name.localeCompare(b.name));
-  const resetSettingsForm = () => {
-    setForm(toForm(settings));
-  };
-  const resetMembersForm = () => {
-    setMemberIds(projectMembers.map((member) => member.id));
-  };
 
   const stageNameByKey = new Map(
     stages.map((stage) => [stage.key, stage.name]),
@@ -288,6 +449,9 @@ export default function SystemSettingsView({
     form.workflowRules?.transitions,
     stages,
   );
+  const dialogDestinationOptions = stageDeleteDialog
+    ? stages.filter((stage) => stage.key !== stageDeleteDialog.stageKey)
+    : [];
 
   const setWorkflowTransitions = (transitions) => {
     setForm((prev) => ({
@@ -399,7 +563,6 @@ export default function SystemSettingsView({
               <div className="workflow-stages-head">
                 <div>
                   <h3>Board columns</h3>
-                  <p className="muted workflow-stages-lead"></p>
                 </div>
                 {canManage ? (
                   <button type="button" onClick={addStage}>
@@ -423,10 +586,25 @@ export default function SystemSettingsView({
                         ...prev,
                         boardCardFields: {
                           ...prev.boardCardFields,
-                          workflowStages: reorderWorkflow(
-                            prev.boardCardFields.workflowStages,
-                            from,
-                            index,
+                          workflowStages: sortStagesByRollup(
+                            reorderWorkflow(
+                              prev.boardCardFields.workflowStages,
+                              from,
+                              index,
+                            ),
+                          ),
+                        },
+                        workflowRules: {
+                          ...(prev.workflowRules || {}),
+                          transitions: normalizeTransitions(
+                            prev.workflowRules?.transitions,
+                            sortStagesByRollup(
+                              reorderWorkflow(
+                                prev.boardCardFields.workflowStages,
+                                from,
+                                index,
+                              ),
+                            ),
                           ),
                         },
                       }));
@@ -469,15 +647,6 @@ export default function SystemSettingsView({
                             updateStageAt(index, { name: e.target.value })
                           }
                         />
-                        <input
-                          className="workflow-stage-badge"
-                          value={stage.badge || ""}
-                          placeholder="Badge (optional)"
-                          disabled={!canManage}
-                          onChange={(e) =>
-                            updateStageAt(index, { badge: e.target.value })
-                          }
-                        />
                       </div>
                       <div className="workflow-stage-meta">
                         <span
@@ -492,7 +661,7 @@ export default function SystemSettingsView({
                         <label className="workflow-counter-label">
                           Backlog roll-up
                           <select
-                            value={stage.counterGroup || "upcoming"}
+                            value={stage.counterGroup || ""}
                             disabled={!canManage}
                             onChange={(e) =>
                               updateStageAt(index, {
@@ -500,6 +669,7 @@ export default function SystemSettingsView({
                               })
                             }
                           >
+                            <option value="">Select roll-up</option>
                             <option value="upcoming">Not started (red)</option>
                             <option value="active">Active (blue)</option>
                             <option value="done">Done (green)</option>
@@ -511,7 +681,18 @@ export default function SystemSettingsView({
                       <button
                         type="button"
                         className="ghost-btn workflow-stage-remove"
-                        onClick={() => removeStageAt(index)}
+                        onClick={() => {
+                          const destinations = stages.filter(
+                            (candidate) => candidate.key !== stage.key,
+                          );
+                          if (!destinations.length) return;
+                          setStageDeleteDialog({
+                            index,
+                            stageKey: stage.key,
+                            stageName: stage.name,
+                            destinationKey: destinations[0].key,
+                          });
+                        }}
                       >
                         Remove
                       </button>
@@ -524,63 +705,87 @@ export default function SystemSettingsView({
             </article>
           ) : null}
 
-          {activeTab === "general" ? (
+          {activeTab === "labels" ? (
             <article
-              id="settings-panel-general"
+              id="settings-panel-labels"
               role="tabpanel"
-              aria-labelledby="settings-tab-general"
+              aria-labelledby="settings-tab-labels"
               className="settings-section settings-tab-panel"
             >
-              <h3>General</h3>
-              <label>
-                Default story points
-                <input
-                  type="number"
-                  min="1"
-                  max="21"
-                  value={form.generalRules.defaultStoryPoints}
-                  onChange={(event) =>
-                    setSectionValue(
-                      "generalRules",
-                      "defaultStoryPoints",
-                      Number(event.target.value || 3),
-                    )
-                  }
-                  disabled={!canManage}
-                />
-              </label>
-              <label className="settings-check">
-                <input
-                  type="checkbox"
-                  checked={form.generalRules.requireAssigneeForInProgress}
-                  onChange={(event) =>
-                    setSectionValue(
-                      "generalRules",
-                      "requireAssigneeForInProgress",
-                      event.target.checked,
-                    )
-                  }
-                  disabled={!canManage}
-                />
-                <span>Require assignee before In Progress</span>
-              </label>
-              <label className="settings-check">
-                <input
-                  type="checkbox"
-                  checked={form.generalRules.autoMoveToBacklogOnSprintComplete}
-                  onChange={(event) =>
-                    setSectionValue(
-                      "generalRules",
-                      "autoMoveToBacklogOnSprintComplete",
-                      event.target.checked,
-                    )
-                  }
-                  disabled={!canManage}
-                />
-                <span>
-                  Auto move unfinished tasks to backlog on sprint completion
-                </span>
-              </label>
+              <div className="panel-head">
+                <h3>Labels</h3>
+                {canManage ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAddLabelModal(true)}
+                  >
+                    Add Label
+                  </button>
+                ) : null}
+              </div>
+              <div className="member-grid">
+                {labels.length ? (
+                  labels.map((label) => (
+                    <div key={label} className="member-item">
+                      <span className="member-pill">{label}</span>
+                      {canManage ? (
+                        <button
+                          type="button"
+                          className="ghost-btn"
+                          onClick={() => removeLabel(label)}
+                        >
+                          Remove
+                        </button>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <p className="muted">No labels configured yet.</p>
+                )}
+              </div>
+            </article>
+          ) : null}
+          {activeTab === "types" ? (
+            <article
+              id="settings-panel-types"
+              role="tabpanel"
+              aria-labelledby="settings-tab-types"
+              className="settings-section settings-tab-panel"
+            >
+              <div className="panel-head">
+                <h3>Types</h3>
+                {canManage ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAddTypeModal(true)}
+                  >
+                    Add Type
+                  </button>
+                ) : null}
+              </div>
+              <div className="member-grid">
+                {types.length ? (
+                  types.map((type) => {
+                    const meta = getWorkTypeMeta(type);
+                    return (
+                      <div key={type} className="member-item">
+                        <span className="member-pill">{meta.label}</span>
+                        {canManage ? (
+                          <button
+                            type="button"
+                            className="ghost-btn"
+                            onClick={() => removeType(type)}
+                          >
+                            Remove
+                          </button>
+                        ) : null}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="muted">No types configured yet.</p>
+                )}
+              </div>
             </article>
           ) : null}
           {activeTab === "workflow" ? (
@@ -770,70 +975,297 @@ export default function SystemSettingsView({
           ) : null}
         </div>
       </div>
+      {showAddStageModal ? (
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={() => setShowAddStageModal(false)}
+        >
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="panel-head">
+              <h3>Add stage</h3>
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={() => setShowAddStageModal(false)}
+              >
+                X
+              </button>
+            </div>
+            <div className="project-form">
+              <label>
+                <span className="field-label">
+                  Stage name <span className="required-indicator">*</span>
+                </span>
+                <input
+                  value={newStageDraft.name}
+                  placeholder="Enter stage name"
+                  onChange={(event) =>
+                    setNewStageDraft((prev) => ({
+                      ...prev,
+                      name: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                <span className="field-label">
+                  Backlog roll-up <span className="required-indicator">*</span>
+                </span>
+                <select
+                  value={newStageDraft.counterGroup}
+                  onChange={(event) =>
+                    setNewStageDraft((prev) => ({
+                      ...prev,
+                      counterGroup: event.target.value,
+                      afterKey: "",
+                    }))
+                  }
+                >
+                  <option value="">Select roll-up</option>
+                  <option value="upcoming">Not started (red)</option>
+                  <option value="active">Active (blue)</option>
+                  <option value="done">Done (green)</option>
+                </select>
+              </label>
+              <label>
+                Place after
+                <select
+                  value={newStageDraft.afterKey}
+                  disabled={!newStageDraft.counterGroup}
+                  onChange={(event) =>
+                    setNewStageDraft((prev) => ({
+                      ...prev,
+                      afterKey: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="">Start of this roll-up group</option>
+                  {addStagePlacementOptions.map((stage) => (
+                    <option key={stage.key} value={stage.key}>
+                      {stage.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="muted">
+                Column ordering is grouped by roll-up color: red first, blue
+                second, green last. Placement applies within the selected
+                roll-up group.
+              </p>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => setShowAddStageModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={createStageFromDraft}
+                  disabled={
+                    !String(newStageDraft.name || "").trim() ||
+                    !newStageDraft.counterGroup
+                  }
+                >
+                  Add stage
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {showAddLabelModal ? (
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={() => setShowAddLabelModal(false)}
+        >
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="panel-head">
+              <h3>Add Label</h3>
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={() => setShowAddLabelModal(false)}
+              >
+                X
+              </button>
+            </div>
+            <div className="project-form">
+              <label>
+                <span className="field-label">
+                  Label <span className="required-indicator">*</span>
+                </span>
+                <input
+                  value={newLabel}
+                  placeholder="Enter label name"
+                  onChange={(event) => setNewLabel(event.target.value)}
+                />
+              </label>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => setShowAddLabelModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!String(newLabel || "").trim()) return;
+                    addLabel();
+                    setShowAddLabelModal(false);
+                  }}
+                >
+                  Add Label
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {showAddTypeModal ? (
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={() => setShowAddTypeModal(false)}
+        >
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="panel-head">
+              <h3>Add Type</h3>
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={() => setShowAddTypeModal(false)}
+              >
+                X
+              </button>
+            </div>
+            <div className="project-form">
+              <label>
+                <span className="field-label">
+                  Type <span className="required-indicator">*</span>
+                </span>
+                <input
+                  value={newType}
+                  placeholder="Enter type name"
+                  onChange={(event) => setNewType(event.target.value)}
+                />
+              </label>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => setShowAddTypeModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!String(newType || "").trim()) return;
+                    addType();
+                    setShowAddTypeModal(false);
+                  }}
+                >
+                  Add Type
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="settings-actions">
-        {activeTab === "users" ? (
-          <>
-            <button
-              type="button"
-              className="ghost-btn"
-              onClick={resetMembersForm}
-              disabled={!canManage}
-            >
-              Reset
-            </button>
-            {canManage ? (
-              <button
-                type="button"
-                disabled={saving}
-                onClick={async () => {
-                  setSaving(true);
-                  try {
-                    await onSaveMembers(memberIds);
-                    onNotify?.("Project users saved.", "success");
-                  } catch (error) {
-                    onNotify?.(error.message || "Failed to save project users.", "error");
-                  } finally {
-                    setSaving(false);
-                  }
-                }}
-              >
-                {saving ? "Saving..." : "Save Users"}
-              </button>
-            ) : null}
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              className="ghost-btn"
-              onClick={resetSettingsForm}
-              disabled={!canManage}
-            >
-              Reset
-            </button>
-            {canManage ? (
-              <button
-                type="button"
-                disabled={saving}
-                onClick={async () => {
-                  setSaving(true);
-                  try {
-                    await onSave(payloadFromForm(form));
-                    onNotify?.("Settings saved.", "success");
-                  } catch (error) {
-                    onNotify?.(error.message || "Failed to save settings.", "error");
-                  } finally {
-                    setSaving(false);
-                  }
-                }}
-              >
-                {saving ? "Saving..." : "Save Settings"}
-              </button>
-            ) : null}
-          </>
-        )}
+        {canManage && (savingSettings || savingMembers) ? (
+          <span className="muted">Saving...</span>
+        ) : null}
       </div>
+      {stageDeleteDialog ? (
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={() => setStageDeleteDialog(null)}
+        >
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="panel-head">
+              <h3>Delete column</h3>
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={() => setStageDeleteDialog(null)}
+              >
+                X
+              </button>
+            </div>
+            <div className="project-form">
+              <p>
+                Move tasks in <strong>{stageDeleteDialog.stageName}</strong> to:
+              </p>
+              <select
+                value={stageDeleteDialog.destinationKey}
+                onChange={(event) =>
+                  setStageDeleteDialog((prev) =>
+                    prev
+                      ? { ...prev, destinationKey: event.target.value }
+                      : prev,
+                  )
+                }
+              >
+                {dialogDestinationOptions.map((stage) => (
+                  <option key={stage.key} value={stage.key}>
+                    {stage.name}
+                  </option>
+                ))}
+              </select>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => setStageDeleteDialog(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    removeStageAt(
+                      stageDeleteDialog.index,
+                      stageDeleteDialog.destinationKey,
+                    );
+                    setStageDeleteDialog(null);
+                  }}
+                >
+                  Confirm delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

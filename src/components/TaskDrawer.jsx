@@ -6,6 +6,7 @@ export default function TaskDrawer({
   taskBundle,
   users,
   workflowStages,
+  labels = [],
   onClose,
   onSaveTask,
   onAddComment,
@@ -34,7 +35,10 @@ export default function TaskDrawer({
       description: draft.description,
       label: draft.label || "",
       status: draft.status,
-      storyPoints: Number(draft.storyPoints),
+      storyPoints:
+        draft.storyPoints === "" || draft.storyPoints == null
+          ? null
+          : Number(draft.storyPoints),
       assigneeId: draft.assigneeId ? String(draft.assigneeId) : null,
       priority: draft.priority,
       type: draft.type,
@@ -73,10 +77,17 @@ export default function TaskDrawer({
         </label>
         <label>
           Label
-          <input
+          <select
             value={draft.label || ""}
             onChange={(event) => setDraft((prev) => ({ ...prev, label: event.target.value }))}
-          />
+          >
+            <option value="">None</option>
+            {labels.map((label) => (
+              <option key={label} value={label}>
+                {label}
+              </option>
+            ))}
+          </select>
         </label>
         <label>
           Status
@@ -97,9 +108,9 @@ export default function TaskDrawer({
             type="number"
             min="1"
             max="21"
-            value={draft.storyPoints}
+            value={draft.storyPoints ?? ""}
             onChange={(event) =>
-              setDraft((prev) => ({ ...prev, storyPoints: Number(event.target.value) }))
+              setDraft((prev) => ({ ...prev, storyPoints: event.target.value }))
             }
           />
         </label>

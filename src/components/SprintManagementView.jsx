@@ -92,7 +92,11 @@ export default function SprintManagementView({
                 draggable
                 onDragStart={(event) => handleBacklogTaskDragStart(event, task.id)}
               >
-                {task.title} · SP {task.storyPoints} · {usersById.get(task.assigneeId) || "Unassigned"}
+                {task.title} · SP{" "}
+                {task.storyPoints == null || task.storyPoints === ""
+                  ? "-"
+                  : task.storyPoints}{" "}
+                · {usersById.get(task.assigneeId) || "Unassigned"}
               </span>
             </label>
           ))}
@@ -214,7 +218,11 @@ export default function SprintManagementView({
             {sprintTasks.map((task) => (
               <div key={task.id} className="sprint-task-row">
                 <span>
-                  {displayTaskRef(task)} · {task.title} · SP {task.storyPoints} ·{" "}
+                  {displayTaskRef(task)} · {task.title} · SP{" "}
+                  {task.storyPoints == null || task.storyPoints === ""
+                    ? "-"
+                    : task.storyPoints}{" "}
+                  ·{" "}
                   {usersById.get(task.assigneeId) || "Unassigned"}
                 </span>
                 <button type="button" onClick={() => onRemoveTaskFromSprint(selectedSprint.id, task.id)}>
@@ -231,38 +239,58 @@ export default function SprintManagementView({
             <div className="panel-head">
               <h3>Create Sprint</h3>
               <button type="button" className="ghost-btn" onClick={() => setShowCreateModal(false)}>
-                Close
+                X
               </button>
             </div>
             <div className="project-form">
-              <input
-                placeholder="Sprint name"
-                value={createDraft.name}
-                onChange={(e) => setCreateDraft((prev) => ({ ...prev, name: e.target.value }))}
-              />
+              <label>
+                <span className="field-label">
+                  Sprint Name <span className="required-indicator">*</span>
+                </span>
+                <input
+                  placeholder="Enter sprint name"
+                  value={createDraft.name}
+                  onChange={(e) => setCreateDraft((prev) => ({ ...prev, name: e.target.value }))}
+                />
+              </label>
               <div className="inline-form">
-                <input
-                  type="date"
-                  value={createDraft.startDate}
-                  onChange={(e) => setCreateDraft((prev) => ({ ...prev, startDate: e.target.value }))}
-                />
-                <input
-                  type="date"
-                  value={createDraft.endDate}
-                  onChange={(e) => setCreateDraft((prev) => ({ ...prev, endDate: e.target.value }))}
-                />
+                <label>
+                  Start date
+                  <input
+                    type="date"
+                    value={createDraft.startDate}
+                    onChange={(e) => setCreateDraft((prev) => ({ ...prev, startDate: e.target.value }))}
+                  />
+                </label>
+                <label>
+                  End date
+                  <input
+                    type="date"
+                    value={createDraft.endDate}
+                    onChange={(e) => setCreateDraft((prev) => ({ ...prev, endDate: e.target.value }))}
+                  />
+                </label>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!createDraft.name.trim()) return;
-                  onCreateSprint(createDraft);
-                  setCreateDraft({ name: "", startDate: "", endDate: "" });
-                  setShowCreateModal(false);
-                }}
-              >
-                Create Sprint
-              </button>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => setShowCreateModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!createDraft.name.trim()) return;
+                    onCreateSprint(createDraft);
+                    setCreateDraft({ name: "", startDate: "", endDate: "" });
+                    setShowCreateModal(false);
+                  }}
+                >
+                  Create Sprint
+                </button>
+              </div>
             </div>
           </div>
         </div>

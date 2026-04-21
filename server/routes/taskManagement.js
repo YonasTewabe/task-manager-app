@@ -15,6 +15,7 @@ import {
   createSprint,
   createTask,
   createUser,
+  deleteSprint,
   deleteProject,
   deleteUser,
   deleteUserGroup,
@@ -33,6 +34,8 @@ import {
   isValidWorkflowStatus,
   projectExists,
   removeTaskFromSprint,
+  ACTIVE_SPRINT_CONFLICT_MESSAGE,
+  SPRINT_DELETE_NOT_EMPTY_MESSAGE,
   updateProjectSettings,
   updateUser,
   updateUserGroup,
@@ -277,33 +280,62 @@ router.post("/sprints", requireRole("admin"), async (req, res) => {
   if (!name || !projectId) {
     return res.status(400).json({ error: "name and projectId are required" });
   }
-  const sprint = await createSprint(req.body);
-  return res.status(201).json(sprint);
+  try {
+    const sprint = await createSprint(req.body);
+    return res.status(201).json(sprint);
+  } catch (error) {
+    if (error.message === ACTIVE_SPRINT_CONFLICT_MESSAGE) {
+      return res.status(409).json({ error: error.message });
+    }
+    return res.status(400).json({ error: error.message || "Failed to create sprint" });
+  }
 });
 
 router.patch("/sprints/:sprintId", requireRole("admin"), async (req, res) => {
-  const sprint = await updateSprint(req.params.sprintId, req.body || {});
-  if (!sprint) {
-    return res.status(404).json({ error: "Sprint not found or no fields to update" });
+  try {
+    const sprint = await updateSprint(req.params.sprintId, req.body || {});
+    if (!sprint) {
+      return res.status(404).json({ error: "Sprint not found or no fields to update" });
+    }
+    return res.json(sprint);
+  } catch (error) {
+    if (error.message === ACTIVE_SPRINT_CONFLICT_MESSAGE) {
+      return res.status(409).json({ error: error.message });
+    }
+    return res.status(400).json({ error: error.message || "Failed to update sprint" });
   }
-  return res.json(sprint);
 });
 
 router.post("/sprints/:sprintId/start", requireRole("admin"), async (req, res) => {
-  const sprint = await updateSprint(req.params.sprintId, { status: "active" });
-  if (!sprint) {
-    return res.status(404).json({ error: "Sprint not found" });
+  try {
+    const sprint = await updateSprint(req.params.sprintId, { status: "active" });
+    if (!sprint) {
+      return res.status(404).json({ error: "Sprint not found" });
+    }
+    return res.json(sprint);
+  } catch (error) {
+    if (error.message === ACTIVE_SPRINT_CONFLICT_MESSAGE) {
+      return res.status(409).json({ error: error.message });
+    }
+    return res.status(400).json({ error: error.message || "Failed to start sprint" });
   }
-  return res.json(sprint);
 });
 
 router.post("/sprints/:sprintId/complete", requireRole("admin"), async (req, res) => {
-  const moveIncompleteToBacklog = req.body?.moveIncompleteToBacklog !== false;
-  const sprint = await completeSprint(req.params.sprintId, moveIncompleteToBacklog);
-  if (!sprint) {
-    return res.status(404).json({ error: "Sprint not found" });
+  try {
+    const sprint = await completeSprint(
+      req.params.sprintId,
+      req.body?.moveIncompleteToSprintId || null,
+    );
+    if (!sprint) {
+      return res.status(404).json({ error: "Sprint not found" });
+    }
+    return res.json(sprint);
+  } catch (error) {
+    return res
+      .status(400)
+      .json({ error: error.message || "Failed to complete sprint" });
   }
-  return res.json(sprint);
 });
 
 router.get("/sprints/:sprintId/tasks", async (req, res) => {
@@ -335,6 +367,19 @@ router.delete("/sprints/:sprintId/tasks/:taskId", requireRole("admin"), async (r
     return res.status(404).json({ error: "Task not found in sprint" });
   }
   return res.json(removed);
+});
+
+router.delete("/sprints/:sprintId", requireRole("admin"), async (req, res) => {
+  try {
+    const deleted = await deleteSprint(req.params.sprintId);
+    if (!deleted) return res.status(404).json({ error: "Sprint not found" });
+    return res.status(204).send();
+  } catch (error) {
+    if (error.message === SPRINT_DELETE_NOT_EMPTY_MESSAGE) {
+      return res.status(409).json({ error: error.message });
+    }
+    return res.status(400).json({ error: error.message || "Failed to delete sprint" });
+  }
 });
 
 router.get("/tasks", async (req, res) => {

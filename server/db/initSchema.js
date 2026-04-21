@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   type TEXT NOT NULL DEFAULT 'task' CHECK (type IN ('task', 'story', 'bug')),
   priority TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high')),
   status TEXT NOT NULL DEFAULT 'todo',
-  story_points INTEGER NOT NULL DEFAULT 1,
+  story_points INTEGER,
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   assignee_id UUID REFERENCES users(id) ON DELETE SET NULL,
   sprint_id UUID REFERENCES sprints(id) ON DELETE SET NULL,
@@ -110,7 +110,7 @@ CREATE TABLE IF NOT EXISTS system_settings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   board_card_fields JSONB NOT NULL DEFAULT '{}'::jsonb,
   workflow_rules JSONB NOT NULL DEFAULT '{}'::jsonb,
-  general_rules JSONB NOT NULL DEFAULT '{"defaultStoryPoints": 3, "allowBackMoveFromDone": false, "requireAssigneeForInProgress": true, "autoMoveToBacklogOnSprintComplete": true}'::jsonb,
+  general_rules JSONB NOT NULL DEFAULT '{"labels": []}'::jsonb,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -173,6 +173,8 @@ BEGIN
 END $$;
 
 ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_status_check;
+ALTER TABLE tasks ALTER COLUMN story_points DROP NOT NULL;
+ALTER TABLE tasks ALTER COLUMN story_points DROP DEFAULT;
 
 -- Task keys: PROJECTKEY-sequential (see migrations/002_task_keys.sql).
 CREATE TABLE IF NOT EXISTS project_task_seq (

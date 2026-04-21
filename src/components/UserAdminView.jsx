@@ -150,36 +150,71 @@ export default function UserAdminView({
             <div className="panel-head">
               <h3>Add user</h3>
               <button type="button" className="ghost-btn" onClick={() => setShowCreateModal(false)}>
-                Close
+                X
               </button>
             </div>
             <div className="user-form-grid">
-              <input value={name} placeholder="Name" onChange={(e) => setName(e.target.value)} />
-              <input value={email} placeholder="Email" onChange={(e) => setEmail(e.target.value)} />
-              <input
-                type="password"
-                value={password}
-                placeholder="Password"
-                onChange={(e) => setPassword(e.target.value)}
-              />
-              <select value={role} onChange={(e) => setRole(e.target.value)}>
-                <option value="member">member</option>
-                <option value="admin">admin</option>
-              </select>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!name.trim() || !email.trim()) return;
-                  onCreateUser({ name: name.trim(), email: email.trim(), password, role });
-                  setName("");
-                  setEmail("");
-                  setPassword("");
-                  setRole("member");
-                  setShowCreateModal(false);
-                }}
-              >
-                Create User
-              </button>
+              <label>
+                <span className="field-label">
+                  Name <span className="required-indicator">*</span>
+                </span>
+                <input
+                  value={name}
+                  placeholder="Enter full name"
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </label>
+              <label>
+                <span className="field-label">
+                  Email <span className="required-indicator">*</span>
+                </span>
+                <input
+                  value={email}
+                  placeholder="Enter email"
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </label>
+              <label>
+                Password
+                <input
+                  type="password"
+                  value={password}
+                  placeholder="Enter password"
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </label>
+              <label>
+                <span className="field-label">
+                  Role <span className="required-indicator">*</span>
+                </span>
+                <select value={role} onChange={(e) => setRole(e.target.value)}>
+                  <option value="member">member</option>
+                  <option value="admin">admin</option>
+                </select>
+              </label>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => setShowCreateModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!name.trim() || !email.trim() || !role) return;
+                    onCreateUser({ name: name.trim(), email: email.trim(), password, role });
+                    setName("");
+                    setEmail("");
+                    setPassword("");
+                    setRole("member");
+                    setShowCreateModal(false);
+                  }}
+                >
+                  Create User
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -190,15 +225,20 @@ export default function UserAdminView({
             <div className="panel-head">
               <h3>Add group</h3>
               <button type="button" className="ghost-btn" onClick={() => setShowCreateGroupModal(false)}>
-                Close
+                X
               </button>
             </div>
             <div className="project-form">
-              <input
-                value={groupName}
-                placeholder="Group name"
-                onChange={(e) => setGroupName(e.target.value)}
-              />
+              <label>
+                <span className="field-label">
+                  Group name <span className="required-indicator">*</span>
+                </span>
+                <input
+                  value={groupName}
+                  placeholder="Enter group name"
+                  onChange={(e) => setGroupName(e.target.value)}
+                />
+              </label>
               <div>
                 <p className="muted">Members</p>
                 <div className="member-grid">
@@ -214,18 +254,27 @@ export default function UserAdminView({
                   ))}
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!groupName.trim()) return;
-                  onCreateUserGroup({ name: groupName.trim(), memberIds: groupMemberIds });
-                  setGroupName("");
-                  setGroupMemberIds([]);
-                  setShowCreateGroupModal(false);
-                }}
-              >
-                Create Group
-              </button>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => setShowCreateGroupModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!groupName.trim()) return;
+                    onCreateUserGroup({ name: groupName.trim(), memberIds: groupMemberIds });
+                    setGroupName("");
+                    setGroupMemberIds([]);
+                    setShowCreateGroupModal(false);
+                  }}
+                >
+                  Create Group
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -236,34 +285,50 @@ export default function UserAdminView({
             <div className="panel-head">
               <h3>Edit user</h3>
               <button type="button" className="ghost-btn" onClick={closeEditModal}>
-                Close
+                X
               </button>
             </div>
             <div className="user-form-grid">
-              <input
-                value={editDraft.name}
-                placeholder="Name"
-                onChange={(e) => setEditDraft((prev) => ({ ...prev, name: e.target.value }))}
-              />
-              <input
-                value={editDraft.email}
-                placeholder="Email"
-                onChange={(e) => setEditDraft((prev) => ({ ...prev, email: e.target.value }))}
-              />
-              <input
-                type="password"
-                value={editDraft.password}
-                placeholder="New password (optional)"
-                onChange={(e) => setEditDraft((prev) => ({ ...prev, password: e.target.value }))}
-              />
-              <select
-                value={editDraft.role}
-                onChange={(e) => setEditDraft((prev) => ({ ...prev, role: e.target.value }))}
-              >
-                <option value="member">member</option>
-                <option value="admin">admin</option>
-              </select>
-              <div className="inline-form">
+              <label>
+                <span className="field-label">
+                  Name <span className="required-indicator">*</span>
+                </span>
+                <input
+                  value={editDraft.name}
+                  placeholder="Enter full name"
+                  onChange={(e) => setEditDraft((prev) => ({ ...prev, name: e.target.value }))}
+                />
+              </label>
+              <label>
+                <span className="field-label">
+                  Email <span className="required-indicator">*</span>
+                </span>
+                <input
+                  value={editDraft.email}
+                  placeholder="Enter email"
+                  onChange={(e) => setEditDraft((prev) => ({ ...prev, email: e.target.value }))}
+                />
+              </label>
+              <label>
+                New password
+                <input
+                  type="password"
+                  value={editDraft.password}
+                  placeholder="Optional"
+                  onChange={(e) => setEditDraft((prev) => ({ ...prev, password: e.target.value }))}
+                />
+              </label>
+              <label>
+                Role
+                <select
+                  value={editDraft.role}
+                  onChange={(e) => setEditDraft((prev) => ({ ...prev, role: e.target.value }))}
+                >
+                  <option value="member">member</option>
+                  <option value="admin">admin</option>
+                </select>
+              </label>
+              <div className="modal-actions">
                 <button
                   type="button"
                   onClick={() => {
@@ -287,15 +352,20 @@ export default function UserAdminView({
             <div className="panel-head">
               <h3>Edit group</h3>
               <button type="button" className="ghost-btn" onClick={closeEditGroupModal}>
-                Close
+                X
               </button>
             </div>
             <div className="project-form">
-              <input
-                value={editGroupName}
-                placeholder="Group name"
-                onChange={(e) => setEditGroupName(e.target.value)}
-              />
+              <label>
+                <span className="field-label">
+                  Group name <span className="required-indicator">*</span>
+                </span>
+                <input
+                  value={editGroupName}
+                  placeholder="Enter group name"
+                  onChange={(e) => setEditGroupName(e.target.value)}
+                />
+              </label>
               <div>
                 <p className="muted">Members</p>
                 <div className="member-grid">
@@ -311,7 +381,7 @@ export default function UserAdminView({
                   ))}
                 </div>
               </div>
-              <div className="inline-form">
+              <div className="modal-actions">
                 <button
                   type="button"
                   onClick={() => {

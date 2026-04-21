@@ -100,41 +100,65 @@ export default function ProjectManagementView({
             <div className="panel-head">
               <h3>Create Project</h3>
               <button type="button" className="ghost-btn" onClick={() => setShowCreateModal(false)}>
-                Close
+                X
               </button>
             </div>
             <div className="project-form">
-              <input
-                placeholder="Project name"
-                value={form.name}
-                onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-              />
-              <input
-                placeholder="Project key (e.g. OPS)"
-                value={form.projectKey}
-                onChange={(e) => setForm((prev) => ({ ...prev, projectKey: e.target.value.toUpperCase() }))}
-              />
-              <textarea
-                rows={3}
-                placeholder="Description"
-                value={form.description}
-                onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  if (!form.name.trim() || !form.projectKey.trim()) return;
-                  onCreateProject({
-                    name: form.name.trim(),
-                    projectKey: form.projectKey.trim().toUpperCase(),
-                    description: form.description,
-                  });
-                  setForm(EMPTY_FORM);
-                  setShowCreateModal(false);
-                }}
-              >
-                Create Project
-              </button>
+              <label>
+                <span className="field-label">
+                  Project Name <span className="required-indicator">*</span>
+                </span>
+                <input
+                  placeholder="Enter project name"
+                  value={form.name}
+                  onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+                />
+              </label>
+              <label>
+                <span className="field-label">
+                  Short code <span className="required-indicator">*</span>
+                </span>
+                <input
+                  placeholder="e.g. OPS"
+                  value={form.projectKey}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, projectKey: e.target.value.toUpperCase() }))
+                  }
+                />
+              </label>
+              <label>
+                Description
+                <textarea
+                  rows={3}
+                  placeholder="Enter description"
+                  value={form.description}
+                  onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
+                />
+              </label>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => setShowCreateModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!form.name.trim() || !form.projectKey.trim()) return;
+                    onCreateProject({
+                      name: form.name.trim(),
+                      projectKey: form.projectKey.trim().toUpperCase(),
+                      description: form.description,
+                    });
+                    setForm(EMPTY_FORM);
+                    setShowCreateModal(false);
+                  }}
+                >
+                  Create Project
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -145,29 +169,42 @@ export default function ProjectManagementView({
             <div className="panel-head">
               <h3>Edit project</h3>
               <button type="button" className="ghost-btn" onClick={closeEditModal}>
-                Close
+                X
               </button>
             </div>
             <div className="project-form">
-              <input
-                placeholder="Project name"
-                value={editForm.name}
-                onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
-              />
-              <input
-                placeholder="Project key (e.g. OPS)"
-                value={editForm.projectKey}
-                onChange={(e) =>
-                  setEditForm((prev) => ({ ...prev, projectKey: e.target.value.toUpperCase() }))
-                }
-              />
-              <textarea
-                rows={3}
-                placeholder="Description"
-                value={editForm.description}
-                onChange={(e) => setEditForm((prev) => ({ ...prev, description: e.target.value }))}
-              />
-              <div className="inline-form">
+              <label>
+                <span className="field-label">
+                  Project Name <span className="required-indicator">*</span>
+                </span>
+                <input
+                  placeholder="Enter project name"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
+                />
+              </label>
+              <label>
+                <span className="field-label">
+                  Short code <span className="required-indicator">*</span>
+                </span>
+                <input
+                  placeholder="e.g. OPS"
+                  value={editForm.projectKey}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({ ...prev, projectKey: e.target.value.toUpperCase() }))
+                  }
+                />
+              </label>
+              <label>
+                Description
+                <textarea
+                  rows={3}
+                  placeholder="Enter description"
+                  value={editForm.description}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, description: e.target.value }))}
+                />
+              </label>
+              <div className="modal-actions">
                 <button
                   type="button"
                   onClick={() => {

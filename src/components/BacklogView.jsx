@@ -16,7 +16,11 @@ function getCounterBuckets(stages) {
   const done = [];
   (stages || []).forEach((s) => {
     const g =
-      s.counterGroup === "active" ? "active" : s.counterGroup === "done" ? "done" : "upcoming";
+      s.counterGroup === "active"
+        ? "active"
+        : s.counterGroup === "done"
+          ? "done"
+          : "upcoming";
     if (g === "done") done.push(s.key);
     else if (g === "active") active.push(s.key);
     else upcoming.push(s.key);
@@ -34,6 +38,8 @@ export default function BacklogView({
   canManage,
   onStartSprint,
   onCompleteSprint,
+  onDeleteSprint,
+  onAssignTaskToSprint,
   onCreateSprint,
   onAddTask,
   onOpenTask,
@@ -45,8 +51,14 @@ export default function BacklogView({
     startDate: "",
     endDate: "",
   });
-  const stageList = workflowStages?.length ? workflowStages : DEFAULT_WORKFLOW_STAGES;
-  const counterBuckets = useMemo(() => getCounterBuckets(stageList), [stageList]);
+  const [sprintCompleteDialog, setSprintCompleteDialog] = useState(null);
+  const stageList = workflowStages?.length
+    ? workflowStages
+    : DEFAULT_WORKFLOW_STAGES;
+  const counterBuckets = useMemo(
+    () => getCounterBuckets(stageList),
+    [stageList],
+  );
 
   const tasksBySprint = new Map();
   allTasks.forEach((task) => {
@@ -57,20 +69,27 @@ export default function BacklogView({
   });
 
   const sprintRows = [...sprints]
+    .filter((sprint) => sprint.status === "active" || sprint.status === "planned")
     .sort((a, b) => {
-      const aDate = Date.parse(a.startDate || a.endDate || "") || Number.POSITIVE_INFINITY;
-      const bDate = Date.parse(b.startDate || b.endDate || "") || Number.POSITIVE_INFINITY;
+      if (a.status !== b.status) {
+        if (a.status === "active") return -1;
+        if (b.status === "active") return 1;
+      }
+      const aDate =
+        Date.parse(a.startDate || a.endDate || "") || Number.POSITIVE_INFINITY;
+      const bDate =
+        Date.parse(b.startDate || b.endDate || "") || Number.POSITIVE_INFINITY;
       if (aDate !== bDate) return aDate - bDate;
       return String(a.name || "").localeCompare(String(b.name || ""));
     })
     .map((sprint) => {
-    const sprintTaskList = tasksBySprint.get(String(sprint.id)) || [];
-    return {
-      key: String(sprint.id),
-      name: sprint.name,
-      status: sprint.status,
-      tasks: sprintTaskList,
-    };
+      const sprintTaskList = tasksBySprint.get(String(sprint.id)) || [];
+      return {
+        key: String(sprint.id),
+        name: sprint.name,
+        status: sprint.status,
+        tasks: sprintTaskList,
+      };
     });
 
   const backlogRow = {
@@ -97,10 +116,14 @@ export default function BacklogView({
   return (
     <section className="panel backlog-page">
       <div className="panel-head">
-        <h2>Backlog</h2>
+        <h2></h2>
         <div className="inline-form">
           {canManage ? (
-            <button type="button" className="ghost-btn" onClick={() => setShowCreateSprintModal(true)}>
+            <button
+              type="button"
+              className="ghost-btn"
+              onClick={() => setShowCreateSprintModal(true)}
+            >
               Add Sprint
             </button>
           ) : null}
@@ -124,13 +147,37 @@ export default function BacklogView({
             <article key={row.key} className="backlog-row-wrap">
               <div
                 className={`backlog-row-card ${isSelected ? "active" : ""}`}
+                onDragOver={(event) => {
+                  if (!canManage) return;
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                }}
+                onDrop={(event) => {
+                  if (!canManage) return;
+                  const taskId = String(
+                    event.dataTransfer.getData("text/task-id") || "",
+                  ).trim();
+                  const sourceKey = String(
+                    event.dataTransfer.getData("text/source-sprint-id") || "",
+                  ).trim();
+                  if (!taskId || sourceKey === row.key) return;
+                  event.preventDefault();
+                  onAssignTaskToSprint(
+                    taskId,
+                    row.key === "backlog" ? null : row.key,
+                  );
+                }}
                 onClick={() => {
                   onSelectSprint(row.key === "backlog" ? "" : row.key);
                   toggleExpanded(row.key);
                 }}
               >
                 <div className="backlog-row-main">
-                  <span className={`backlog-chevron ${isExpanded ? "expanded" : ""}`}>▾</span>
+                  <span
+                    className={`backlog-chevron ${isExpanded ? "expanded" : ""}`}
+                  >
+                    ▾
+                  </span>
                   <strong>{row.name}</strong>
                   <span className="muted">({row.tasks.length} work items)</span>
                 </div>
@@ -141,17 +188,55 @@ export default function BacklogView({
                     <span className="counter done">{greenPoints}</span>
                   </div>
                   {row.status === "active" && canManage ? (
-                    <button type="button" onClick={(event) => { event.stopPropagation(); onCompleteSprint(row.key); }}>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        const destinations = rows.filter(
+                          (candidate) =>
+                            candidate.key !== row.key &&
+                            candidate.key !== "backlog" &&
+                            candidate.status !== "completed",
+                        );
+                        setSprintCompleteDialog({
+                          sprintKey: row.key,
+                          sprintName: row.name,
+                          destinationSprintId: "",
+                          destinationOptions: destinations.map((item) => ({
+                            key: item.key,
+                            name: item.name,
+                            status: item.status,
+                          })),
+                        });
+                      }}
+                    >
                       Complete sprint
                     </button>
                   ) : null}
                   {row.status === "planned" && canManage ? (
-                    <button type="button" onClick={(event) => { event.stopPropagation(); onStartSprint(row.key); }}>
-                      Start sprint
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onStartSprint(row.key);
+                        }}
+                      >
+                        Start sprint
+                      </button>
+                    </>
                   ) : null}
-                  {row.status === "backlog" && canManage ? (
-                    <span className="muted">Add Sprint</span>
+                  {row.status === "planned" && canManage && row.tasks.length === 0 ? (
+                    <button
+                      type="button"
+                      className="ghost-btn"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onDeleteSprint(row.key);
+                      }}
+                    >
+                      Delete sprint
+                    </button>
                   ) : null}
                 </div>
               </div>
@@ -163,14 +248,29 @@ export default function BacklogView({
                         key={task.id}
                         type="button"
                         className="backlog-task-item"
+                        draggable={canManage}
+                        onDragStart={(event) => {
+                          event.dataTransfer.setData("text/task-id", String(task.id));
+                          event.dataTransfer.setData(
+                            "text/source-sprint-id",
+                            String(row.key),
+                          );
+                          event.dataTransfer.effectAllowed = "move";
+                        }}
                         onClick={() => onOpenTask(task.id)}
                       >
                         <span className="backlog-task-title">
-                          <span className="backlog-task-key muted">{displayTaskRef(task)}</span> {task.title}
+                          <span className="backlog-task-key muted">
+                            {displayTaskRef(task)}
+                          </span>{" "}
+                          {task.title}
                         </span>
                         <span className="muted">
                           {task.label ? `[${task.label}] · ` : ""}
-                          {task.priority} · SP {task.storyPoints}
+                          {task.priority} · SP{" "}
+                          {task.storyPoints == null || task.storyPoints === ""
+                            ? "-"
+                            : task.storyPoints}
                         </span>
                       </button>
                     ))
@@ -184,45 +284,163 @@ export default function BacklogView({
         })}
       </div>
       {showCreateSprintModal ? (
-        <div className="modal-overlay" role="presentation" onClick={() => setShowCreateSprintModal(false)}>
-          <div className="modal-card" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={() => setShowCreateSprintModal(false)}
+        >
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="panel-head">
               <h3>Create Sprint</h3>
-              <button type="button" className="ghost-btn" onClick={() => setShowCreateSprintModal(false)}>
-                Close
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={() => setShowCreateSprintModal(false)}
+              >
+                X
               </button>
             </div>
             <div className="project-form">
-              <input
-                placeholder="Sprint name"
-                value={createDraft.name}
-                onChange={(event) => setCreateDraft((prev) => ({ ...prev, name: event.target.value }))}
-              />
-              <div className="inline-form">
+              <label>
+                <span className="field-label">
+                  Sprint Name <span className="required-indicator">*</span>
+                </span>
                 <input
-                  type="date"
-                  value={createDraft.startDate}
+                  placeholder="Enter sprint name"
+                  value={createDraft.name}
                   onChange={(event) =>
-                    setCreateDraft((prev) => ({ ...prev, startDate: event.target.value }))
+                    setCreateDraft((prev) => ({
+                      ...prev,
+                      name: event.target.value,
+                    }))
                   }
                 />
-                <input
-                  type="date"
-                  value={createDraft.endDate}
-                  onChange={(event) => setCreateDraft((prev) => ({ ...prev, endDate: event.target.value }))}
-                />
+              </label>
+              <div className="inline-form">
+                <label>
+                  Start date
+                  <input
+                    type="date"
+                    value={createDraft.startDate}
+                    onChange={(event) =>
+                      setCreateDraft((prev) => ({
+                        ...prev,
+                        startDate: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  End date
+                  <input
+                    type="date"
+                    value={createDraft.endDate}
+                    onChange={(event) =>
+                      setCreateDraft((prev) => ({
+                        ...prev,
+                        endDate: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
               </div>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => setShowCreateSprintModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!createDraft.name.trim()) return;
+                    onCreateSprint(createDraft);
+                    setCreateDraft({ name: "", startDate: "", endDate: "" });
+                    setShowCreateSprintModal(false);
+                  }}
+                >
+                  Create Sprint
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {sprintCompleteDialog ? (
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={() => setSprintCompleteDialog(null)}
+        >
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="panel-head">
+              <h3>Complete sprint</h3>
               <button
                 type="button"
-                onClick={() => {
-                  if (!createDraft.name.trim()) return;
-                  onCreateSprint(createDraft);
-                  setCreateDraft({ name: "", startDate: "", endDate: "" });
-                  setShowCreateSprintModal(false);
-                }}
+                className="ghost-btn"
+                onClick={() => setSprintCompleteDialog(null)}
               >
-                Create Sprint
+                X
               </button>
+            </div>
+            <div className="project-form">
+              <p>
+                Move unfinished tasks in{" "}
+                <strong>{sprintCompleteDialog.sprintName}</strong> to:
+              </p>
+              <select
+                value={sprintCompleteDialog.destinationSprintId}
+                onChange={(event) =>
+                  setSprintCompleteDialog((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          destinationSprintId: event.target.value,
+                        }
+                      : prev,
+                  )
+                }
+              >
+                <option value="">Backlog</option>
+                {sprintCompleteDialog.destinationOptions.map((item) => (
+                  <option key={item.key} value={item.key}>
+                    {item.name} ({item.status})
+                  </option>
+                ))}
+              </select>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => setSprintCompleteDialog(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onCompleteSprint(
+                      sprintCompleteDialog.sprintKey,
+                      sprintCompleteDialog.destinationSprintId || null,
+                    );
+                    setSprintCompleteDialog(null);
+                  }}
+                >
+                  Complete sprint
+                </button>
+              </div>
             </div>
           </div>
         </div>

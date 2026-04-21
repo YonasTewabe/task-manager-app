@@ -12,9 +12,34 @@ import TaskDrawer from "./components/TaskDrawer";
 import UserAdminView from "./components/UserAdminView";
 import MainLayout from "./components/Layout/MainLayout";
 import { apiRequest, getStoredToken, setStoredToken } from "./api/client";
+import { PRIORITY_OPTIONS } from "./constants/priorities.js";
+import { UNASSIGNED_AVATAR_SRC } from "./constants/unassignedAvatar.js";
+import {
+  DEFAULT_WORK_TYPE_VALUES,
+  getWorkTypeMeta,
+} from "./constants/workTypes.js";
 import { DEFAULT_WORKFLOW_STAGES } from "./workflowDefaults.js";
 
 const PROJECT_ROUTE = /^\/project\/([^/]+)\/(board|backlog|settings)$/;
+const USER_AVATAR_COLORS = [
+  "#0B6BCB",
+  "#6F42C1",
+  "#0D9488",
+  "#B45309",
+  "#BE185D",
+  "#475569",
+  "#1D4ED8",
+  "#0F766E",
+];
+
+function getUserAvatarColor(userId) {
+  const value = String(userId || "");
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) | 0;
+  }
+  return USER_AVATAR_COLORS[Math.abs(hash) % USER_AVATAR_COLORS.length];
+}
 
 function parseRoute(pathname) {
   const normalized = (pathname || "").replace(/\/+$/, "");
@@ -60,18 +85,19 @@ function App() {
   const [projects, setProjects] = useState([]);
   const [projectSettings, setProjectSettings] = useState(null);
   const [columns, setColumns] = useState([]);
+  const [boardTotalsByStatus, setBoardTotalsByStatus] = useState({});
   const [backlogTasks, setBacklogTasks] = useState([]);
   const [allTasks, setAllTasks] = useState([]);
-  const [sprintTasks, setSprintTasks] = useState([]);
+  const [, setSprintTasks] = useState([]);
   const [selectedSprintId, setSelectedSprintId] = useState("");
   const [currentProjectId, setCurrentProjectId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [taskTitle, setTaskTitle] = useState("");
-  const [storyPoints, setStoryPoints] = useState(3);
+  const [storyPoints, setStoryPoints] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
-  const [taskStatus, setTaskStatus] = useState("todo");
   const [taskPriority, setTaskPriority] = useState("medium");
+  const [taskType, setTaskType] = useState("task");
   const [taskLabel, setTaskLabel] = useState("");
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
   const [showFilterModal, setShowFilterModal] = useState(false);
@@ -83,7 +109,6 @@ function App() {
   const [dashboardAssignedTasks, setDashboardAssignedTasks] = useState([]);
   const [filters, setFilters] = useState({
     assigneeId: "",
-    status: "",
     priority: "",
     label: "",
     search: "",
@@ -91,7 +116,6 @@ function App() {
   const [filterDraft, setFilterDraft] = useState({
     sprintId: "",
     assigneeId: "",
-    status: "",
     priority: "",
     label: "",
   });
@@ -108,8 +132,44 @@ function App() {
     const activeSprint = sprints.find((sprint) => sprint.status === "active");
     return activeSprint ? String(activeSprint.id) : "";
   }, [sprints]);
+  const canManage = currentUser?.role === "admin";
+
+  const workflowStages = useMemo(
+    () =>
+      projectSettings?.boardCardFields?.workflowStages?.length > 0
+        ? projectSettings.boardCardFields.workflowStages
+        : DEFAULT_WORKFLOW_STAGES,
+    [projectSettings?.boardCardFields?.workflowStages],
+  );
+
+  const visibleProjects = useMemo(() => {
+    if (!currentUser) return [];
+    if (currentUser.role === "admin") return projects;
+    return projects.filter((project) =>
+      (project.members || []).some(
+        (member) => String(member.id) === String(currentUser.id),
+      ),
+    );
+  }, [projects, currentUser]);
+
+  const projectById = useMemo(() => {
+    const map = new Map();
+    projects.forEach((p) => map.set(String(p.id), p));
+    return map;
+  }, [projects]);
+  const projectUsers = useMemo(() => {
+    if (!currentProjectId) return [];
+    const memberIds = new Set(
+      (projectById.get(String(currentProjectId))?.members || []).map((member) =>
+        String(member.id),
+      ),
+    );
+    return users
+      .filter((user) => memberIds.has(String(user.id)))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [currentProjectId, projectById, users]);
   const assigneeFilterItems = useMemo(() => {
-    const sortedUsers = [...users].sort((a, b) => a.name.localeCompare(b.name));
+    const sortedUsers = [...projectUsers];
     const me = currentUser
       ? sortedUsers.find((user) => String(user.id) === String(currentUser.id))
       : null;
@@ -154,33 +214,7 @@ function App() {
       });
     });
     return items;
-  }, [users, currentUser]);
-
-  const canManage = currentUser?.role === "admin";
-
-  const workflowStages = useMemo(
-    () =>
-      projectSettings?.boardCardFields?.workflowStages?.length > 0
-        ? projectSettings.boardCardFields.workflowStages
-        : DEFAULT_WORKFLOW_STAGES,
-    [projectSettings?.boardCardFields?.workflowStages],
-  );
-
-  const visibleProjects = useMemo(() => {
-    if (!currentUser) return [];
-    if (currentUser.role === "admin") return projects;
-    return projects.filter((project) =>
-      (project.members || []).some(
-        (member) => String(member.id) === String(currentUser.id),
-      ),
-    );
-  }, [projects, currentUser]);
-
-  const projectById = useMemo(() => {
-    const map = new Map();
-    projects.forEach((p) => map.set(String(p.id), p));
-    return map;
-  }, [projects]);
+  }, [projectUsers, currentUser]);
 
   const fetchMyAssignedTasks = async () => {
     if (!token || !currentUser) return;
@@ -232,7 +266,6 @@ function App() {
     if (projectId) params.set("projectId", String(projectId));
     if (activeFilters.assigneeId)
       params.set("assigneeId", activeFilters.assigneeId);
-    if (activeFilters.status) params.set("status", activeFilters.status);
     if (activeFilters.priority) params.set("priority", activeFilters.priority);
     if (activeFilters.label.trim())
       params.set("label", activeFilters.label.trim());
@@ -256,6 +289,30 @@ function App() {
     setColumns(data.columns || []);
   };
 
+  const fetchBoardTotals = async (
+    sprintId,
+    projectId = currentProjectId,
+    activeFilters = filters,
+  ) => {
+    if (!projectId || !sprintId) {
+      setBoardTotalsByStatus({});
+      return;
+    }
+    const filtersWithoutAssignee = { ...activeFilters, assigneeId: "" };
+    const data = await apiRequest(
+      `/task-management/board${buildTaskQuery(
+        sprintId,
+        projectId,
+        filtersWithoutAssignee,
+      )}`,
+    );
+    const totals = {};
+    (data.columns || []).forEach((column) => {
+      totals[column.status] = (column.tasks || []).length;
+    });
+    setBoardTotalsByStatus(totals);
+  };
+
   const fetchBacklog = async (
     projectId = currentProjectId,
     activeFilters = filters,
@@ -268,7 +325,6 @@ function App() {
     params.set("projectId", String(projectId));
     if (activeFilters.assigneeId)
       params.set("assigneeId", activeFilters.assigneeId);
-    if (activeFilters.status) params.set("status", activeFilters.status);
     if (activeFilters.priority) params.set("priority", activeFilters.priority);
     if (activeFilters.label.trim())
       params.set("label", activeFilters.label.trim());
@@ -293,7 +349,6 @@ function App() {
     params.set("projectId", String(projectId));
     if (activeFilters.assigneeId)
       params.set("assigneeId", activeFilters.assigneeId);
-    if (activeFilters.status) params.set("status", activeFilters.status);
     if (activeFilters.priority) params.set("priority", activeFilters.priority);
     if (activeFilters.label.trim())
       params.set("label", activeFilters.label.trim());
@@ -336,6 +391,7 @@ function App() {
   ) => {
     if (!projectId) {
       setColumns([]);
+      setBoardTotalsByStatus({});
       setBacklogTasks([]);
       setAllTasks([]);
       setSprints([]);
@@ -350,9 +406,18 @@ function App() {
       setSelectedSprintId("");
       sprintId = "";
     }
-    const boardSprintId = activeView === "board" ? activeSprintId : sprintId;
+    const latestActiveSprint = latestSprints.find(
+      (sprint) => sprint.status === "active",
+    );
+    const boardSprintId =
+      activeView === "board" ? String(latestActiveSprint?.id || "") : sprintId;
     await Promise.all([
-      fetchBoard(boardSprintId, projectId, activeFilters),
+      boardSprintId
+        ? fetchBoard(boardSprintId, projectId, activeFilters)
+        : Promise.resolve(setColumns([])),
+      activeView === "board" && boardSprintId
+        ? fetchBoardTotals(boardSprintId, projectId, activeFilters)
+        : Promise.resolve(setBoardTotalsByStatus({})),
       fetchBacklog(projectId, activeFilters),
       fetchAllTasks(projectId, activeFilters),
     ]);
@@ -364,7 +429,6 @@ function App() {
       return;
     }
     fetchBootstrap().catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   useEffect(() => {
@@ -375,21 +439,48 @@ function App() {
     fetchProjectSettings(currentProjectId).catch(() =>
       setProjectSettings(null),
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, currentProjectId]);
 
-  useEffect(() => {
-    const d = projectSettings?.generalRules?.defaultStoryPoints;
-    if (d != null && !Number.isNaN(Number(d))) {
-      setStoryPoints(Number(d));
-    }
-  }, [projectSettings?.generalRules?.defaultStoryPoints]);
+  const projectLabels = useMemo(() => {
+    const labels = projectSettings?.generalRules?.labels;
+    if (!Array.isArray(labels)) return [];
+    const cleaned = labels
+      .map((label) => String(label || "").trim())
+      .filter(Boolean);
+    return [...new Set(cleaned)];
+  }, [projectSettings?.generalRules?.labels]);
+  const projectTypes = useMemo(() => {
+    const rawTypes = projectSettings?.generalRules?.types;
+    const source =
+      Array.isArray(rawTypes) && rawTypes.length
+        ? rawTypes
+        : DEFAULT_WORK_TYPE_VALUES;
+    return [
+      ...new Set(
+        source
+          .map((type) =>
+            String(type || "")
+              .trim()
+              .toLowerCase(),
+          )
+          .filter(Boolean),
+      ),
+    ];
+  }, [projectSettings?.generalRules?.types]);
 
   useEffect(() => {
     if (!token || loading || !currentProjectId) return;
     const boardSprintId =
       activeView === "board" ? activeSprintId : selectedSprintId;
-    fetchBoard(boardSprintId, currentProjectId, filters).catch(() => {});
+    if (!boardSprintId) {
+      setColumns([]);
+      setBoardTotalsByStatus({});
+      return;
+    }
+    Promise.all([
+      fetchBoard(boardSprintId, currentProjectId, filters),
+      fetchBoardTotals(boardSprintId, currentProjectId, filters),
+    ]).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSprintId, activeView, filters, activeSprintId, currentProjectId]);
 
@@ -577,9 +668,10 @@ function App() {
       method: "POST",
       body: JSON.stringify({
         title: taskTitle.trim(),
-        storyPoints,
-        status: taskStatus,
+        storyPoints: storyPoints === "" ? null : Number(storyPoints),
+        status: "todo",
         priority: taskPriority,
+        type: taskType,
         label: taskLabel.trim(),
         projectId: currentProjectId,
         assigneeId: assigneeId || null,
@@ -587,10 +679,10 @@ function App() {
       }),
     });
     setTaskTitle("");
-    setStoryPoints(3);
+    setStoryPoints("");
     setAssigneeId("");
-    setTaskStatus("todo");
     setTaskPriority("medium");
+    setTaskType("task");
     setTaskLabel("");
     setShowCreateTaskModal(false);
     await refreshViews(selectedSprintId, currentProjectId, filters);
@@ -753,7 +845,7 @@ function App() {
     notify("Sprint created.");
   };
 
-  const updateSprint = async (sprintId, draft) => {
+  const _updateSprint = async (sprintId, draft) => {
     const updated = await apiRequest(`/task-management/sprints/${sprintId}`, {
       method: "PATCH",
       body: JSON.stringify(draft),
@@ -834,26 +926,27 @@ function App() {
   };
 
   const startSprint = async (sprintId) => {
-    await apiRequest(`/task-management/sprints/${sprintId}/start`, {
-      method: "POST",
-      body: "{}",
-    });
-    setSprints(
-      await apiRequest(
-        `/task-management/sprints?projectId=${encodeURIComponent(currentProjectId)}`,
-      ),
-    );
-    await fetchSprintTasks(sprintId, currentProjectId);
-    await refreshViews(selectedSprintId, currentProjectId, filters);
+    try {
+      await apiRequest(`/task-management/sprints/${sprintId}/start`, {
+        method: "POST",
+        body: "{}",
+      });
+      setSprints(
+        await apiRequest(
+          `/task-management/sprints?projectId=${encodeURIComponent(currentProjectId)}`,
+        ),
+      );
+      await fetchSprintTasks(sprintId, currentProjectId);
+      await refreshViews(selectedSprintId, currentProjectId, filters);
+    } catch (error) {
+      notify(error.message || "Failed to start sprint.", "error");
+    }
   };
 
-  const completeSprint = async (sprintId) => {
-    const moveIncompleteToBacklog =
-      projectSettings?.generalRules?.autoMoveToBacklogOnSprintComplete !==
-      false;
+  const completeSprint = async (sprintId, moveIncompleteToSprintId = null) => {
     await apiRequest(`/task-management/sprints/${sprintId}/complete`, {
       method: "POST",
-      body: JSON.stringify({ moveIncompleteToBacklog }),
+      body: JSON.stringify({ moveIncompleteToSprintId }),
     });
     setSprints(
       await apiRequest(
@@ -864,7 +957,32 @@ function App() {
     await fetchSprintTasks(selectedSprintId, currentProjectId);
   };
 
-  const addTasksToSprint = async (sprintId, taskIds) => {
+  const deleteSprint = async (sprintId) => {
+    await apiRequest(`/task-management/sprints/${sprintId}`, {
+      method: "DELETE",
+    });
+    setSprints(
+      await apiRequest(
+        `/task-management/sprints?projectId=${encodeURIComponent(currentProjectId)}`,
+      ),
+    );
+    await refreshViews(selectedSprintId, currentProjectId, filters);
+  };
+
+  const assignTaskToSprintFromBacklog = async (taskId, sprintId) => {
+    try {
+      await apiRequest(`/task-management/tasks/${taskId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ sprintId: sprintId || null }),
+      });
+      await refreshViews(selectedSprintId, currentProjectId, filters);
+      notify("Task moved.");
+    } catch (error) {
+      notify(error.message || "Failed to move task.", "error");
+    }
+  };
+
+  const _addTasksToSprint = async (sprintId, taskIds) => {
     await apiRequest(`/task-management/sprints/${sprintId}/tasks`, {
       method: "POST",
       body: JSON.stringify({ taskIds }),
@@ -876,7 +994,7 @@ function App() {
     ]);
   };
 
-  const removeTaskFromSprint = async (sprintId, taskId) => {
+  const _removeTaskFromSprint = async (sprintId, taskId) => {
     await apiRequest(`/task-management/sprints/${sprintId}/tasks/${taskId}`, {
       method: "DELETE",
     });
@@ -898,15 +1016,23 @@ function App() {
     );
   }
 
-  const safeColumns = columns.length
-    ? columns
-    : workflowStages.map((s) => ({
-        status: s.key,
-        name: s.name,
-        description: s.description,
-        badge: s.badge,
-        tasks: [],
-      }));
+  const safeColumns = (
+    columns.length
+      ? columns
+      : workflowStages.map((s) => ({
+          status: s.key,
+          name: s.name,
+          description: s.description,
+          counterGroup: s.counterGroup,
+          tasks: [],
+        }))
+  ).sort((a, b) => {
+    const rank = { upcoming: 0, active: 1, done: 2 };
+    const aRank = rank[a.counterGroup] ?? 1;
+    const bRank = rank[b.counterGroup] ?? 1;
+    if (aRank !== bRank) return aRank - bRank;
+    return 0;
+  });
 
   return (
     <MainLayout
@@ -946,6 +1072,11 @@ function App() {
                       key={item.id}
                       type="button"
                       className={`chip-avatar ${item.isUnassigned ? "chip-avatar-unassigned" : ""} ${filters.assigneeId === item.id ? "active" : ""}`}
+                      style={
+                        item.isUnassigned
+                          ? undefined
+                          : { backgroundColor: getUserAvatarColor(item.id) }
+                      }
                       onClick={() =>
                         setFilters((prev) => ({
                           ...prev,
@@ -955,7 +1086,16 @@ function App() {
                       }
                       title={item.label}
                     >
-                      {item.isUnassigned ? "◯" : item.initials}
+                      {item.isUnassigned ? (
+                        <img
+                          className="avatar-icon"
+                          src={UNASSIGNED_AVATAR_SRC}
+                          alt=""
+                          aria-hidden="true"
+                        />
+                      ) : (
+                        item.initials
+                      )}
                     </button>
                   ))}
                 </div>
@@ -974,7 +1114,6 @@ function App() {
                               ? ""
                               : selectedSprintId || "",
                           assigneeId: filters.assigneeId,
-                          status: filters.status,
                           priority: filters.priority,
                           label: filters.label,
                         });
@@ -992,9 +1131,6 @@ function App() {
                         <div className="filter-popover-head">
                           <div>
                             <h3>Filter</h3>
-                            <p className="muted">
-                              Select all filters that apply
-                            </p>
                           </div>
                           <button
                             type="button"
@@ -1039,28 +1175,9 @@ function App() {
                             >
                               <option value="">Select</option>
                               <option value="unassigned">Unassigned</option>
-                              {users.map((user) => (
+                              {projectUsers.map((user) => (
                                 <option key={user.id} value={user.id}>
                                   {user.name}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <label>
-                            Status
-                            <select
-                              value={filterDraft.status}
-                              onChange={(event) =>
-                                setFilterDraft((prev) => ({
-                                  ...prev,
-                                  status: event.target.value,
-                                }))
-                              }
-                            >
-                              <option value="">Select</option>
-                              {workflowStages.map((s) => (
-                                <option key={s.key} value={s.key}>
-                                  {s.name}
                                 </option>
                               ))}
                             </select>
@@ -1077,15 +1194,16 @@ function App() {
                               }
                             >
                               <option value="">Select</option>
-                              <option value="low">Low</option>
-                              <option value="medium">Medium</option>
-                              <option value="high">High</option>
+                              {PRIORITY_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
                             </select>
                           </label>
                           <label className="filter-popover-span">
                             Label
-                            <input
-                              placeholder="Select label"
+                            <select
                               value={filterDraft.label}
                               onChange={(event) =>
                                 setFilterDraft((prev) => ({
@@ -1093,7 +1211,14 @@ function App() {
                                   label: event.target.value,
                                 }))
                               }
-                            />
+                            >
+                              <option value="">Select</option>
+                              {projectLabels.map((label) => (
+                                <option key={label} value={label}>
+                                  {label}
+                                </option>
+                              ))}
+                            </select>
                           </label>
                         </div>
                         <div className="filter-popover-actions">
@@ -1104,7 +1229,6 @@ function App() {
                               setFilterDraft({
                                 sprintId: "",
                                 assigneeId: "",
-                                status: "",
                                 priority: "",
                                 label: "",
                               })
@@ -1121,14 +1245,13 @@ function App() {
                               setFilters((prev) => ({
                                 ...prev,
                                 assigneeId: filterDraft.assigneeId,
-                                status: filterDraft.status,
                                 priority: filterDraft.priority,
                                 label: filterDraft.label,
                               }));
                               setShowFilterModal(false);
                             }}
                           >
-                            Save Filter
+                            Filter
                           </button>
                         </div>
                       </div>
@@ -1180,59 +1303,100 @@ function App() {
                   className="ghost-btn"
                   onClick={() => setShowCreateTaskModal(false)}
                 >
-                  Close
+                  X
                 </button>
               </div>
               <form className="project-form" onSubmit={createTask}>
-                <input
-                  placeholder="Task title"
-                  value={taskTitle}
-                  onChange={(event) => setTaskTitle(event.target.value)}
-                />
-                <input
-                  type="number"
-                  min="1"
-                  max="21"
-                  value={storyPoints}
-                  onChange={(event) =>
-                    setStoryPoints(Number(event.target.value))
-                  }
-                />
-                <select
-                  value={assigneeId}
-                  onChange={(event) => setAssigneeId(event.target.value)}
-                >
-                  <option value="">Unassigned</option>
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.name}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={taskStatus}
-                  onChange={(event) => setTaskStatus(event.target.value)}
-                >
-                  {workflowStages.map((s) => (
-                    <option key={s.key} value={s.key}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={taskPriority}
-                  onChange={(event) => setTaskPriority(event.target.value)}
-                >
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                </select>
-                <input
-                  placeholder="Label (e.g. frontend)"
-                  value={taskLabel}
-                  onChange={(event) => setTaskLabel(event.target.value)}
-                />
-                <button type="submit">Create Task</button>
+                <label>
+                  <span className="field-label">
+                    Task title <span className="required-indicator">*</span>
+                  </span>
+                  <input
+                    placeholder="Enter task title"
+                    value={taskTitle}
+                    onChange={(event) => setTaskTitle(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Story points
+                  <input
+                    type="number"
+                    min="1"
+                    max="21"
+                    placeholder="Enter story points"
+                    value={storyPoints}
+                    onChange={(event) => setStoryPoints(event.target.value)}
+                  />
+                </label>
+                <label>
+                  <span className="field-label">
+                    Work type <span className="required-indicator">*</span>
+                  </span>
+                  <select
+                    value={taskType}
+                    onChange={(event) => setTaskType(event.target.value)}
+                  >
+                    {projectTypes.map((type) => {
+                      const meta = getWorkTypeMeta(type);
+                      return (
+                        <option key={type} value={type}>
+                          {meta.label}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </label>
+                <label>
+                  Assignee
+                  <select
+                    value={assigneeId}
+                    onChange={(event) => setAssigneeId(event.target.value)}
+                  >
+                    <option value="">Unassigned</option>
+                    {projectUsers.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Priority
+                  <select
+                    value={taskPriority}
+                    onChange={(event) => setTaskPriority(event.target.value)}
+                  >
+                    {PRIORITY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Label
+                  <select
+                    value={taskLabel}
+                    onChange={(event) => setTaskLabel(event.target.value)}
+                  >
+                    <option value="">Select label</option>
+                    {projectLabels.map((label) => (
+                      <option key={label} value={label}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="modal-actions">
+                  <button
+                    type="button"
+                    className="ghost-btn"
+                    onClick={() => setShowCreateTaskModal(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit">Create Task</button>
+                </div>
               </form>
             </div>
           </div>
@@ -1248,6 +1412,8 @@ function App() {
             canManage={canManage}
             onStartSprint={startSprint}
             onCompleteSprint={completeSprint}
+            onDeleteSprint={deleteSprint}
+            onAssignTaskToSprint={assignTaskToSprintFromBacklog}
             onCreateSprint={createSprint}
             onAddTask={() => setShowCreateTaskModal(true)}
             onOpenTask={openTask}
@@ -1257,8 +1423,10 @@ function App() {
         {activeView === "board" ? (
           <BoardView
             columns={safeColumns}
-            workflowStages={workflowStages}
             usersById={usersById}
+            userAvatarColor={getUserAvatarColor}
+            boardTotalsByStatus={boardTotalsByStatus}
+            assigneeFilterActive={Boolean(filters.assigneeId)}
             onMove={moveTask}
             onOpenTask={openTask}
           />
@@ -1312,6 +1480,7 @@ function App() {
           taskBundle={taskBundle}
           users={users}
           workflowStages={workflowStages}
+          labels={projectLabels}
           onClose={() => setTaskBundle(null)}
           onSaveTask={saveTask}
           onAddComment={addComment}

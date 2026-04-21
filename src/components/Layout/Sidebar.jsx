@@ -70,7 +70,7 @@ export default function Sidebar({
                   <button
                     type="button"
                     className={`sidebar-link sidebar-project-head ${expanded ? "is-open" : ""}`}
-                    onClick={() => onNavigateProject(project.id, "settings")}
+                    onClick={() => onNavigateProject(project.id, "board")}
                     title={project.name}
                   >
                     {!collapsed ? (

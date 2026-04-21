@@ -65,7 +65,6 @@ async function seed() {
 
 seed()
   .then(async () => {
-    console.log("Seed complete. Admin: admin@local.dev / Admin123!");
     await pool.end();
   })
   .catch(async (error) => {
