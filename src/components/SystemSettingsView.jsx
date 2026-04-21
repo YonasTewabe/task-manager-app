@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import Modal from "./ui/Modal";
 import {
   BUILTIN_STAGE_KEYS,
   DEFAULT_WORKFLOW_STAGES,
@@ -592,7 +593,12 @@ export default function SystemSettingsView({
     stages,
   );
   const dialogDestinationOptions = stageDeleteDialog
-    ? stages.filter((stage) => stage.key !== stageDeleteDialog.stageKey)
+    ? stages.filter(
+        (stage) =>
+          stage.key !== stageDeleteDialog.stageKey &&
+          String(stage.counterGroup || "") ===
+            String(stageDeleteDialog.counterGroup || ""),
+      )
     : [];
 
   const setWorkflowTransitions = (transitions) => {
@@ -608,18 +614,29 @@ export default function SystemSettingsView({
     }));
   };
 
-  const toggleTransition = (from, to) => {
+  const addTransition = (from, to) => {
     const transitions = [...workflowTransitions];
     const idx = transitions.findIndex((t) => t.from === from && t.to === to);
-    if (idx >= 0) transitions.splice(idx, 1);
-    else
-      transitions.push({
-        from,
-        to,
-        allowAllUsers: false,
-        allowedUserIds: [],
-        allowedGroupIds: [],
-      });
+    if (idx >= 0) {
+      onNotify?.("This workflow move already exists.", "error");
+      return false;
+    }
+    transitions.push({
+      from,
+      to,
+      allowAllUsers: false,
+      allowedUserIds: [],
+      allowedGroupIds: [],
+    });
+    setWorkflowTransitions(transitions);
+    return true;
+  };
+
+  const removeTransition = (from, to) => {
+    const transitions = [...workflowTransitions];
+    const idx = transitions.findIndex((t) => t.from === from && t.to === to);
+    if (idx < 0) return;
+    transitions.splice(idx, 1);
     setWorkflowTransitions(transitions);
   };
 
@@ -898,14 +915,18 @@ export default function SystemSettingsView({
                         className="ghost-btn workflow-stage-remove"
                         onClick={() => {
                           const destinations = stages.filter(
-                            (candidate) => candidate.key !== stage.key,
+                            (candidate) =>
+                              candidate.key !== stage.key &&
+                              String(candidate.counterGroup || "") ===
+                                String(stage.counterGroup || ""),
                           );
                           if (!destinations.length) return;
                           setStageDeleteDialog({
                             index,
                             stageKey: stage.key,
                             stageName: stage.name,
-                            destinationKey: destinations[0].key,
+                            counterGroup: stage.counterGroup || "",
+                            destinationKey: "",
                           });
                         }}
                       >
@@ -1090,9 +1111,11 @@ export default function SystemSettingsView({
                     workflowFromKey === workflowToKey
                   }
                   onClick={() => {
-                    toggleTransition(workflowFromKey, workflowToKey);
-                    setWorkflowFromKey("");
-                    setWorkflowToKey("");
+                    const created = addTransition(workflowFromKey, workflowToKey);
+                    if (created) {
+                      setWorkflowFromKey("");
+                      setWorkflowToKey("");
+                    }
                   }}
                 >
                   Add move
@@ -1113,7 +1136,7 @@ export default function SystemSettingsView({
                           className="ghost-btn"
                           disabled={!canManage}
                           onClick={() =>
-                            toggleTransition(transition.from, transition.to)
+                            removeTransition(transition.from, transition.to)
                           }
                         >
                           Remove
@@ -1238,17 +1261,7 @@ export default function SystemSettingsView({
         </div>
       </div>
       {showAddStageModal ? (
-        <div
-          className="modal-overlay"
-          role="presentation"
-          onClick={() => setShowAddStageModal(false)}
-        >
-          <div
-            className="modal-card"
-            role="dialog"
-            aria-modal="true"
-            onClick={(event) => event.stopPropagation()}
-          >
+        <Modal open={showAddStageModal} onOpenChange={setShowAddStageModal}>
             <div className="panel-head">
               <h3>Add stage</h3>
               <button
@@ -1343,21 +1356,10 @@ export default function SystemSettingsView({
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
       {showAddLabelModal ? (
-        <div
-          className="modal-overlay"
-          role="presentation"
-          onClick={() => setShowAddLabelModal(false)}
-        >
-          <div
-            className="modal-card"
-            role="dialog"
-            aria-modal="true"
-            onClick={(event) => event.stopPropagation()}
-          >
+        <Modal open={showAddLabelModal} onOpenChange={setShowAddLabelModal}>
             <div className="panel-head">
               <h3>Add Label</h3>
               <button
@@ -1399,21 +1401,10 @@ export default function SystemSettingsView({
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
       {showAddTypeModal ? (
-        <div
-          className="modal-overlay"
-          role="presentation"
-          onClick={() => setShowAddTypeModal(false)}
-        >
-          <div
-            className="modal-card"
-            role="dialog"
-            aria-modal="true"
-            onClick={(event) => event.stopPropagation()}
-          >
+        <Modal open={showAddTypeModal} onOpenChange={setShowAddTypeModal}>
             <div className="panel-head">
               <h3>Add Type</h3>
               <button
@@ -1455,21 +1446,10 @@ export default function SystemSettingsView({
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
       {showAddVersionModal ? (
-        <div
-          className="modal-overlay"
-          role="presentation"
-          onClick={() => setShowAddVersionModal(false)}
-        >
-          <div
-            className="modal-card"
-            role="dialog"
-            aria-modal="true"
-            onClick={(event) => event.stopPropagation()}
-          >
+        <Modal open={showAddVersionModal} onOpenChange={setShowAddVersionModal}>
             <div className="panel-head">
               <h3>Add Version</h3>
               <button
@@ -1511,8 +1491,7 @@ export default function SystemSettingsView({
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
 
       <div className="settings-actions">
@@ -1521,17 +1500,12 @@ export default function SystemSettingsView({
         ) : null}
       </div>
       {stageDeleteDialog ? (
-        <div
-          className="modal-overlay"
-          role="presentation"
-          onClick={() => setStageDeleteDialog(null)}
+        <Modal
+          open={Boolean(stageDeleteDialog)}
+          onOpenChange={(open) => {
+            if (!open) setStageDeleteDialog(null);
+          }}
         >
-          <div
-            className="modal-card"
-            role="dialog"
-            aria-modal="true"
-            onClick={(event) => event.stopPropagation()}
-          >
             <div className="panel-head">
               <h3>Delete column</h3>
               <button
@@ -1556,6 +1530,7 @@ export default function SystemSettingsView({
                   )
                 }
               >
+                <option value="">Select destination column</option>
                 {dialogDestinationOptions.map((stage) => (
                   <option key={stage.key} value={stage.key}>
                     {stage.name}
@@ -1572,7 +1547,9 @@ export default function SystemSettingsView({
                 </button>
                 <button
                   type="button"
+                  disabled={!stageDeleteDialog.destinationKey}
                   onClick={() => {
+                    if (!stageDeleteDialog.destinationKey) return;
                     removeStageAt(
                       stageDeleteDialog.index,
                       stageDeleteDialog.destinationKey,
@@ -1584,8 +1561,7 @@ export default function SystemSettingsView({
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
     </section>
   );

@@ -11,6 +11,7 @@ import SystemSettingsView from "./components/SystemSettingsView";
 import TaskDrawer from "./components/TaskDrawer";
 import UserAdminView from "./components/UserAdminView";
 import MainLayout from "./components/Layout/MainLayout";
+import Modal from "./components/ui/Modal";
 import { apiRequest, getStoredToken, setStoredToken } from "./api/client";
 import { PRIORITY_OPTIONS } from "./constants/priorities.js";
 import { UNASSIGNED_AVATAR_SRC } from "./constants/unassignedAvatar.js";
@@ -535,9 +536,7 @@ function App() {
     if (!Array.isArray(versions)) return [];
     return [
       ...new Set(
-        versions
-          .map((version) => String(version || "").trim())
-          .filter(Boolean),
+        versions.map((version) => String(version || "").trim()).filter(Boolean),
       ),
     ];
   }, [projectSettings?.generalRules?.versions]);
@@ -549,8 +548,7 @@ function App() {
   useEffect(() => {
     if (!token || loading || !currentProjectId) return;
     if (activeView !== "board") return;
-    const boardSprintId =
-      activeSprintId || selectedSprintId;
+    const boardSprintId = activeSprintId || selectedSprintId;
     if (!boardSprintId) {
       setColumns([]);
       setBoardTotalsByStatus({});
@@ -564,7 +562,8 @@ function App() {
   }, [selectedSprintId, activeView, filters, activeSprintId, currentProjectId]);
 
   useEffect(() => {
-    if (!token || loading || !currentProjectId || activeView !== "backlog") return;
+    if (!token || loading || !currentProjectId || activeView !== "backlog")
+      return;
     Promise.all([
       fetchSprints(currentProjectId),
       fetchBacklog(currentProjectId, filters, selectedSprintId),
@@ -1050,10 +1049,13 @@ function App() {
 
   const updateProject = async (projectId, draft) => {
     try {
-      const updated = await apiRequest(`/task-management/projects/${projectId}`, {
-        method: "PATCH",
-        body: JSON.stringify(draft),
-      });
+      const updated = await apiRequest(
+        `/task-management/projects/${projectId}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(draft),
+        },
+      );
       setProjects((prev) =>
         prev.map((project) => (project.id === updated.id ? updated : project)),
       );
@@ -1244,7 +1246,7 @@ function App() {
       onNavigateMain={handleNavigateMain}
       onNavigateProject={handleNavigateProject}
     >
-      <div className="jira-shell">
+      <div className={activeView === "dashboard" ? undefined : "jira-shell"}>
         {(activeView === "board" || activeView === "backlog") &&
         currentProjectId ? (
           <section
@@ -1377,7 +1379,10 @@ function App() {
                                 >
                                   <option value="">Select</option>
                                   {PRIORITY_OPTIONS.map((option) => (
-                                    <option key={option.value} value={option.value}>
+                                    <option
+                                      key={option.value}
+                                      value={option.value}
+                                    >
                                       {option.label}
                                     </option>
                                   ))}
@@ -1523,7 +1528,7 @@ function App() {
         {activeView === "dashboard" ? (
           <DashboardView
             currentUser={currentUser}
-            projects={visibleProjects}
+            projects={sidebarProjects}
             assignedTasks={dashboardAssignedTasks}
             projectById={projectById}
             workflowStages={workflowStages}
@@ -1533,135 +1538,127 @@ function App() {
           />
         ) : null}
         {showCreateTaskModal ? (
-          <div
-            className="modal-overlay"
-            role="presentation"
-            onClick={() => setShowCreateTaskModal(false)}
+          <Modal
+            open={showCreateTaskModal}
+            onOpenChange={setShowCreateTaskModal}
           >
-            <div
-              className="modal-card"
-              role="dialog"
-              aria-modal="true"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="panel-head">
-                <h3>Create Task</h3>
+            <div className="panel-head">
+              <h3>Create Task</h3>
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={() => setShowCreateTaskModal(false)}
+              >
+                X
+              </button>
+            </div>
+            <form className="project-form" onSubmit={createTask}>
+              <label>
+                <span className="field-label">
+                  Task title <span className="required-indicator">*</span>
+                </span>
+                <input
+                  placeholder="Enter task title"
+                  value={taskTitle}
+                  onChange={(event) => setTaskTitle(event.target.value)}
+                />
+              </label>
+              <label>
+                Story points
+                <input
+                  type="number"
+                  min="1"
+                  max="21"
+                  placeholder="Enter story points"
+                  value={storyPoints}
+                  onChange={(event) => setStoryPoints(event.target.value)}
+                />
+              </label>
+              <label>
+                <span className="field-label">
+                  Work type <span className="required-indicator">*</span>
+                </span>
+                <select
+                  value={taskType}
+                  onChange={(event) => setTaskType(event.target.value)}
+                >
+                  {projectTypes.map((type) => {
+                    const meta = getWorkTypeMeta(type);
+                    return (
+                      <option key={type} value={type}>
+                        {meta.label}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+              <label>
+                Assignee
+                <select
+                  value={assigneeId}
+                  onChange={(event) => setAssigneeId(event.target.value)}
+                >
+                  <option value="">Unassigned</option>
+                  {projectUsers.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Priority
+                <select
+                  value={taskPriority}
+                  onChange={(event) => setTaskPriority(event.target.value)}
+                >
+                  {PRIORITY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Label
+                <select
+                  value={taskLabel}
+                  onChange={(event) => setTaskLabel(event.target.value)}
+                >
+                  <option value="">Select label</option>
+                  {projectLabels.map((label) => (
+                    <option key={label} value={label}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Version
+                <select
+                  value={taskVersion}
+                  onChange={(event) => setTaskVersion(event.target.value)}
+                >
+                  <option value="">None</option>
+                  {projectVersions.map((version) => (
+                    <option key={version} value={version}>
+                      {version}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="modal-actions">
                 <button
                   type="button"
                   className="ghost-btn"
                   onClick={() => setShowCreateTaskModal(false)}
                 >
-                  X
+                  Cancel
                 </button>
+                <button type="submit">Create Task</button>
               </div>
-              <form className="project-form" onSubmit={createTask}>
-                <label>
-                  <span className="field-label">
-                    Task title <span className="required-indicator">*</span>
-                  </span>
-                  <input
-                    placeholder="Enter task title"
-                    value={taskTitle}
-                    onChange={(event) => setTaskTitle(event.target.value)}
-                  />
-                </label>
-                <label>
-                  Story points
-                  <input
-                    type="number"
-                    min="1"
-                    max="21"
-                    placeholder="Enter story points"
-                    value={storyPoints}
-                    onChange={(event) => setStoryPoints(event.target.value)}
-                  />
-                </label>
-                <label>
-                  <span className="field-label">
-                    Work type <span className="required-indicator">*</span>
-                  </span>
-                  <select
-                    value={taskType}
-                    onChange={(event) => setTaskType(event.target.value)}
-                  >
-                    {projectTypes.map((type) => {
-                      const meta = getWorkTypeMeta(type);
-                      return (
-                        <option key={type} value={type}>
-                          {meta.label}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </label>
-                <label>
-                  Assignee
-                  <select
-                    value={assigneeId}
-                    onChange={(event) => setAssigneeId(event.target.value)}
-                  >
-                    <option value="">Unassigned</option>
-                    {projectUsers.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Priority
-                  <select
-                    value={taskPriority}
-                    onChange={(event) => setTaskPriority(event.target.value)}
-                  >
-                    {PRIORITY_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Label
-                  <select
-                    value={taskLabel}
-                    onChange={(event) => setTaskLabel(event.target.value)}
-                  >
-                    <option value="">Select label</option>
-                    {projectLabels.map((label) => (
-                      <option key={label} value={label}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Version
-                  <select
-                    value={taskVersion}
-                    onChange={(event) => setTaskVersion(event.target.value)}
-                  >
-                    <option value="">None</option>
-                    {projectVersions.map((version) => (
-                      <option key={version} value={version}>
-                        {version}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="modal-actions">
-                  <button
-                    type="button"
-                    className="ghost-btn"
-                    onClick={() => setShowCreateTaskModal(false)}
-                  >
-                    Cancel
-                  </button>
-                  <button type="submit">Create Task</button>
-                </div>
-              </form>
-            </div>
-          </div>
+            </form>
+          </Modal>
         ) : null}
         {activeView === "backlog" ? (
           <BacklogView
@@ -1689,6 +1686,8 @@ function App() {
           <BoardView
             columns={safeColumns}
             workflowTransitions={workflowTransitions}
+            currentUser={currentUser}
+            userGroups={userGroups}
             usersById={usersById}
             userAvatarColor={getUserAvatarColor}
             boardTotalsByStatus={boardTotalsByStatus}

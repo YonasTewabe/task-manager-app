@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { displayTaskRef } from "../utils/taskDisplay.js";
+import Modal from "./ui/Modal";
 
 export default function SprintManagementView({
   sprints,
@@ -234,8 +235,7 @@ export default function SprintManagementView({
         </div>
       ) : null}
       {showCreateModal ? (
-        <div className="modal-overlay" role="presentation" onClick={() => setShowCreateModal(false)}>
-          <div className="modal-card" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <Modal open={showCreateModal} onOpenChange={setShowCreateModal}>
             <div className="panel-head">
               <h3>Create Sprint</h3>
               <button type="button" className="ghost-btn" onClick={() => setShowCreateModal(false)}>
@@ -292,8 +292,7 @@ export default function SprintManagementView({
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
     </section>
   );

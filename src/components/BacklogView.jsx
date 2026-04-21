@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_WORKFLOW_STAGES } from "../workflowDefaults.js";
 import { displayTaskRef } from "../utils/taskDisplay.js";
+import Modal from "./ui/Modal";
 
 function sumStoryPoints(tasks, statuses) {
   const allowed = new Set(Array.isArray(statuses) ? statuses : [statuses]);
@@ -28,6 +29,21 @@ function getCounterBuckets(stages) {
   return { upcoming, active, done };
 }
 
+function formatSprintDateRange(startDate, endDate) {
+  const toText = (value) => {
+    const parsed = Date.parse(value || "");
+    if (!Number.isFinite(parsed)) return "";
+    return new Date(parsed).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+    });
+  };
+  const startText = toText(startDate);
+  const endText = toText(endDate);
+  if (startText && endText) return `${startText} - ${endText}`;
+  return startText || endText || "";
+}
+
 export default function BacklogView({
   tasks,
   sprints,
@@ -36,7 +52,7 @@ export default function BacklogView({
   userAvatarColor,
   workflowStages,
   selectedSprintId,
-  onSelectSprint,
+  onSelectSprint: _onSelectSprint,
   canManage,
   onStartSprint,
   onCompleteSprint,
@@ -48,7 +64,9 @@ export default function BacklogView({
   onNotify,
 }) {
   const assigneeLabel = (task) =>
-    task.assigneeId ? usersById?.get(task.assigneeId) || "Unknown" : "Unassigned";
+    task.assigneeId
+      ? usersById?.get(task.assigneeId) || "Unknown"
+      : "Unassigned";
   const [showCreateSprintModal, setShowCreateSprintModal] = useState(false);
   const [expandedKeys, setExpandedKeys] = useState(() => new Set(["backlog"]));
   const [createDraft, setCreateDraft] = useState({
@@ -56,7 +74,10 @@ export default function BacklogView({
     startDate: "",
     endDate: "",
   });
+  const [createNameError, setCreateNameError] = useState("");
   const [sprintCompleteDialog, setSprintCompleteDialog] = useState(null);
+  const [sprintDeleteDialog, setSprintDeleteDialog] = useState(null);
+  const [sprintDeleteError, setSprintDeleteError] = useState("");
   const movedTaskTimeoutRef = useRef(null);
   const blockedDropTimeoutRef = useRef(null);
   const [dragState, setDragState] = useState({
@@ -89,27 +110,36 @@ export default function BacklogView({
         sprint.status === "planned" ||
         String(sprint.id) === String(selectedSprintId || ""),
     )
-    .sort((a, b) => {
-      if (a.status !== b.status) {
-        if (a.status === "active") return -1;
-        if (b.status === "active") return 1;
-      }
-      const aDate =
-        Date.parse(a.startDate || a.endDate || "") || Number.POSITIVE_INFINITY;
-      const bDate =
-        Date.parse(b.startDate || b.endDate || "") || Number.POSITIVE_INFINITY;
-      if (aDate !== bDate) return aDate - bDate;
-      return String(a.name || "").localeCompare(String(b.name || ""));
-    })
     .map((sprint) => {
       const sprintTaskList = tasksBySprint.get(String(sprint.id)) || [];
       return {
         key: String(sprint.id),
         name: sprint.name,
         status: sprint.status,
+        startDate: sprint.startDate || "",
+        endDate: sprint.endDate || "",
         tasks: sprintTaskList,
       };
     });
+
+  const sortByDateThenName = (a, b) => {
+    const aDate =
+      Date.parse(a.startDate || a.endDate || "") || Number.POSITIVE_INFINITY;
+    const bDate =
+      Date.parse(b.startDate || b.endDate || "") || Number.POSITIVE_INFINITY;
+    if (aDate !== bDate) return aDate - bDate;
+    return String(a.name || "").localeCompare(String(b.name || ""));
+  };
+
+  const activeSprintRows = sprintRows
+    .filter((row) => row.status === "active")
+    .sort(sortByDateThenName);
+  const plannedSprintRows = sprintRows
+    .filter((row) => row.status === "planned")
+    .sort(sortByDateThenName);
+  const otherSprintRows = sprintRows
+    .filter((row) => row.status !== "active" && row.status !== "planned")
+    .sort(sortByDateThenName);
 
   const backlogRow = {
     key: "backlog",
@@ -120,7 +150,12 @@ export default function BacklogView({
 
   const rows = selectedSprintId
     ? sprintRows.filter((row) => String(row.key) === String(selectedSprintId))
-    : [backlogRow, ...sprintRows];
+    : [
+        backlogRow,
+        ...activeSprintRows,
+        ...plannedSprintRows,
+        ...otherSprintRows,
+      ];
 
   const toggleExpanded = (key) => {
     setExpandedKeys((prev) => {
@@ -171,6 +206,10 @@ export default function BacklogView({
               ? !selectedSprintId
               : String(selectedSprintId) === row.key;
           const isExpanded = expandedKeys.has(row.key);
+          const sprintDateRange =
+            row.status === "backlog"
+              ? ""
+              : formatSprintDateRange(row.startDate, row.endDate);
           return (
             <article key={row.key} className="backlog-row-wrap">
               <div
@@ -236,7 +275,10 @@ export default function BacklogView({
                     ▾
                   </span>
                   <strong>{row.name}</strong>
-                  <span className="muted">({row.tasks.length} work items)</span>
+                  <span className="muted">
+                    ({row.tasks.length} work items )
+                    {sprintDateRange ? ` ${sprintDateRange}` : ""}
+                  </span>
                 </div>
                 <div className="backlog-row-right">
                   <div className="status-counters">
@@ -252,7 +294,6 @@ export default function BacklogView({
                         const destinations = rows.filter(
                           (candidate) =>
                             candidate.key !== row.key &&
-                            candidate.key !== "backlog" &&
                             candidate.status !== "completed",
                         );
                         setSprintCompleteDialog({
@@ -289,7 +330,30 @@ export default function BacklogView({
                       className="ghost-btn"
                       onClick={(event) => {
                         event.stopPropagation();
-                        onDeleteSprint(row.key);
+                        const destinations = [
+                          {
+                            key: "backlog",
+                            name: "Backlog",
+                            status: "backlog",
+                          },
+                          ...sprintRows.filter(
+                            (candidate) =>
+                              candidate.key !== row.key &&
+                              candidate.status !== "completed",
+                          ),
+                        ];
+                        setSprintDeleteError("");
+                        setSprintDeleteDialog({
+                          sprintKey: row.key,
+                          sprintName: row.name,
+                          taskIds: row.tasks.map((task) => String(task.id)),
+                          destinationSprintId: "",
+                          destinationOptions: destinations.map((item) => ({
+                            key: item.key,
+                            name: item.name,
+                            status: item.status,
+                          })),
+                        });
                       }}
                     >
                       Delete sprint
@@ -323,7 +387,11 @@ export default function BacklogView({
                           });
                         }}
                         onDragEnd={() =>
-                          setDragState({ taskId: "", sourceKey: "", overKey: "" })
+                          setDragState({
+                            taskId: "",
+                            sourceKey: "",
+                            overKey: "",
+                          })
                         }
                         onClick={() => onOpenTask(task.id)}
                         data-task-id={String(task.id)}
@@ -347,7 +415,9 @@ export default function BacklogView({
                               className="avatar-bubble"
                               title={assigneeLabel(task)}
                               style={{
-                                backgroundColor: userAvatarColor?.(task.assigneeId),
+                                backgroundColor: userAvatarColor?.(
+                                  task.assigneeId,
+                                ),
                               }}
                             >
                               {String(assigneeLabel(task))
@@ -358,7 +428,10 @@ export default function BacklogView({
                                 .toUpperCase()}
                             </span>
                           ) : (
-                            <span className="muted backlog-unassigned-pill" title="Unassigned">
+                            <span
+                              className="muted backlog-unassigned-pill"
+                              title="Unassigned"
+                            >
                               U
                             </span>
                           )}
@@ -379,192 +452,282 @@ export default function BacklogView({
         })}
       </div>
       {showCreateSprintModal ? (
-        <div
-          className="modal-overlay"
-          role="presentation"
-          onClick={() => setShowCreateSprintModal(false)}
+        <Modal
+          open={showCreateSprintModal}
+          onOpenChange={setShowCreateSprintModal}
         >
-          <div
-            className="modal-card"
-            role="dialog"
-            aria-modal="true"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="panel-head">
-              <h3>Create Sprint</h3>
+          <div className="panel-head">
+            <h3>Create Sprint</h3>
+            <button
+              type="button"
+              className="ghost-btn"
+              onClick={() => setShowCreateSprintModal(false)}
+            >
+              X
+            </button>
+          </div>
+          <div className="project-form">
+            <label>
+              <span className="field-label">
+                Sprint Name <span className="required-indicator">*</span>
+              </span>
+              <input
+                placeholder="Enter sprint name"
+                value={createDraft.name}
+                onChange={(event) => {
+                  setCreateDraft((prev) => ({
+                    ...prev,
+                    name: event.target.value,
+                  }));
+                  if (String(event.target.value || "").trim()) {
+                    setCreateNameError("");
+                  }
+                }}
+              />
+            </label>
+            {createNameError ? (
+              <p className="error">{createNameError}</p>
+            ) : null}
+            <div className="inline-form">
+              <label>
+                Start date
+                <input
+                  type="date"
+                  value={createDraft.startDate}
+                  onChange={(event) =>
+                    setCreateDraft((prev) => ({
+                      ...prev,
+                      startDate: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                End date
+                <input
+                  type="date"
+                  value={createDraft.endDate}
+                  onChange={(event) =>
+                    setCreateDraft((prev) => ({
+                      ...prev,
+                      endDate: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            </div>
+            <div className="modal-actions">
               <button
                 type="button"
                 className="ghost-btn"
                 onClick={() => setShowCreateSprintModal(false)}
               >
-                X
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const normalizedName = String(createDraft.name || "").trim();
+                  if (!normalizedName) {
+                    setCreateNameError("Sprint name is required.");
+                    return;
+                  }
+                  const exists = sprints.some(
+                    (sprint) =>
+                      String(sprint.name || "")
+                        .trim()
+                        .toLowerCase() === normalizedName.toLowerCase(),
+                  );
+                  if (exists) {
+                    onNotify?.(
+                      "Sprint name already in use within this project.",
+                      "error",
+                    );
+                    return;
+                  }
+                  try {
+                    await onCreateSprint({
+                      ...createDraft,
+                      name: normalizedName,
+                    });
+                    setCreateDraft({ name: "", startDate: "", endDate: "" });
+                    setCreateNameError("");
+                    setShowCreateSprintModal(false);
+                  } catch (error) {
+                    onNotify?.(
+                      error?.message || "Failed to create sprint.",
+                      "error",
+                    );
+                  }
+                }}
+              >
+                Create Sprint
               </button>
             </div>
-            <div className="project-form">
-              <label>
-                <span className="field-label">
-                  Sprint Name <span className="required-indicator">*</span>
-                </span>
-                <input
-                  placeholder="Enter sprint name"
-                  value={createDraft.name}
-                  onChange={(event) =>
-                    setCreateDraft((prev) => ({
-                      ...prev,
-                      name: event.target.value,
-                    }))
+          </div>
+        </Modal>
+      ) : null}
+      {sprintDeleteDialog ? (
+        <Modal
+          open={Boolean(sprintDeleteDialog)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setSprintDeleteDialog(null);
+              setSprintDeleteError("");
+            }
+          }}
+        >
+          <div className="panel-head">
+            <h3>Delete sprint</h3>
+            <button
+              type="button"
+              className="ghost-btn"
+              onClick={() => {
+                setSprintDeleteDialog(null);
+                setSprintDeleteError("");
+              }}
+            >
+              X
+            </button>
+          </div>
+          <div className="project-form">
+            <p>
+              Move tasks in <strong>{sprintDeleteDialog.sprintName}</strong> to:
+            </p>
+            <select
+              value={sprintDeleteDialog.destinationSprintId}
+              onChange={(event) =>
+                setSprintDeleteDialog((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        destinationSprintId: event.target.value,
+                      }
+                    : prev,
+                )
+              }
+            >
+              <option value="">Select destination sprint</option>
+              {sprintDeleteDialog.destinationOptions.map((item) => (
+                <option key={item.key} value={item.key}>
+                  {item.name} ({item.status})
+                </option>
+              ))}
+            </select>
+            {sprintDeleteError ? (
+              <p className="error">{sprintDeleteError}</p>
+            ) : null}
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={() => {
+                  setSprintDeleteDialog(null);
+                  setSprintDeleteError("");
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!sprintDeleteDialog.destinationSprintId}
+                onClick={async () => {
+                  if (!sprintDeleteDialog.destinationSprintId) {
+                    setSprintDeleteError("Please choose a destination sprint.");
+                    return;
                   }
-                />
-              </label>
-              <div className="inline-form">
-                <label>
-                  Start date
-                  <input
-                    type="date"
-                    value={createDraft.startDate}
-                    onChange={(event) =>
-                      setCreateDraft((prev) => ({
-                        ...prev,
-                        startDate: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <label>
-                  End date
-                  <input
-                    type="date"
-                    value={createDraft.endDate}
-                    onChange={(event) =>
-                      setCreateDraft((prev) => ({
-                        ...prev,
-                        endDate: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-              </div>
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="ghost-btn"
-                  onClick={() => setShowCreateSprintModal(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const normalizedName = String(
-                      createDraft.name || "",
-                    ).trim();
-                    if (!normalizedName) return;
-                    const exists = sprints.some(
-                      (sprint) =>
-                        String(sprint.name || "")
-                          .trim()
-                          .toLowerCase() === normalizedName.toLowerCase(),
+                  try {
+                    const destinationSprintId =
+                      sprintDeleteDialog.destinationSprintId === "backlog"
+                        ? null
+                        : sprintDeleteDialog.destinationSprintId;
+                    await Promise.all(
+                      sprintDeleteDialog.taskIds.map((taskId) =>
+                        onAssignTaskToSprint(taskId, destinationSprintId),
+                      ),
                     );
-                    if (exists) {
-                      onNotify?.(
-                        "Sprint name already in use within this project.",
-                        "error",
-                      );
-                      return;
-                    }
-                    try {
-                      await onCreateSprint({
-                        ...createDraft,
-                        name: normalizedName,
-                      });
-                      setCreateDraft({ name: "", startDate: "", endDate: "" });
-                      setShowCreateSprintModal(false);
-                    } catch (error) {
-                      onNotify?.(
-                        error?.message || "Failed to create sprint.",
-                        "error",
-                      );
-                    }
-                  }}
-                >
-                  Create Sprint
-                </button>
-              </div>
+                    await onDeleteSprint(sprintDeleteDialog.sprintKey);
+                    setSprintDeleteDialog(null);
+                    setSprintDeleteError("");
+                  } catch (error) {
+                    setSprintDeleteError(
+                      error?.message ||
+                        "Failed to move tasks and delete sprint.",
+                    );
+                  }
+                }}
+              >
+                Move tasks and delete
+              </button>
             </div>
           </div>
-        </div>
+        </Modal>
       ) : null}
       {sprintCompleteDialog ? (
-        <div
-          className="modal-overlay"
-          role="presentation"
-          onClick={() => setSprintCompleteDialog(null)}
+        <Modal
+          open={Boolean(sprintCompleteDialog)}
+          onOpenChange={(open) => {
+            if (!open) setSprintCompleteDialog(null);
+          }}
         >
-          <div
-            className="modal-card"
-            role="dialog"
-            aria-modal="true"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="panel-head">
-              <h3>Complete sprint</h3>
+          <div className="panel-head">
+            <h3>Complete sprint</h3>
+            <button
+              type="button"
+              className="ghost-btn"
+              onClick={() => setSprintCompleteDialog(null)}
+            >
+              X
+            </button>
+          </div>
+          <div className="project-form">
+            <p>
+              Move unfinished tasks in{" "}
+              <strong>{sprintCompleteDialog.sprintName}</strong> to:
+            </p>
+            <select
+              value={sprintCompleteDialog.destinationSprintId}
+              onChange={(event) =>
+                setSprintCompleteDialog((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        destinationSprintId: event.target.value,
+                      }
+                    : prev,
+                )
+              }
+            >
+              <option value="">Backlog</option>
+              {sprintCompleteDialog.destinationOptions.map((item) => (
+                <option key={item.key} value={item.key}>
+                  {item.name} ({item.status})
+                </option>
+              ))}
+            </select>
+            <div className="modal-actions">
               <button
                 type="button"
                 className="ghost-btn"
                 onClick={() => setSprintCompleteDialog(null)}
               >
-                X
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onCompleteSprint(
+                    sprintCompleteDialog.sprintKey,
+                    sprintCompleteDialog.destinationSprintId || null,
+                  );
+                  setSprintCompleteDialog(null);
+                }}
+              >
+                Complete sprint
               </button>
             </div>
-            <div className="project-form">
-              <p>
-                Move unfinished tasks in{" "}
-                <strong>{sprintCompleteDialog.sprintName}</strong> to:
-              </p>
-              <select
-                value={sprintCompleteDialog.destinationSprintId}
-                onChange={(event) =>
-                  setSprintCompleteDialog((prev) =>
-                    prev
-                      ? {
-                          ...prev,
-                          destinationSprintId: event.target.value,
-                        }
-                      : prev,
-                  )
-                }
-              >
-                <option value="">Backlog</option>
-                {sprintCompleteDialog.destinationOptions.map((item) => (
-                  <option key={item.key} value={item.key}>
-                    {item.name} ({item.status})
-                  </option>
-                ))}
-              </select>
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="ghost-btn"
-                  onClick={() => setSprintCompleteDialog(null)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onCompleteSprint(
-                      sprintCompleteDialog.sprintKey,
-                      sprintCompleteDialog.destinationSprintId || null,
-                    );
-                    setSprintCompleteDialog(null);
-                  }}
-                >
-                  Complete sprint
-                </button>
-              </div>
-            </div>
           </div>
-        </div>
+        </Modal>
       ) : null}
     </section>
   );

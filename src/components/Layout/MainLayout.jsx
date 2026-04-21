@@ -33,7 +33,11 @@ export default function MainLayout({
           </div>
         </header>
 
-        <main className="app-content">{children}</main>
+        <main
+          className={activeView === "dashboard" ? undefined : "app-content"}
+        >
+          {children}
+        </main>
       </div>
     </div>
   );

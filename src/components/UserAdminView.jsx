@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Modal from "./ui/Modal";
 
 export default function UserAdminView({
   users,
@@ -145,8 +146,7 @@ export default function UserAdminView({
         </div>
       </div>
       {canManage && showCreateModal ? (
-        <div className="modal-overlay" role="presentation" onClick={() => setShowCreateModal(false)}>
-          <div className="modal-card" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <Modal open={showCreateModal} onOpenChange={setShowCreateModal}>
             <div className="panel-head">
               <h3>Add user</h3>
               <button type="button" className="ghost-btn" onClick={() => setShowCreateModal(false)}>
@@ -216,12 +216,10 @@ export default function UserAdminView({
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
       {canManage && showCreateGroupModal ? (
-        <div className="modal-overlay" role="presentation" onClick={() => setShowCreateGroupModal(false)}>
-          <div className="modal-card" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <Modal open={showCreateGroupModal} onOpenChange={setShowCreateGroupModal}>
             <div className="panel-head">
               <h3>Add group</h3>
               <button type="button" className="ghost-btn" onClick={() => setShowCreateGroupModal(false)}>
@@ -276,12 +274,15 @@ export default function UserAdminView({
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
       {canManage && showEditModal && editingUserId ? (
-        <div className="modal-overlay" role="presentation" onClick={closeEditModal}>
-          <div className="modal-card" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <Modal
+          open={showEditModal}
+          onOpenChange={(open) => {
+            if (!open) closeEditModal();
+          }}
+        >
             <div className="panel-head">
               <h3>Edit user</h3>
               <button type="button" className="ghost-btn" onClick={closeEditModal}>
@@ -343,12 +344,15 @@ export default function UserAdminView({
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
       {canManage && showEditGroupModal && editingGroupId ? (
-        <div className="modal-overlay" role="presentation" onClick={closeEditGroupModal}>
-          <div className="modal-card" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <Modal
+          open={showEditGroupModal}
+          onOpenChange={(open) => {
+            if (!open) closeEditGroupModal();
+          }}
+        >
             <div className="panel-head">
               <h3>Edit group</h3>
               <button type="button" className="ghost-btn" onClick={closeEditGroupModal}>
@@ -399,8 +403,7 @@ export default function UserAdminView({
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
     </section>
   );

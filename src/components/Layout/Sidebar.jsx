@@ -24,7 +24,9 @@ export default function Sidebar({
   const showProjectSubs = (projectId) => {
     const id = String(projectId);
     if (
-      (activeView === "board" || activeView === "backlog" || activeView === "settings") &&
+      (activeView === "board" ||
+        activeView === "backlog" ||
+        activeView === "settings") &&
       String(currentProjectId) === id
     ) {
       return true;
@@ -70,7 +72,10 @@ export default function Sidebar({
                     onClick={() => onNavigateProject(project.id, "board")}
                     title={project.name}
                   >
-                    <span className={`sidebar-chevron ${expanded ? "open" : ""}`} aria-hidden>
+                    <span
+                      className={`sidebar-chevron ${expanded ? "open" : ""}`}
+                      aria-hidden
+                    >
                       ›
                     </span>
                     <span className="sidebar-project-name">{project.name}</span>

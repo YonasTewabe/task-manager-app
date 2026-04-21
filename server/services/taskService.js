@@ -1,3 +1,4 @@
+import { DEFAULT_WORK_TYPE_VALUES } from "../../src/constants/workTypes.js";
 import { dbQuery } from "../db/pool.js";
 import { asInt } from "../utils/validation.js";
 
@@ -5,29 +6,21 @@ export const DEFAULT_WORKFLOW_STAGES = [
   {
     key: "blocked",
     name: "Blocked",
-    description: "Work that cannot proceed",
-    badge: "",
     counterGroup: "upcoming",
   },
   {
     key: "todo",
     name: "To Do",
-    description: "Ready to be picked up",
-    badge: "",
     counterGroup: "upcoming",
   },
   {
     key: "in_progress",
     name: "In Progress",
-    description: "Actively being worked on",
-    badge: "",
     counterGroup: "active",
   },
   {
     key: "done",
     name: "Done",
-    description: "Completed work",
-    badge: "",
     counterGroup: "done",
   },
 ];
@@ -171,7 +164,9 @@ export function validateWorkflowStagesForSave(raw) {
       .trim()
       .toLowerCase();
     if (names.has(nameKey)) {
-      throw new Error(`Duplicate stage name: ${String(item?.name || "").trim()}`);
+      throw new Error(
+        `Duplicate stage name: ${String(item?.name || "").trim()}`,
+      );
     }
     names.add(nameKey);
     if (
@@ -247,7 +242,7 @@ const DEFAULT_SETTINGS = {
   workflowRules: {},
   generalRules: {
     labels: [],
-    types: ["story", "task", "bug", "hot-fix"],
+    types: DEFAULT_WORK_TYPE_VALUES,
     versions: [],
   },
 };
@@ -287,7 +282,9 @@ function mergeGeneralRules(rowGeneral, rowWorkflow) {
     : [...DEFAULT_SETTINGS.generalRules.types];
   const versions = Array.isArray(base.versions) ? base.versions : [];
   base.versions = [
-    ...new Set(versions.map((version) => String(version || "").trim()).filter(Boolean)),
+    ...new Set(
+      versions.map((version) => String(version || "").trim()).filter(Boolean),
+    ),
   ];
   return base;
 }
@@ -666,8 +663,9 @@ async function assertUniqueProjectIdentity({
   const existing = result.rows[0];
   if (!existing) return;
   if (
-    String(existing.name || "").trim().toLowerCase() ===
-    normalizedName.toLowerCase()
+    String(existing.name || "")
+      .trim()
+      .toLowerCase() === normalizedName.toLowerCase()
   ) {
     throw new Error(PROJECT_NAME_CONFLICT_MESSAGE);
   }
@@ -728,10 +726,11 @@ export async function updateProject(projectId, patch) {
   );
   const currentProject = current.rows[0];
   if (!currentProject) return null;
-  const nextName =
-    patch.name !== undefined ? patch.name : currentProject.name;
+  const nextName = patch.name !== undefined ? patch.name : currentProject.name;
   const nextProjectKey =
-    patch.projectKey !== undefined ? patch.projectKey : currentProject.projectKey;
+    patch.projectKey !== undefined
+      ? patch.projectKey
+      : currentProject.projectKey;
   await assertUniqueProjectIdentity({
     name: nextName,
     projectKey: nextProjectKey,

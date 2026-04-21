@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Modal from "./ui/Modal";
 
 const EMPTY_FORM = {
   name: "",
@@ -105,17 +106,7 @@ export default function ProjectManagementView({
         ))}
       </div>
       {canManage && showCreateModal ? (
-        <div
-          className="modal-overlay"
-          role="presentation"
-          onClick={() => setShowCreateModal(false)}
-        >
-          <div
-            className="modal-card"
-            role="dialog"
-            aria-modal="true"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <Modal open={showCreateModal} onOpenChange={setShowCreateModal}>
             <div className="panel-head">
               <h3>Create Project</h3>
               <button
@@ -222,21 +213,15 @@ export default function ProjectManagementView({
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
       {canManage && showEditModal && editingProjectId ? (
-        <div
-          className="modal-overlay"
-          role="presentation"
-          onClick={closeEditModal}
+        <Modal
+          open={showEditModal}
+          onOpenChange={(open) => {
+            if (!open) closeEditModal();
+          }}
         >
-          <div
-            className="modal-card"
-            role="dialog"
-            aria-modal="true"
-            onClick={(e) => e.stopPropagation()}
-          >
             <div className="panel-head">
               <h3>Edit project</h3>
               <button
@@ -349,8 +334,7 @@ export default function ProjectManagementView({
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
     </section>
   );

@@ -86,6 +86,8 @@ function TaskCard({
 export default function BoardView({
   columns,
   workflowTransitions = [],
+  currentUser = null,
+  userGroups = [],
   usersById,
   userAvatarColor,
   boardTotalsByStatus = {},
@@ -108,18 +110,46 @@ export default function BoardView({
   const [allowedStatusesDuringDrag, setAllowedStatusesDuringDrag] = useState(
     () => new Set(),
   );
-  const transitionsByFrom = useMemo(() => {
+  const actorGroupIds = useMemo(() => {
+    const actorId = String(currentUser?.id || "");
+    if (!actorId) return new Set();
+    const groups = new Set();
+    userGroups.forEach((group) => {
+      const members = Array.isArray(group?.members) ? group.members : [];
+      if (members.some((member) => String(member?.id || "") === actorId)) {
+        groups.add(String(group?.id || ""));
+      }
+    });
+    return groups;
+  }, [currentUser?.id, userGroups]);
+  const transitionPermissionsByFrom = useMemo(() => {
     const map = new Map();
+    const actorId = String(currentUser?.id || "");
     workflowTransitions.forEach((transition) => {
       const from = String(transition?.from || "").trim();
       const to = String(transition?.to || "").trim();
       if (!from || !to) return;
-      const allowed = map.get(from) || new Set();
-      allowed.add(to);
-      map.set(from, allowed);
+      const allowedUserIds = Array.isArray(transition?.allowedUserIds)
+        ? transition.allowedUserIds.map((id) => String(id))
+        : [];
+      const allowedGroupIds = Array.isArray(transition?.allowedGroupIds)
+        ? transition.allowedGroupIds.map((id) => String(id))
+        : [];
+      const noRestrictions =
+        transition?.allowAllUsers !== true &&
+        allowedUserIds.length === 0 &&
+        allowedGroupIds.length === 0;
+      const isAllowed =
+        noRestrictions ||
+        transition?.allowAllUsers === true ||
+        (actorId && allowedUserIds.includes(actorId)) ||
+        allowedGroupIds.some((groupId) => actorGroupIds.has(groupId));
+      const fromPermissions = map.get(from) || new Map();
+      fromPermissions.set(to, isAllowed);
+      map.set(from, fromPermissions);
     });
     return map;
-  }, [workflowTransitions]);
+  }, [workflowTransitions, currentUser?.id, actorGroupIds]);
 
   useEffect(() => {
     return () => {
@@ -132,14 +162,13 @@ export default function BoardView({
     <section className="board-lanes">
       {columns.map((column) =>
         (() => {
-          const isBlockedByWorkflow = blockedStatusesDuringDrag.has(
+          const isBlockedByRules = blockedStatusesDuringDrag.has(
             column.status,
           );
           const isAllowedTarget =
             Boolean(dragState.taskId) &&
             allowedStatusesDuringDrag.has(column.status);
-          const showBlockedHint =
-            isBlockedByWorkflow || blockedStatus === column.status;
+          const showBlockedHint = isBlockedByRules || blockedStatus === column.status;
           return (
             <article
               key={column.status}
@@ -154,7 +183,7 @@ export default function BoardView({
               }}
               onDragOver={(event) => {
                 event.preventDefault();
-                event.dataTransfer.dropEffect = isBlockedByWorkflow
+                event.dataTransfer.dropEffect = isBlockedByRules
                   ? "none"
                   : "move";
               }}
@@ -182,7 +211,7 @@ export default function BoardView({
                   setAllowedStatusesDuringDrag(new Set());
                   return;
                 }
-                if (isBlockedByWorkflow) {
+                if (isBlockedByRules) {
                   setBlockedStatus(column.status);
                   window.clearTimeout(blockedTimeoutRef.current);
                   blockedTimeoutRef.current = window.setTimeout(
@@ -239,8 +268,8 @@ export default function BoardView({
               <div className="board-cards">
                 {showBlockedHint ? (
                   <div className="board-blocked-drop-hint">
-                    This task cannot be moved to this column because of workflow
-                    rule.
+                    This task cannot be moved to this column due to workflow or
+                    transition access rules.
                   </div>
                 ) : null}
                 {!showBlockedHint && isAllowedTarget ? (
@@ -260,15 +289,15 @@ export default function BoardView({
                       const nextBlocked = new Set();
                       const nextAllowed = new Set();
                       const allowedTargets =
-                        transitionsByFrom.get(sourceStatus);
-                      if (allowedTargets instanceof Set) {
+                        transitionPermissionsByFrom.get(sourceStatus);
+                      if (allowedTargets instanceof Map) {
                         columns.forEach((candidateColumn) => {
                           const candidateStatus = String(
                             candidateColumn.status || "",
                           );
                           if (!candidateStatus) return;
                           if (candidateStatus === sourceStatus) return;
-                          if (!allowedTargets.has(candidateStatus)) {
+                          if (!allowedTargets.get(candidateStatus)) {
                             nextBlocked.add(candidateStatus);
                           } else {
                             nextAllowed.add(candidateStatus);

@@ -1,5 +1,4 @@
 export const DEFAULT_WORK_TYPES = [
-  { value: "story", label: "Story" },
   { value: "task", label: "Task" },
   { value: "bug", label: "Bug" },
   { value: "hot-fix", label: "Hot Fix" },
