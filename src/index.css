@@ -233,6 +233,11 @@ body {
   padding: 0.5rem;
   display: flex;
   flex-direction: column;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
 }
 
 .board-column-title-row {
@@ -261,9 +266,9 @@ body {
 .board-column-count {
   font-size: 0.8rem;
   font-weight: 600;
-  color: #1f3f7f;
-  border: 1px solid #9db8eb;
-  background: #edf3ff;
+  color: #4b5563;
+  border: 1px solid #d1d5db;
+  background: #f3f4f6;
   border-radius: 999px;
   padding: 0.08rem 0.45rem;
 }
@@ -297,6 +302,44 @@ body {
   align-content: start;
 }
 
+.board-column.drop-active {
+  border-color: #2f6feb;
+  background: #eaf1ff;
+  box-shadow: inset 0 0 0 1px rgba(47, 111, 235, 0.22);
+}
+
+.board-column.drop-allowed {
+  border-color: #1a7f37;
+  background: #eefcf2;
+  box-shadow: inset 0 0 0 1px rgba(26, 127, 55, 0.18);
+}
+
+.board-column.drop-blocked {
+  border-color: #dc2626;
+  background: #fff2f2;
+  animation: blocked-shake 340ms ease;
+}
+
+.board-blocked-drop-hint {
+  border: 1px dashed #dc2626;
+  border-radius: 8px;
+  background: #fff6f6;
+  color: #7f1d1d;
+  padding: 0.65rem 0.6rem;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.board-allowed-drop-hint {
+  border: 1px dashed #1a7f37;
+  border-radius: 8px;
+  background: #f3fff6;
+  color: #14532d;
+  padding: 0.65rem 0.6rem;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .board-card {
   background: #fff;
   border: 1px solid #dfe4ee;
@@ -304,6 +347,21 @@ body {
   padding: 0.5rem;
   box-shadow: 0 1px 0 rgba(9, 30, 66, 0.08);
   cursor: pointer;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease;
+}
+
+.board-card.is-dragging {
+  opacity: 0.5;
+  transform: scale(0.98);
+}
+
+.board-card.is-recently-moved {
+  animation: moved-pulse 700ms ease;
 }
 
 .board-tag {
@@ -764,6 +822,9 @@ button:disabled {
   gap: 0.75rem;
   padding: 0.62rem 0;
   border-bottom: 1px solid #ebecf0;
+  &:hover {
+    background: #f4f5f7;
+  }
 }
 
 .dashboard-task-item-link {
@@ -1051,6 +1112,32 @@ button:disabled {
   border: 1px solid #dfe1e6;
   border-radius: 8px;
   background: #fff;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease,
+    opacity 160ms ease;
+}
+
+.workflow-stage-row.drop-source {
+  opacity: 0.65;
+}
+
+.workflow-stage-row.drop-hovered {
+  transform: translateY(-1px);
+}
+
+.workflow-stage-row.drop-allowed {
+  border-color: #1a7f37;
+  background: #eefcf2;
+  box-shadow: inset 0 0 0 1px rgba(26, 127, 55, 0.16);
+}
+
+.workflow-stage-row.drop-blocked {
+  border-color: #dc2626;
+  background: #fff2f2;
+  animation: blocked-shake 340ms ease;
 }
 
 .workflow-drag-handle {
@@ -1070,6 +1157,19 @@ button:disabled {
 .workflow-drag-handle:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+
+.workflow-drop-hint {
+  border-radius: 8px;
+  padding: 0.6rem 0.7rem;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.workflow-drop-hint.blocked {
+  border: 1px dashed #dc2626;
+  background: #fff6f6;
+  color: #7f1d1d;
 }
 
 .workflow-drag-dots {
@@ -1214,11 +1314,31 @@ button:disabled {
   justify-content: space-between;
   align-items: center;
   cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease;
 }
 
 .backlog-row-card.active {
   border-color: #b8c9e8;
   background: #f2f6ff;
+}
+
+.backlog-row-card.drop-source {
+  border-style: dashed;
+}
+
+.backlog-row-card.drop-active {
+  border-color: #2f6feb;
+  background: #eaf1ff;
+  box-shadow: inset 0 0 0 1px rgba(47, 111, 235, 0.18);
+}
+
+.backlog-row-card.drop-blocked {
+  border-color: #dc2626;
+  background: #fff2f2;
+  animation: blocked-shake 340ms ease;
 }
 
 .backlog-row-wrap {
@@ -1276,6 +1396,50 @@ button:disabled {
   border: 1px solid #dfe1e6;
   padding: 0.45rem 0.5rem;
   border-radius: 6px;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease;
+}
+
+.backlog-task-item.is-dragging {
+  opacity: 0.5;
+  transform: scale(0.98);
+}
+
+.backlog-task-item.is-recently-moved {
+  animation: moved-pulse 700ms ease;
+}
+
+@keyframes moved-pulse {
+  0% {
+    transform: scale(0.98);
+    box-shadow: 0 0 0 0 rgba(47, 111, 235, 0.35);
+    border-color: #8ab4ff;
+  }
+  40% {
+    transform: scale(1.01);
+    box-shadow: 0 0 0 7px rgba(47, 111, 235, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 1px 0 rgba(9, 30, 66, 0.08);
+  }
+}
+
+@keyframes blocked-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  30% {
+    transform: translateX(-4px);
+  }
+  60% {
+    transform: translateX(4px);
+  }
 }
 
 .backlog-task-right {

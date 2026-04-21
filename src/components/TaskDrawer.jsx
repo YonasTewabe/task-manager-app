@@ -164,6 +164,7 @@ export default function TaskDrawer({
   const [isAutoSaving, setIsAutoSaving] = useState(false);
   const titleEditorRef = useRef(null);
   const lastSavedPatchRef = useRef("");
+  const previousTaskIdRef = useRef(null);
 
   const userMap = useMemo(() => {
     const map = new Map();
@@ -197,6 +198,8 @@ export default function TaskDrawer({
   }, [allowedStatusKeys, stages]);
 
   useEffect(() => {
+    const nextTaskId = task?.id == null ? null : String(task.id);
+    const isTaskSwitch = previousTaskIdRef.current !== nextTaskId;
     setDraft(
       task
         ? {
@@ -208,10 +211,13 @@ export default function TaskDrawer({
           }
         : null,
     );
-    setCommentBody("");
-    setActivityTab("comments");
-    setDevPanel(null);
-    setIsEditingTitle(false);
+    if (isTaskSwitch) {
+      setCommentBody("");
+      setActivityTab("comments");
+      setDevPanel(null);
+      setIsEditingTitle(false);
+    }
+    previousTaskIdRef.current = nextTaskId;
   }, [normalizeAcceptanceCriteria, task]);
 
   useEffect(() => {
@@ -250,7 +256,7 @@ export default function TaskDrawer({
   const buildPatch = useCallback((source) => {
     return {
       title: source.title,
-      description: source.description,
+      description: toEditorRichText(source.description),
       label: source.label || "",
       status: source.status,
       storyPoints:

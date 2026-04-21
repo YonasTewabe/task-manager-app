@@ -18,6 +18,8 @@ const DEFAULT_FORM = {
     versions: [],
   },
 };
+const STAGE_PLACEMENT_START = "__start_of_group__";
+const STAGE_PLACEMENT_END = "__end_of_group__";
 
 function toForm(settings) {
   const wf =
@@ -200,7 +202,7 @@ export default function SystemSettingsView({
   const [newStageDraft, setNewStageDraft] = useState({
     name: "",
     counterGroup: "",
-    afterKey: "",
+    afterKey: STAGE_PLACEMENT_START,
   });
   const [newLabel, setNewLabel] = useState("");
   const [newType, setNewType] = useState("");
@@ -211,8 +213,18 @@ export default function SystemSettingsView({
   const [stageMigrations, setStageMigrations] = useState({});
   const [stageDeleteDialog, setStageDeleteDialog] = useState(null);
   const dragFromRef = useRef(null);
+  const blockedDropTimeoutRef = useRef(null);
   const lastSavedSettingsRef = useRef("");
   const lastSavedMembersRef = useRef("");
+  const [stageDragState, setStageDragState] = useState({
+    fromIndex: -1,
+    fromKey: "",
+    fromGroup: "",
+    overIndex: -1,
+  });
+  const [allowedDropIndexes, setAllowedDropIndexes] = useState(() => new Set());
+  const [blockedDropIndexes, setBlockedDropIndexes] = useState(() => new Set());
+  const [blockedDropReason, setBlockedDropReason] = useState("");
 
   useEffect(() => {
     const nextForm = toForm(settings);
@@ -220,17 +232,36 @@ export default function SystemSettingsView({
     setStageMigrations({});
     setStageDeleteDialog(null);
     setShowAddStageModal(false);
-    setNewStageDraft({ name: "", counterGroup: "", afterKey: "" });
+    setNewStageDraft({
+      name: "",
+      counterGroup: "",
+      afterKey: STAGE_PLACEMENT_START,
+    });
     setShowAddLabelModal(false);
     setShowAddTypeModal(false);
     setShowAddVersionModal(false);
     setNewLabel("");
     setNewType("");
     setNewVersion("");
+    setStageDragState({
+      fromIndex: -1,
+      fromKey: "",
+      fromGroup: "",
+      overIndex: -1,
+    });
+    setAllowedDropIndexes(new Set());
+    setBlockedDropIndexes(new Set());
+    setBlockedDropReason("");
     lastSavedSettingsRef.current = JSON.stringify(
       payloadFromForm(nextForm, {}),
     );
   }, [settings]);
+
+  useEffect(() => {
+    return () => {
+      window.clearTimeout(blockedDropTimeoutRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     setMemberIds(projectMembers.map((member) => member.id));
@@ -429,7 +460,11 @@ export default function SystemSettingsView({
 
   const addStage = () => {
     setShowAddStageModal(true);
-    setNewStageDraft({ name: "", counterGroup: "", afterKey: "" });
+    setNewStageDraft({
+      name: "",
+      counterGroup: "",
+      afterKey: STAGE_PLACEMENT_START,
+    });
   };
 
   const createStageFromDraft = () => {
@@ -457,18 +492,43 @@ export default function SystemSettingsView({
       const nextStages = [...existing];
       const afterKey = String(newStageDraft.afterKey || "").trim();
       let insertAt = -1;
-      if (afterKey) {
-        const afterIndex = nextStages.findIndex(
-          (stage) => stage.key === afterKey,
-        );
-        insertAt = afterIndex >= 0 ? afterIndex + 1 : -1;
+      if (afterKey && afterKey !== STAGE_PLACEMENT_START) {
+        if (afterKey === STAGE_PLACEMENT_END) {
+          const rank = { upcoming: 0, active: 1, done: 2 };
+          const nextRank = rank[nextGroup] ?? 1;
+          const firstInGroup = nextStages.findIndex(
+            (stage) => (rank[stage.counterGroup] ?? 1) === nextRank,
+          );
+          const firstAfterGroup = nextStages.findIndex(
+            (stage) => (rank[stage.counterGroup] ?? 1) > nextRank,
+          );
+          if (firstInGroup >= 0) {
+            insertAt =
+              firstAfterGroup >= 0 ? firstAfterGroup : nextStages.length;
+          } else {
+            insertAt =
+              firstAfterGroup >= 0 ? firstAfterGroup : nextStages.length;
+          }
+        } else {
+          const afterIndex = nextStages.findIndex(
+            (stage) => stage.key === afterKey,
+          );
+          insertAt = afterIndex >= 0 ? afterIndex + 1 : -1;
+        }
       }
       if (insertAt < 0) {
         const rank = { upcoming: 0, active: 1, done: 2 };
         const nextRank = rank[nextGroup] ?? 1;
-        insertAt = nextStages.findIndex(
-          (stage) => (rank[stage.counterGroup] ?? 1) > nextRank,
+        const firstInGroup = nextStages.findIndex(
+          (stage) => (rank[stage.counterGroup] ?? 1) === nextRank,
         );
+        if (firstInGroup >= 0) {
+          insertAt = firstInGroup;
+        } else {
+          insertAt = nextStages.findIndex(
+            (stage) => (rank[stage.counterGroup] ?? 1) > nextRank,
+          );
+        }
         if (insertAt < 0) insertAt = nextStages.length;
       }
       nextStages.splice(insertAt, 0, newStage);
@@ -509,7 +569,11 @@ export default function SystemSettingsView({
       };
     });
     setShowAddStageModal(false);
-    setNewStageDraft({ name: "", counterGroup: "", afterKey: "" });
+    setNewStageDraft({
+      name: "",
+      counterGroup: "",
+      afterKey: STAGE_PLACEMENT_START,
+    });
   };
 
   const stages = form.boardCardFields.workflowStages || [];
@@ -653,57 +717,130 @@ export default function SystemSettingsView({
                 {stages.map((stage, index) => (
                   <div
                     key={stage.key}
-                    className="workflow-stage-row"
+                    className={`workflow-stage-row ${allowedDropIndexes.has(index) ? "drop-allowed" : ""} ${blockedDropIndexes.has(index) ? "drop-blocked" : ""} ${stageDragState.fromIndex === index ? "drop-source" : ""} ${stageDragState.overIndex === index ? "drop-hovered" : ""}`}
+                    onDragEnter={(e) => {
+                      if (!canManage || dragFromRef.current == null) return;
+                      e.preventDefault();
+                      setStageDragState((prev) => ({
+                        ...prev,
+                        overIndex: index,
+                      }));
+                    }}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => {
                       e.preventDefault();
-                      const from = dragFromRef.current;
-                      dragFromRef.current = null;
-                      if (from == null) return;
-                      setForm((prev) => ({
-                        ...prev,
-                        boardCardFields: {
-                          ...prev.boardCardFields,
-                          workflowStages: sortStagesByRollup(
-                            reorderWorkflow(
-                              prev.boardCardFields.workflowStages,
-                              from,
-                              index,
-                            ),
-                          ),
-                        },
-                        workflowRules: {
-                          ...(prev.workflowRules || {}),
-                          transitions: normalizeTransitions(
-                            prev.workflowRules?.transitions,
-                            sortStagesByRollup(
-                              reorderWorkflow(
-                                prev.boardCardFields.workflowStages,
-                                from,
-                                index,
+                      const fromKey = dragFromRef.current;
+                      if (!fromKey) return;
+                      if (allowedDropIndexes.has(index)) {
+                        setForm((prev) => {
+                          const fromIndex =
+                            prev.boardCardFields.workflowStages.findIndex(
+                              (item) => String(item.key) === String(fromKey),
+                            );
+                          if (fromIndex < 0) return prev;
+                          const reordered = reorderWorkflow(
+                            prev.boardCardFields.workflowStages,
+                            fromIndex,
+                            index,
+                          );
+                          const sortedStages = sortStagesByRollup(reordered);
+                          return {
+                            ...prev,
+                            boardCardFields: {
+                              ...prev.boardCardFields,
+                              workflowStages: sortedStages,
+                            },
+                            workflowRules: {
+                              ...(prev.workflowRules || {}),
+                              transitions: normalizeTransitions(
+                                prev.workflowRules?.transitions,
+                                sortedStages,
                               ),
-                            ),
-                          ),
-                        },
-                      }));
+                            },
+                          };
+                        });
+                      } else if (blockedDropIndexes.has(index)) {
+                        setBlockedDropIndexes((prev) => {
+                          const next = new Set(prev);
+                          next.add(index);
+                          return next;
+                        });
+                        window.clearTimeout(blockedDropTimeoutRef.current);
+                        blockedDropTimeoutRef.current = window.setTimeout(
+                          () => {
+                            setBlockedDropIndexes(new Set());
+                            setBlockedDropReason("");
+                          },
+                          900,
+                        );
+                      }
+                      dragFromRef.current = null;
+                      setStageDragState({
+                        fromIndex: -1,
+                        fromKey: "",
+                        fromGroup: "",
+                        overIndex: -1,
+                      });
+                      setAllowedDropIndexes(new Set());
+                      setBlockedDropIndexes(new Set());
+                      setBlockedDropReason("");
                     }}
                   >
                     <button
                       type="button"
                       className="workflow-drag-handle"
-                      draggable={canManage}
+                      draggable={
+                        canManage && !BUILTIN_STAGE_KEYS.has(stage.key)
+                      }
                       title="Drag to reorder"
                       aria-label="Drag to reorder"
                       onDragStart={(e) => {
-                        if (!canManage) return;
-                        dragFromRef.current = index;
+                        if (!canManage || BUILTIN_STAGE_KEYS.has(stage.key))
+                          return;
+                        dragFromRef.current = String(stage.key || "");
+                        const nextAllowed = new Set();
+                        const nextBlocked = new Set();
+                        stages.forEach((candidate, candidateIndex) => {
+                          if (candidateIndex === index) return;
+                          if (
+                            String(candidate.counterGroup || "") ===
+                            String(stage.counterGroup || "")
+                          ) {
+                            nextAllowed.add(candidateIndex);
+                          } else {
+                            nextBlocked.add(candidateIndex);
+                          }
+                        });
+                        setAllowedDropIndexes(nextAllowed);
+                        setBlockedDropIndexes(nextBlocked);
+                        setBlockedDropReason(
+                          "Columns can only be reordered within the same roll-up group. Built-in columns cannot be dragged, but can be used as drop targets.",
+                        );
+                        setStageDragState({
+                          fromIndex: index,
+                          fromKey: String(stage.key || ""),
+                          fromGroup: String(stage.counterGroup || ""),
+                          overIndex: -1,
+                        });
                         e.dataTransfer.effectAllowed = "move";
-                        e.dataTransfer.setData("text/plain", String(index));
+                        e.dataTransfer.setData(
+                          "text/plain",
+                          String(stage.key || ""),
+                        );
                       }}
                       onDragEnd={() => {
                         dragFromRef.current = null;
+                        setStageDragState({
+                          fromIndex: -1,
+                          fromKey: "",
+                          fromGroup: "",
+                          overIndex: -1,
+                        });
+                        setAllowedDropIndexes(new Set());
+                        setBlockedDropIndexes(new Set());
+                        setBlockedDropReason("");
                       }}
-                      disabled={!canManage}
+                      disabled={!canManage || BUILTIN_STAGE_KEYS.has(stage.key)}
                     >
                       <span className="workflow-drag-dots" aria-hidden>
                         <span />
@@ -780,6 +917,11 @@ export default function SystemSettingsView({
                   </div>
                 ))}
               </div>
+              {stageDragState.fromIndex >= 0 && blockedDropReason ? (
+                <div className="workflow-drop-hint blocked">
+                  {blockedDropReason}
+                </div>
+              ) : null}
             </article>
           ) : null}
 
@@ -1143,7 +1285,7 @@ export default function SystemSettingsView({
                     setNewStageDraft((prev) => ({
                       ...prev,
                       counterGroup: event.target.value,
-                      afterKey: "",
+                      afterKey: STAGE_PLACEMENT_START,
                     }))
                   }
                 >
@@ -1165,12 +1307,15 @@ export default function SystemSettingsView({
                     }))
                   }
                 >
-                  <option value="">Start of this roll-up group</option>
+                  <option value={STAGE_PLACEMENT_START}>
+                    Start of this group
+                  </option>
                   {addStagePlacementOptions.map((stage) => (
                     <option key={stage.key} value={stage.key}>
                       {stage.name}
                     </option>
                   ))}
+                  <option value={STAGE_PLACEMENT_END}>End of this group</option>
                 </select>
               </label>
               <p className="muted">

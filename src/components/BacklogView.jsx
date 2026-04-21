@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_WORKFLOW_STAGES } from "../workflowDefaults.js";
 import { displayTaskRef } from "../utils/taskDisplay.js";
 
@@ -57,6 +57,15 @@ export default function BacklogView({
     endDate: "",
   });
   const [sprintCompleteDialog, setSprintCompleteDialog] = useState(null);
+  const movedTaskTimeoutRef = useRef(null);
+  const blockedDropTimeoutRef = useRef(null);
+  const [dragState, setDragState] = useState({
+    taskId: "",
+    sourceKey: "",
+    overKey: "",
+  });
+  const [recentlyMovedTaskId, setRecentlyMovedTaskId] = useState("");
+  const [blockedDropKey, setBlockedDropKey] = useState("");
   const stageList = workflowStages?.length
     ? workflowStages
     : DEFAULT_WORKFLOW_STAGES;
@@ -125,6 +134,13 @@ export default function BacklogView({
     });
   };
 
+  useEffect(() => {
+    return () => {
+      window.clearTimeout(movedTaskTimeoutRef.current);
+      window.clearTimeout(blockedDropTimeoutRef.current);
+    };
+  }, []);
+
   return (
     <section className="panel backlog-page">
       <div className="panel-head">
@@ -158,13 +174,23 @@ export default function BacklogView({
           return (
             <article key={row.key} className="backlog-row-wrap">
               <div
-                className={`backlog-row-card ${isSelected ? "active" : ""}`}
+                className={`backlog-row-card ${isSelected ? "active" : ""} ${dragState.sourceKey === row.key ? "drop-source" : ""} ${dragState.overKey === row.key ? "drop-active" : ""} ${blockedDropKey === row.key ? "drop-blocked" : ""}`}
                 onDragOver={(event) => {
                   if (!canManage) return;
                   event.preventDefault();
                   event.dataTransfer.dropEffect = "move";
                 }}
-                onDrop={(event) => {
+                onDragEnter={(event) => {
+                  if (!canManage || !dragState.taskId) return;
+                  event.preventDefault();
+                  setDragState((prev) => ({ ...prev, overKey: row.key }));
+                }}
+                onDragLeave={() => {
+                  setDragState((prev) =>
+                    prev.overKey === row.key ? { ...prev, overKey: "" } : prev,
+                  );
+                }}
+                onDrop={async (event) => {
                   if (!canManage) return;
                   const taskId = String(
                     event.dataTransfer.getData("text/task-id") || "",
@@ -172,12 +198,32 @@ export default function BacklogView({
                   const sourceKey = String(
                     event.dataTransfer.getData("text/source-sprint-id") || "",
                   ).trim();
-                  if (!taskId || sourceKey === row.key) return;
+                  if (!taskId || sourceKey === row.key) {
+                    setDragState({ taskId: "", sourceKey: "", overKey: "" });
+                    return;
+                  }
                   event.preventDefault();
-                  onAssignTaskToSprint(
-                    taskId,
-                    row.key === "backlog" ? null : row.key,
-                  );
+                  try {
+                    await onAssignTaskToSprint(
+                      taskId,
+                      row.key === "backlog" ? null : row.key,
+                    );
+                    setRecentlyMovedTaskId(taskId);
+                    window.clearTimeout(movedTaskTimeoutRef.current);
+                    movedTaskTimeoutRef.current = window.setTimeout(
+                      () => setRecentlyMovedTaskId(""),
+                      700,
+                    );
+                  } catch {
+                    setBlockedDropKey(row.key);
+                    window.clearTimeout(blockedDropTimeoutRef.current);
+                    blockedDropTimeoutRef.current = window.setTimeout(
+                      () => setBlockedDropKey(""),
+                      850,
+                    );
+                  } finally {
+                    setDragState({ taskId: "", sourceKey: "", overKey: "" });
+                  }
                 }}
                 onClick={() => {
                   toggleExpanded(row.key);
@@ -258,7 +304,7 @@ export default function BacklogView({
                       <button
                         key={task.id}
                         type="button"
-                        className="backlog-task-item"
+                        className={`backlog-task-item ${dragState.taskId === String(task.id) ? "is-dragging" : ""} ${recentlyMovedTaskId === String(task.id) ? "is-recently-moved" : ""}`}
                         draggable={canManage}
                         onDragStart={(event) => {
                           event.dataTransfer.setData(
@@ -270,8 +316,18 @@ export default function BacklogView({
                             String(row.key),
                           );
                           event.dataTransfer.effectAllowed = "move";
+                          setDragState({
+                            taskId: String(task.id),
+                            sourceKey: String(row.key),
+                            overKey: "",
+                          });
                         }}
+                        onDragEnd={() =>
+                          setDragState({ taskId: "", sourceKey: "", overKey: "" })
+                        }
                         onClick={() => onOpenTask(task.id)}
+                        data-task-id={String(task.id)}
+                        aria-grabbed={dragState.taskId === String(task.id)}
                       >
                         <span className="backlog-task-title">
                           <span className="backlog-task-key muted">

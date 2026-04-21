@@ -73,6 +73,57 @@ const TRACKED_TASK_FIELDS = [
   "label",
 ];
 
+function normalizeAcceptanceCriteria(value) {
+  const list = Array.isArray(value) ? value : [];
+  return list
+    .map((item, index) => {
+      const text = String(item?.text || "").trim();
+      if (!text) return null;
+      const id = String(item?.id || "").trim() || `ac-${index}-${text}`;
+      return { id, text, done: item?.done === true };
+    })
+    .filter(Boolean);
+}
+
+function buildAcceptanceCriteriaChanges(beforeTask, afterTask) {
+  const before = normalizeAcceptanceCriteria(beforeTask?.acceptanceCriteria);
+  const after = normalizeAcceptanceCriteria(afterTask?.acceptanceCriteria);
+  const beforeById = new Map(before.map((item) => [item.id, item]));
+  const afterById = new Map(after.map((item) => [item.id, item]));
+  const changes = [];
+
+  after.forEach((item) => {
+    const prev = beforeById.get(item.id);
+    if (!prev) {
+      changes.push({
+        field: "acceptanceCriteria",
+        from: "None",
+        to: `Added: ${item.text}`,
+      });
+      return;
+    }
+    if (prev.done !== item.done) {
+      changes.push({
+        field: "acceptanceCriteria",
+        from: `${prev.done ? "[x]" : "[ ]"} ${prev.text}`,
+        to: `${item.done ? "[x]" : "[ ]"} ${item.text}`,
+      });
+    }
+  });
+
+  before.forEach((item) => {
+    if (!afterById.has(item.id)) {
+      changes.push({
+        field: "acceptanceCriteria",
+        from: `Removed: ${item.text}`,
+        to: "None",
+      });
+    }
+  });
+
+  return changes;
+}
+
 function normalizeFieldValue(value) {
   if (value == null) return null;
   if (typeof value === "string") {
@@ -83,13 +134,14 @@ function normalizeFieldValue(value) {
 }
 
 function buildTaskChanges(beforeTask, afterTask) {
-  return TRACKED_TASK_FIELDS.reduce((acc, field) => {
+  const changes = TRACKED_TASK_FIELDS.reduce((acc, field) => {
     const from = normalizeFieldValue(beforeTask?.[field]);
     const to = normalizeFieldValue(afterTask?.[field]);
     if (from === to) return acc;
     acc.push({ field, from, to });
     return acc;
   }, []);
+  return [...changes, ...buildAcceptanceCriteriaChanges(beforeTask, afterTask)];
 }
 
 router.get("/bootstrap", async (req, res) => {

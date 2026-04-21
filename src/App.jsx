@@ -817,7 +817,11 @@ function App() {
     await refetchAfterCrud({ includeProject: true, includeDashboard: true });
   };
 
-  const moveTask = async (taskId, status) => {
+  const moveTask = async (
+    taskId,
+    status,
+    { suppressErrorToast = false } = {},
+  ) => {
     try {
       await apiRequest(`/task-management/tasks/${taskId}/move`, {
         method: "PATCH",
@@ -825,7 +829,9 @@ function App() {
       });
       await refetchAfterCrud({ includeProject: true, includeDashboard: true });
     } catch (error) {
-      notify(error?.message || "Failed to move task.", "error");
+      if (!suppressErrorToast) {
+        notify(error?.message || "Failed to move task.", "error");
+      }
       throw error;
     }
   };
@@ -1171,6 +1177,7 @@ function App() {
       notify("Task moved.");
     } catch (error) {
       notify(error.message || "Failed to move task.", "error");
+      throw error;
     }
   };
 
@@ -1681,6 +1688,7 @@ function App() {
         {activeView === "board" ? (
           <BoardView
             columns={safeColumns}
+            workflowTransitions={workflowTransitions}
             usersById={usersById}
             userAvatarColor={getUserAvatarColor}
             boardTotalsByStatus={boardTotalsByStatus}
