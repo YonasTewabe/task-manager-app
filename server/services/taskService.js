@@ -1,8 +1,176 @@
 import { dbQuery } from "../db/pool.js";
 import { asInt } from "../utils/validation.js";
 
-export const STATUS_COLUMNS = ["blocked", "todo", "in_progress", "done"];
+export const DEFAULT_WORKFLOW_STAGES = [
+  {
+    key: "blocked",
+    name: "Blocked",
+    description: "Work that cannot proceed",
+    badge: "",
+    counterGroup: "upcoming",
+  },
+  {
+    key: "todo",
+    name: "To Do",
+    description: "Ready to be picked up",
+    badge: "",
+    counterGroup: "upcoming",
+  },
+  {
+    key: "in_progress",
+    name: "In Progress",
+    description: "Actively being worked on",
+    badge: "",
+    counterGroup: "active",
+  },
+  {
+    key: "done",
+    name: "Done",
+    description: "Completed work",
+    badge: "",
+    counterGroup: "done",
+  },
+];
+
+/** @deprecated use getWorkflowStageKeys(settings) */
+export const STATUS_COLUMNS = DEFAULT_WORKFLOW_STAGES.map((s) => s.key);
+
 export const SPRINT_STATUSES = ["planned", "active", "completed"];
+
+function inferCounterGroup(key) {
+  if (key === "done") return "done";
+  if (key === "in_progress") return "active";
+  if (key === "blocked" || key === "todo") return "upcoming";
+  return "upcoming";
+}
+
+export function normalizeWorkflowStages(raw) {
+  const list = Array.isArray(raw) ? raw : [];
+  const cleaned = [];
+  const seen = new Set();
+  for (const item of list) {
+    if (!item || typeof item !== "object") continue;
+    const key = String(item.key || "").trim();
+    if (!/^[a-z][a-z0-9_-]{0,62}$/.test(key)) continue;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const name = String(item.name || key).trim() || key;
+    const description = String(item.description ?? "").trim();
+    const badge = String(item.badge ?? "").trim();
+    let counterGroup = item.counterGroup;
+    if (counterGroup !== "upcoming" && counterGroup !== "active" && counterGroup !== "done") {
+      counterGroup = inferCounterGroup(key);
+    }
+    cleaned.push({ key, name, description, badge, counterGroup });
+  }
+  if (cleaned.length === 0) {
+    return DEFAULT_WORKFLOW_STAGES.map((s) => ({ ...s }));
+  }
+  return cleaned;
+}
+
+function defaultWorkflowTransitions(stages) {
+  const list = Array.isArray(stages) ? stages : [];
+  const transitions = [];
+  for (let i = 0; i < list.length - 1; i += 1) {
+    const from = list[i]?.key;
+    const to = list[i + 1]?.key;
+    if (!from || !to) continue;
+    transitions.push({
+      from,
+      to,
+      allowAllUsers: false,
+      allowedUserIds: [],
+      allowedGroupIds: [],
+    });
+  }
+  return transitions;
+}
+
+const DEFAULT_WORKFLOW_TRANSITIONS = defaultWorkflowTransitions(DEFAULT_WORKFLOW_STAGES);
+
+function normalizeWorkflowRules(rawRules, stages) {
+  const stageKeys = new Set((stages || []).map((s) => s.key));
+  const raw = rawRules && typeof rawRules === "object" ? rawRules : {};
+  const incoming = Array.isArray(raw.transitions) ? raw.transitions : [];
+  const seen = new Set();
+  const transitions = [];
+
+  for (const item of incoming) {
+    const from = String(item?.from || "").trim();
+    const to = String(item?.to || "").trim();
+    if (!from || !to || from === to) continue;
+    if (!stageKeys.has(from) || !stageKeys.has(to)) continue;
+    const pair = `${from}->${to}`;
+    if (seen.has(pair)) continue;
+    seen.add(pair);
+    const allowedUserIds = [
+      ...new Set(
+        (Array.isArray(item?.allowedUserIds) ? item.allowedUserIds : [])
+          .map((id) => asUuid(id, null))
+          .filter((id) => id != null),
+      ),
+    ];
+    transitions.push({
+      from,
+      to,
+      allowAllUsers: item?.allowAllUsers === true,
+      allowedUserIds,
+      allowedGroupIds: [
+        ...new Set(
+          (Array.isArray(item?.allowedGroupIds) ? item.allowedGroupIds : [])
+            .map((id) => asUuid(id, null))
+            .filter((id) => id != null),
+        ),
+      ],
+    });
+  }
+
+  return {
+    transitions: transitions.length ? transitions : defaultWorkflowTransitions(stages),
+  };
+}
+
+export function validateWorkflowStagesForSave(raw) {
+  if (!Array.isArray(raw) || raw.length < 1) {
+    throw new Error("At least one workflow stage is required");
+  }
+  const keys = new Set();
+  for (const item of raw) {
+    const key = String(item?.key || "").trim();
+    if (!/^[a-z][a-z0-9_-]{0,62}$/.test(key)) {
+      throw new Error(
+        `Invalid stage key "${key}". Use a lowercase letter first, then letters, numbers, hyphens, or underscores.`,
+      );
+    }
+    if (keys.has(key)) throw new Error(`Duplicate stage key: ${key}`);
+    keys.add(key);
+    if (!String(item?.name || "").trim()) {
+      throw new Error(`Stage "${key}" needs a display name`);
+    }
+  }
+  return raw.map((item) => {
+    let counterGroup = item.counterGroup;
+    if (counterGroup !== "upcoming" && counterGroup !== "active" && counterGroup !== "done") {
+      counterGroup = inferCounterGroup(String(item.key).trim());
+    }
+    return {
+      key: String(item.key).trim(),
+      name: String(item.name).trim(),
+      description: String(item.description ?? "").trim(),
+      badge: String(item.badge ?? "").trim(),
+      counterGroup,
+    };
+  });
+}
+
+export function getWorkflowStageKeys(settings) {
+  return normalizeWorkflowStages(settings?.boardCardFields?.workflowStages).map((s) => s.key);
+}
+
+export function isValidWorkflowStatus(status, settings) {
+  return getWorkflowStageKeys(settings).includes(String(status || "").trim());
+}
 
 function asUuid(value, fallback = null) {
   if (typeof value !== "string") return fallback;
@@ -11,90 +179,168 @@ function asUuid(value, fallback = null) {
   return trimmed;
 }
 
-const DEFAULT_SYSTEM_SETTINGS = {
+/** Formerly stored under workflow_rules; now general_rules (workflow_rules reserved for future workflow config). */
+const LEGACY_WORKFLOW_RULE_KEYS = [
+  "allowBackMoveFromDone",
+  "requireAssigneeForInProgress",
+  "autoMoveToBacklogOnSprintComplete",
+];
+
+const REMOVED_BOARD_CARD_FIELD_KEYS = ["showStoryPoints", "showPriority", "showAssignee", "showLabel"];
+
+function sanitizeBoardCardFields(obj) {
+  const o = { ...(obj && typeof obj === "object" ? obj : {}) };
+  REMOVED_BOARD_CARD_FIELD_KEYS.forEach((k) => {
+    delete o[k];
+  });
+  return o;
+}
+
+function stripLegacyWorkflowRuleKeys(obj) {
+  const o = { ...(obj && typeof obj === "object" ? obj : {}) };
+  LEGACY_WORKFLOW_RULE_KEYS.forEach((k) => {
+    delete o[k];
+  });
+  return o;
+}
+
+const DEFAULT_SETTINGS = {
   boardCardFields: {
-    showStoryPoints: true,
-    showPriority: true,
-    showAssignee: true,
-    showLabel: true,
+    workflowStages: DEFAULT_WORKFLOW_STAGES.map((s) => ({ ...s })),
   },
-  workflowRules: {
-    allowBackMoveFromDone: false,
+  workflowRules: {},
+  generalRules: {
+    defaultStoryPoints: 3,
     requireAssigneeForInProgress: true,
     autoMoveToBacklogOnSprintComplete: true,
   },
-  generalRules: {
-    defaultStoryPoints: 3,
-    enforceUniqueTaskTitlesInSprint: false,
-  },
 };
 
-export async function getUsers() {
-  const result = await dbQuery(
-    "SELECT id, name, email, role, created_at AS \"createdAt\" FROM users ORDER BY id ASC",
-  );
-  return result.rows;
+function mergeGeneralRules(rowGeneral, rowWorkflow) {
+  const base = {
+    ...DEFAULT_SETTINGS.generalRules,
+    ...(rowGeneral && typeof rowGeneral === "object" ? rowGeneral : {}),
+  };
+  const legacy = rowWorkflow && typeof rowWorkflow === "object" ? rowWorkflow : {};
+  for (const k of LEGACY_WORKFLOW_RULE_KEYS) {
+    if (base[k] === undefined && legacy[k] !== undefined) {
+      base[k] = legacy[k];
+    }
+  }
+  delete base.allowBackMoveFromDone;
+  delete base.enforceUniqueTaskTitlesInSprint;
+  return base;
 }
 
-export async function getSystemSettings() {
+function pullLegacyFromWorkflowPatch(workflowPatch) {
+  const pulled = {};
+  if (!workflowPatch || typeof workflowPatch !== "object") return pulled;
+  for (const k of LEGACY_WORKFLOW_RULE_KEYS) {
+    if (workflowPatch[k] !== undefined) pulled[k] = workflowPatch[k];
+  }
+  return pulled;
+}
+
+function mergeSettingsRow(row) {
+  if (!row) {
+    const mergedBoard = sanitizeBoardCardFields({
+      ...DEFAULT_SETTINGS.boardCardFields,
+    });
+    mergedBoard.workflowStages = normalizeWorkflowStages(mergedBoard.workflowStages);
+    return {
+      boardCardFields: mergedBoard,
+      workflowRules: normalizeWorkflowRules({}, mergedBoard.workflowStages),
+      generalRules: { ...DEFAULT_SETTINGS.generalRules },
+      updatedAt: undefined,
+    };
+  }
+  const mergedBoard = sanitizeBoardCardFields({
+    ...DEFAULT_SETTINGS.boardCardFields,
+    ...(row.boardCardFields || {}),
+  });
+  mergedBoard.workflowStages = normalizeWorkflowStages(mergedBoard.workflowStages);
+  return {
+    boardCardFields: mergedBoard,
+    workflowRules: normalizeWorkflowRules(
+      stripLegacyWorkflowRuleKeys(row.workflowRules || {}),
+      mergedBoard.workflowStages,
+    ),
+    generalRules: mergeGeneralRules(row.generalRules, row.workflowRules),
+    updatedAt: row.updatedAt,
+  };
+}
+
+export function getDefaultSettings() {
+  return mergeSettingsRow(null);
+}
+
+async function ensureProjectSettingsRow(projectId) {
+  const pid = asUuid(projectId, null);
+  if (!pid) return;
+  await dbQuery(
+    `INSERT INTO project_settings (project_id, workflow_rules) VALUES ($1, $2::jsonb)
+     ON CONFLICT (project_id) DO NOTHING`,
+    [
+      pid,
+      JSON.stringify({
+        transitions: DEFAULT_WORKFLOW_TRANSITIONS,
+      }),
+    ],
+  );
+}
+
+export async function getProjectSettings(projectId) {
+  const pid = asUuid(projectId, null);
+  if (!pid) return mergeSettingsRow(null);
   const result = await dbQuery(
     `SELECT board_card_fields AS "boardCardFields",
             workflow_rules AS "workflowRules",
             general_rules AS "generalRules",
             updated_at AS "updatedAt"
-     FROM system_settings
-     ORDER BY updated_at DESC
-     LIMIT 1`,
+     FROM project_settings
+     WHERE project_id = $1`,
+    [pid],
   );
-  const row = result.rows[0];
-  if (!row) {
-    return { ...DEFAULT_SYSTEM_SETTINGS };
-  }
-  return {
-    boardCardFields: {
-      ...DEFAULT_SYSTEM_SETTINGS.boardCardFields,
-      ...(row.boardCardFields || {}),
-    },
-    workflowRules: {
-      ...DEFAULT_SYSTEM_SETTINGS.workflowRules,
-      ...(row.workflowRules || {}),
-    },
-    generalRules: {
-      ...DEFAULT_SYSTEM_SETTINGS.generalRules,
-      ...(row.generalRules || {}),
-    },
-    updatedAt: row.updatedAt,
-  };
+  return mergeSettingsRow(result.rows[0] || null);
 }
 
-export async function updateSystemSettings(patch = {}) {
-  const current = await getSystemSettings();
-  const idResult = await dbQuery("SELECT id FROM system_settings ORDER BY updated_at DESC LIMIT 1");
-  const settingsId = idResult.rows[0]?.id;
-  if (!settingsId) {
-    throw new Error("System settings row missing");
+export async function updateProjectSettings(projectId, patch = {}) {
+  const pid = asUuid(projectId, null);
+  if (!pid) throw new Error("Invalid project id");
+  await ensureProjectSettingsRow(pid);
+  const current = await getProjectSettings(pid);
+  const nextBoard = sanitizeBoardCardFields({
+    ...current.boardCardFields,
+    ...(patch.boardCardFields || {}),
+  });
+  if (patch.boardCardFields?.workflowStages != null) {
+    nextBoard.workflowStages = validateWorkflowStagesForSave(patch.boardCardFields.workflowStages);
   }
+  const migratedFromWorkflowPatch = pullLegacyFromWorkflowPatch(patch.workflowRules);
   const next = {
-    boardCardFields: {
-      ...current.boardCardFields,
-      ...(patch.boardCardFields || {}),
-    },
-    workflowRules: {
-      ...current.workflowRules,
-      ...(patch.workflowRules || {}),
-    },
+    boardCardFields: nextBoard,
+    workflowRules: normalizeWorkflowRules(
+      stripLegacyWorkflowRuleKeys({
+        ...current.workflowRules,
+        ...(patch.workflowRules || {}),
+      }),
+      nextBoard.workflowStages,
+    ),
     generalRules: {
       ...current.generalRules,
+      ...migratedFromWorkflowPatch,
       ...(patch.generalRules || {}),
     },
   };
+  delete next.generalRules.allowBackMoveFromDone;
+  delete next.generalRules.enforceUniqueTaskTitlesInSprint;
   const result = await dbQuery(
-    `UPDATE system_settings
+    `UPDATE project_settings
      SET board_card_fields = $1::jsonb,
          workflow_rules = $2::jsonb,
          general_rules = $3::jsonb,
          updated_at = NOW()
-     WHERE id = $4
+     WHERE project_id = $4
      RETURNING board_card_fields AS "boardCardFields",
                workflow_rules AS "workflowRules",
                general_rules AS "generalRules",
@@ -103,10 +349,94 @@ export async function updateSystemSettings(patch = {}) {
       JSON.stringify(next.boardCardFields),
       JSON.stringify(next.workflowRules),
       JSON.stringify(next.generalRules),
-      settingsId,
+      pid,
     ],
   );
-  return result.rows[0] || next;
+  return mergeSettingsRow(result.rows[0] || null);
+}
+
+export async function getUsers() {
+  const result = await dbQuery(
+    `SELECT
+       u.id,
+       u.name,
+       u.email,
+       u.role,
+       u.created_at AS "createdAt",
+       COALESCE(
+         JSON_AGG(JSON_BUILD_OBJECT('id', g.id, 'name', g.name))
+         FILTER (WHERE g.id IS NOT NULL),
+         '[]'::json
+       ) AS groups
+     FROM users u
+     LEFT JOIN user_group_members ugm ON ugm.user_id = u.id
+     LEFT JOIN user_groups g ON g.id = ugm.group_id
+     GROUP BY u.id
+     ORDER BY u.id ASC`,
+  );
+  return result.rows;
+}
+
+export async function getUserGroups() {
+  const result = await dbQuery(
+    `SELECT
+       g.id,
+       g.name,
+       g.created_at AS "createdAt",
+       COALESCE(
+         JSON_AGG(JSON_BUILD_OBJECT('id', u.id, 'name', u.name, 'email', u.email))
+         FILTER (WHERE u.id IS NOT NULL),
+         '[]'::json
+       ) AS members
+     FROM user_groups g
+     LEFT JOIN user_group_members ugm ON ugm.group_id = g.id
+     LEFT JOIN users u ON u.id = ugm.user_id
+     GROUP BY g.id
+     ORDER BY g.name ASC`,
+  );
+  return result.rows;
+}
+
+async function setGroupMembers(groupId, userIds) {
+  await dbQuery("DELETE FROM user_group_members WHERE group_id = $1", [asUuid(groupId)]);
+  const normalized = [...new Set((userIds || []).map((id) => asUuid(id)).filter((id) => id != null))];
+  if (!normalized.length) return;
+  const valuesSql = normalized.map((_, index) => `($1, $${index + 2})`).join(", ");
+  await dbQuery(
+    `INSERT INTO user_group_members (group_id, user_id) VALUES ${valuesSql} ON CONFLICT DO NOTHING`,
+    [asUuid(groupId), ...normalized],
+  );
+}
+
+export async function createUserGroup({ name, memberIds = [] }) {
+  const result = await dbQuery(
+    `INSERT INTO user_groups (name) VALUES ($1)
+     RETURNING id`,
+    [String(name || "").trim()],
+  );
+  const groupId = result.rows[0]?.id;
+  if (groupId && memberIds) await setGroupMembers(groupId, memberIds);
+  const groups = await getUserGroups();
+  return groups.find((g) => String(g.id) === String(groupId)) || null;
+}
+
+export async function updateUserGroup(groupId, patch = {}) {
+  if (patch.name !== undefined) {
+    await dbQuery(`UPDATE user_groups SET name = $1 WHERE id = $2`, [
+      String(patch.name).trim(),
+      asUuid(groupId),
+    ]);
+  }
+  if (patch.memberIds !== undefined) {
+    await setGroupMembers(groupId, patch.memberIds);
+  }
+  const groups = await getUserGroups();
+  return groups.find((g) => String(g.id) === String(groupId)) || null;
+}
+
+export async function deleteUserGroup(groupId) {
+  const result = await dbQuery("DELETE FROM user_groups WHERE id = $1", [asUuid(groupId)]);
+  return result.rowCount > 0;
 }
 
 export async function createUser({ name, email, passwordHash, role }) {
@@ -153,11 +483,22 @@ export async function deleteUser(userId) {
   return result.rowCount > 0;
 }
 
-export async function getSprints() {
+export async function getSprints(filters = {}) {
+  const where = [];
+  const params = [];
+  let idx = 1;
+  if (filters.projectId) {
+    where.push(`project_id = $${idx}`);
+    params.push(asUuid(filters.projectId));
+    idx += 1;
+  }
   const result = await dbQuery(
-    `SELECT id, name, start_date AS "startDate", end_date AS "endDate",
+    `SELECT id, name, project_id AS "projectId", start_date AS "startDate", end_date AS "endDate",
             status, created_at AS "createdAt"
-     FROM sprints ORDER BY id DESC`,
+     FROM sprints
+     ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+     ORDER BY start_date ASC NULLS LAST, end_date ASC NULLS LAST, name ASC`,
+    params,
   );
   return result.rows;
 }
@@ -210,6 +551,7 @@ export async function createProject({ name, projectKey, description, memberIds }
   );
   const project = result.rows[0];
   await setProjectMembers(project.id, memberIds || []);
+  await ensureProjectSettingsRow(project.id);
   const projects = await getProjects();
   return projects.find((item) => item.id === project.id) || project;
 }
@@ -259,13 +601,75 @@ export async function deleteProject(projectId) {
   return result.rowCount > 0;
 }
 
-export async function createSprint({ name, startDate, endDate, status }) {
+export async function projectExists(projectId) {
+  const result = await dbQuery("SELECT 1 FROM projects WHERE id = $1 LIMIT 1", [
+    asUuid(projectId),
+  ]);
+  return result.rows.length > 0;
+}
+
+async function getProjectMemberIds(projectId) {
   const result = await dbQuery(
-    `INSERT INTO sprints (name, start_date, end_date, status)
-     VALUES ($1, $2, $3, $4)
-     RETURNING id, name, start_date AS "startDate", end_date AS "endDate",
+    `SELECT user_id AS "userId" FROM project_members WHERE project_id = $1`,
+    [asUuid(projectId)],
+  );
+  return result.rows.map((r) => String(r.userId));
+}
+
+async function getUserGroupIdsForProjectMember(projectId, userId) {
+  const result = await dbQuery(
+    `SELECT ugm.group_id AS "groupId"
+     FROM user_group_members ugm
+     WHERE ugm.user_id = $1
+       AND EXISTS (
+         SELECT 1 FROM project_members pm
+         WHERE pm.project_id = $2 AND pm.user_id = ugm.user_id
+       )`,
+    [asUuid(userId), asUuid(projectId)],
+  );
+  return result.rows.map((row) => String(row.groupId));
+}
+
+export async function canUserMoveTask(task, nextStatus, actor) {
+  const currentStatus = String(task?.status || "");
+  const targetStatus = String(nextStatus || "");
+  if (!currentStatus || !targetStatus || currentStatus === targetStatus) return true;
+
+  const settings = await getProjectSettings(task.projectId);
+  if (!isValidWorkflowStatus(targetStatus, settings)) return false;
+
+  const transitions = Array.isArray(settings?.workflowRules?.transitions)
+    ? settings.workflowRules.transitions
+    : [];
+  const transition = transitions.find(
+    (item) => item?.from === currentStatus && item?.to === targetStatus,
+  );
+  if (!transition) return false;
+
+  const actorId = String(actor?.id || "");
+  const allowedUserIds = Array.isArray(transition.allowedUserIds) ? transition.allowedUserIds : [];
+  const allowedGroupIds = Array.isArray(transition.allowedGroupIds) ? transition.allowedGroupIds : [];
+  if (transition?.allowAllUsers === true) {
+    const projectMemberIds = await getProjectMemberIds(task.projectId);
+    return projectMemberIds.includes(actorId);
+  }
+  if (allowedUserIds.length > 0) {
+    if (allowedUserIds.includes(actorId)) return true;
+  }
+  if (allowedGroupIds.length > 0) {
+    const actorGroupIds = await getUserGroupIdsForProjectMember(task.projectId, actorId);
+    if (actorGroupIds.some((groupId) => allowedGroupIds.includes(groupId))) return true;
+  }
+  return false;
+}
+
+export async function createSprint({ name, projectId, startDate, endDate, status }) {
+  const result = await dbQuery(
+    `INSERT INTO sprints (name, project_id, start_date, end_date, status)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, name, project_id AS "projectId", start_date AS "startDate", end_date AS "endDate",
                status, created_at AS "createdAt"`,
-    [name, startDate || null, endDate || null, status || "planned"],
+    [name, asUuid(projectId), startDate || null, endDate || null, status || "planned"],
   );
   return result.rows[0];
 }
@@ -278,6 +682,7 @@ export async function updateSprint(id, patch) {
   for (const [incomingKey, value] of Object.entries(patch)) {
     const dbKeyMap = {
       name: "name",
+      projectId: "project_id",
       startDate: "start_date",
       endDate: "end_date",
       status: "status",
@@ -285,7 +690,7 @@ export async function updateSprint(id, patch) {
     const dbKey = dbKeyMap[incomingKey];
     if (!dbKey) continue;
     fields.push(`${dbKey} = $${idx}`);
-    params.push(value);
+    params.push(incomingKey === "projectId" ? asUuid(value) : value);
     idx += 1;
   }
 
@@ -295,7 +700,7 @@ export async function updateSprint(id, patch) {
   const result = await dbQuery(
     `UPDATE sprints SET ${fields.join(", ")}
      WHERE id = $${idx}
-     RETURNING id, name, start_date AS "startDate", end_date AS "endDate",
+     RETURNING id, name, project_id AS "projectId", start_date AS "startDate", end_date AS "endDate",
                status, created_at AS "createdAt"`,
     params,
   );
@@ -303,6 +708,10 @@ export async function updateSprint(id, patch) {
 }
 
 function mapTaskRow(row) {
+  const taskNumber = row.taskNumber != null ? Number(row.taskNumber) : null;
+  const projectKey = row.projectKey ? String(row.projectKey) : null;
+  const taskKey =
+    projectKey && taskNumber != null && !Number.isNaN(taskNumber) ? `${projectKey}-${taskNumber}` : null;
   return {
     id: row.id,
     title: row.title,
@@ -314,6 +723,9 @@ function mapTaskRow(row) {
     storyPoints: row.storyPoints,
     assigneeId: row.assigneeId,
     sprintId: row.sprintId,
+    projectId: row.projectId,
+    taskNumber,
+    taskKey,
     createdBy: row.createdBy,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -332,6 +744,11 @@ export async function getTasks(filters = {}) {
     params.push(asUuid(filters.sprintId));
     idx += 1;
   }
+  if (filters.projectId) {
+    where.push(`t.project_id = $${idx}`);
+    params.push(asUuid(filters.projectId));
+    idx += 1;
+  }
   if (filters.status) {
     where.push(`t.status = $${idx}`);
     params.push(filters.status);
@@ -345,6 +762,13 @@ export async function getTasks(filters = {}) {
       params.push(asUuid(filters.assigneeId));
       idx += 1;
     }
+  }
+  if (filters.limitProjectsToMemberUserId) {
+    where.push(
+      `EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = t.project_id AND pm.user_id = $${idx})`,
+    );
+    params.push(asUuid(filters.limitProjectsToMemberUserId));
+    idx += 1;
   }
   if (filters.priority) {
     where.push(`t.priority = $${idx}`);
@@ -365,9 +789,12 @@ export async function getTasks(filters = {}) {
   const query = `
     SELECT t.id, t.title, t.description, t.label, t.type, t.priority, t.status,
            t.story_points AS "storyPoints", t.assignee_id AS "assigneeId",
-           t.sprint_id AS "sprintId", t.created_by AS "createdBy",
+           t.sprint_id AS "sprintId", t.project_id AS "projectId", t.task_number AS "taskNumber",
+           p.project_key AS "projectKey",
+           t.created_by AS "createdBy",
            t.created_at AS "createdAt", t.updated_at AS "updatedAt"
     FROM tasks t
+    INNER JOIN projects p ON p.id = t.project_id
     ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
     ORDER BY t.id DESC
   `;
@@ -379,22 +806,71 @@ export async function getTaskById(id) {
   const result = await dbQuery(
     `SELECT t.id, t.title, t.description, t.label, t.type, t.priority, t.status,
             t.story_points AS "storyPoints", t.assignee_id AS "assigneeId",
-            t.sprint_id AS "sprintId", t.created_by AS "createdBy",
+            t.sprint_id AS "sprintId", t.project_id AS "projectId", t.task_number AS "taskNumber",
+            p.project_key AS "projectKey",
+            t.created_by AS "createdBy",
             t.created_at AS "createdAt", t.updated_at AS "updatedAt"
-     FROM tasks t WHERE t.id = $1`,
+     FROM tasks t
+     INNER JOIN projects p ON p.id = t.project_id
+     WHERE t.id = $1`,
     [asUuid(id)],
   );
   return result.rows[0] ? mapTaskRow(result.rows[0]) : null;
 }
 
+export const TASK_TITLE_CONFLICT_MESSAGE =
+  "A task with this title already exists in this project.";
+
+async function assertUniqueTaskTitleInProject(projectId, title, excludeTaskId = null) {
+  const pid = asUuid(projectId, null);
+  if (!pid) return;
+  const normalized = String(title ?? "").trim();
+  if (!normalized) return;
+
+  if (excludeTaskId) {
+    const result = await dbQuery(
+      `SELECT 1 FROM tasks
+       WHERE project_id = $1 AND LOWER(TRIM(title)) = LOWER($2) AND id <> $3
+       LIMIT 1`,
+      [pid, normalized, asUuid(excludeTaskId)],
+    );
+    if (result.rows.length > 0) throw new Error(TASK_TITLE_CONFLICT_MESSAGE);
+    return;
+  }
+  const result = await dbQuery(
+    `SELECT 1 FROM tasks
+     WHERE project_id = $1 AND LOWER(TRIM(title)) = LOWER($2)
+     LIMIT 1`,
+    [pid, normalized],
+  );
+  if (result.rows.length > 0) throw new Error(TASK_TITLE_CONFLICT_MESSAGE);
+}
+
+async function allocateNextTaskNumber(projectId) {
+  const pid = asUuid(projectId, null);
+  if (!pid) throw new Error("projectId is required");
+  const result = await dbQuery(
+    `INSERT INTO project_task_seq (project_id, last_value)
+     VALUES ($1, 1)
+     ON CONFLICT (project_id)
+     DO UPDATE SET last_value = project_task_seq.last_value + 1
+     RETURNING last_value AS "lastValue"`,
+    [pid],
+  );
+  return Number(result.rows[0].lastValue);
+}
+
 export async function createTask(payload, createdBy) {
+  await assertUniqueTaskTitleInProject(payload.projectId, payload.title, null);
+  const taskNumber = await allocateNextTaskNumber(payload.projectId);
   const result = await dbQuery(
     `INSERT INTO tasks (
-        title, description, label, type, priority, status, story_points, assignee_id, sprint_id, created_by
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        title, description, label, type, priority, status, story_points, assignee_id, sprint_id, project_id, created_by, task_number
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
      RETURNING id, title, description, label, type, priority, status,
                story_points AS "storyPoints", assignee_id AS "assigneeId",
-               sprint_id AS "sprintId", created_by AS "createdBy",
+               sprint_id AS "sprintId", project_id AS "projectId", task_number AS "taskNumber",
+               created_by AS "createdBy",
                created_at AS "createdAt", updated_at AS "updatedAt"`,
     [
       payload.title,
@@ -406,13 +882,46 @@ export async function createTask(payload, createdBy) {
       asInt(payload.storyPoints, 1),
       asUuid(payload.assigneeId),
       asUuid(payload.sprintId),
+      asUuid(payload.projectId),
       asUuid(createdBy),
+      taskNumber,
     ],
   );
-  return mapTaskRow(result.rows[0]);
+  const pk = await dbQuery(`SELECT project_key AS "projectKey" FROM projects WHERE id = $1`, [
+    asUuid(payload.projectId),
+  ]);
+  return mapTaskRow({ ...result.rows[0], projectKey: pk.rows[0]?.projectKey });
 }
 
 export async function updateTask(taskId, patch) {
+  let existing = null;
+  const needsExisting =
+    patch.status !== undefined || patch.title !== undefined || patch.projectId !== undefined;
+  if (needsExisting) {
+    existing = await getTaskById(taskId);
+    if (!existing) return null;
+  }
+
+  if (patch.status !== undefined) {
+    const settings = await getProjectSettings(existing.projectId);
+    if (!isValidWorkflowStatus(patch.status, settings)) {
+      return null;
+    }
+  }
+
+  let allocatedTaskNumber = null;
+  if (patch.title !== undefined || patch.projectId !== undefined) {
+    const nextTitle = patch.title !== undefined ? patch.title : existing.title;
+    const nextProjectId = patch.projectId !== undefined ? patch.projectId : existing.projectId;
+    await assertUniqueTaskTitleInProject(nextProjectId, nextTitle, taskId);
+    if (
+      patch.projectId !== undefined &&
+      String(asUuid(patch.projectId)) !== String(asUuid(existing.projectId))
+    ) {
+      allocatedTaskNumber = await allocateNextTaskNumber(patch.projectId);
+    }
+  }
+
   const allowedMap = {
     title: "title",
     description: "description",
@@ -423,6 +932,7 @@ export async function updateTask(taskId, patch) {
     storyPoints: "story_points",
     assigneeId: "assignee_id",
     sprintId: "sprint_id",
+    projectId: "project_id",
   };
 
   const fields = [];
@@ -433,11 +943,16 @@ export async function updateTask(taskId, patch) {
     fields.push(`${dbKey} = $${idx}`);
     if (key === "storyPoints") {
       params.push(asInt(patch[key], null));
-    } else if (key === "assigneeId" || key === "sprintId") {
+    } else if (key === "assigneeId" || key === "sprintId" || key === "projectId") {
       params.push(asUuid(patch[key], null));
     } else {
       params.push(patch[key]);
     }
+    idx += 1;
+  }
+  if (allocatedTaskNumber != null) {
+    fields.push(`task_number = $${idx}`);
+    params.push(allocatedTaskNumber);
     idx += 1;
   }
   if (fields.length === 0) return null;
@@ -445,12 +960,15 @@ export async function updateTask(taskId, patch) {
   params.push(taskId);
 
   const result = await dbQuery(
-    `UPDATE tasks SET ${fields.join(", ")}
-     WHERE id = $${idx}
-     RETURNING id, title, description, label, type, priority, status,
-               story_points AS "storyPoints", assignee_id AS "assigneeId",
-               sprint_id AS "sprintId", created_by AS "createdBy",
-               created_at AS "createdAt", updated_at AS "updatedAt"`,
+    `UPDATE tasks t
+     SET ${fields.join(", ")}
+     FROM projects p
+     WHERE t.id = $${idx} AND p.id = t.project_id
+     RETURNING t.id, t.title, t.description, t.label, t.type, t.priority, t.status,
+               t.story_points AS "storyPoints", t.assignee_id AS "assigneeId",
+               t.sprint_id AS "sprintId", t.project_id AS "projectId", t.created_by AS "createdBy",
+               t.created_at AS "createdAt", t.updated_at AS "updatedAt",
+               t.task_number AS "taskNumber", p.project_key AS "projectKey"`,
     params,
   );
   return result.rows[0] ? mapTaskRow(result.rows[0]) : null;
@@ -505,11 +1023,17 @@ export async function getTaskActivity(taskId) {
   return result.rows;
 }
 
-export async function buildBoard(sprintId, filters = {}) {
-  const tasks = await getTasks({ sprintId, ...filters });
-  return STATUS_COLUMNS.map((status) => ({
-    status,
-    tasks: tasks.filter((task) => task.status === status),
+export async function buildBoard(sprintId, projectId, filters = {}) {
+  const settings = await getProjectSettings(projectId);
+  const stages = normalizeWorkflowStages(settings.boardCardFields?.workflowStages);
+  const tasks = await getTasks({ sprintId, projectId, ...filters });
+  return stages.map((stage) => ({
+    status: stage.key,
+    name: stage.name,
+    description: stage.description,
+    badge: stage.badge,
+    counterGroup: stage.counterGroup,
+    tasks: tasks.filter((task) => task.status === stage.key),
   }));
 }
 
@@ -518,10 +1042,17 @@ export async function completeSprint(sprintId, moveIncompleteToBacklog = true) {
   if (!updatedSprint) return null;
 
   if (moveIncompleteToBacklog) {
+    const sprintRow = await dbQuery(`SELECT project_id AS "projectId" FROM sprints WHERE id = $1`, [
+      asUuid(sprintId),
+    ]);
+    const sprintProjectId = sprintRow.rows[0]?.projectId;
+    const settings = sprintProjectId ? await getProjectSettings(sprintProjectId) : getDefaultSettings();
+    const keys = getWorkflowStageKeys(settings);
+    const terminal = keys.length ? keys[keys.length - 1] : "done";
     await dbQuery(
       `UPDATE tasks SET sprint_id = NULL, updated_at = NOW()
-       WHERE sprint_id = $1 AND status <> 'done'`,
-      [sprintId],
+       WHERE sprint_id = $1 AND status <> $2`,
+      [sprintId, terminal],
     );
   }
   return updatedSprint;
@@ -529,13 +1060,15 @@ export async function completeSprint(sprintId, moveIncompleteToBacklog = true) {
 
 export async function assignTaskToSprint(taskId, sprintId) {
   const result = await dbQuery(
-    `UPDATE tasks
+    `UPDATE tasks t
      SET sprint_id = $1, updated_at = NOW()
-     WHERE id = $2
-     RETURNING id, title, description, type, priority, status,
-               story_points AS "storyPoints", assignee_id AS "assigneeId",
-               sprint_id AS "sprintId", created_by AS "createdBy",
-               created_at AS "createdAt", updated_at AS "updatedAt"`,
+     FROM projects p
+     WHERE t.id = $2 AND p.id = t.project_id
+     RETURNING t.id, t.title, t.description, t.label, t.type, t.priority, t.status,
+               t.story_points AS "storyPoints", t.assignee_id AS "assigneeId",
+               t.sprint_id AS "sprintId", t.project_id AS "projectId", t.created_by AS "createdBy",
+               t.created_at AS "createdAt", t.updated_at AS "updatedAt",
+               t.task_number AS "taskNumber", p.project_key AS "projectKey"`,
     [sprintId, taskId],
   );
   return result.rows[0] ? mapTaskRow(result.rows[0]) : null;
@@ -543,13 +1076,15 @@ export async function assignTaskToSprint(taskId, sprintId) {
 
 export async function removeTaskFromSprint(taskId, sprintId) {
   const result = await dbQuery(
-    `UPDATE tasks
+    `UPDATE tasks t
      SET sprint_id = NULL, updated_at = NOW()
-     WHERE id = $1 AND sprint_id = $2
-     RETURNING id, title, description, type, priority, status,
-               story_points AS "storyPoints", assignee_id AS "assigneeId",
-               sprint_id AS "sprintId", created_by AS "createdBy",
-               created_at AS "createdAt", updated_at AS "updatedAt"`,
+     FROM projects p
+     WHERE t.id = $1 AND t.sprint_id = $2 AND p.id = t.project_id
+     RETURNING t.id, t.title, t.description, t.label, t.type, t.priority, t.status,
+               t.story_points AS "storyPoints", t.assignee_id AS "assigneeId",
+               t.sprint_id AS "sprintId", t.project_id AS "projectId", t.created_by AS "createdBy",
+               t.created_at AS "createdAt", t.updated_at AS "updatedAt",
+               t.task_number AS "taskNumber", p.project_key AS "projectKey"`,
     [taskId, sprintId],
   );
   return result.rows[0] ? mapTaskRow(result.rows[0]) : null;

@@ -1,8 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { DEFAULT_WORKFLOW_STAGES } from "../workflowDefaults.js";
+import { displayTaskRef } from "../utils/taskDisplay.js";
 
 export default function TaskDrawer({
   taskBundle,
   users,
+  workflowStages,
   onClose,
   onSaveTask,
   onAddComment,
@@ -17,6 +20,12 @@ export default function TaskDrawer({
     return map;
   }, [users]);
 
+  const stages = workflowStages?.length ? workflowStages : DEFAULT_WORKFLOW_STAGES;
+
+  useEffect(() => {
+    setDraft(task || null);
+  }, [task]);
+
   if (!task || !draft) return null;
 
   const submitPatch = () => {
@@ -26,7 +35,7 @@ export default function TaskDrawer({
       label: draft.label || "",
       status: draft.status,
       storyPoints: Number(draft.storyPoints),
-      assigneeId: draft.assigneeId ? Number(draft.assigneeId) : null,
+      assigneeId: draft.assigneeId ? String(draft.assigneeId) : null,
       priority: draft.priority,
       type: draft.type,
     });
@@ -35,7 +44,10 @@ export default function TaskDrawer({
   return (
     <aside className="task-drawer">
       <div className="task-drawer-head">
-        <h3>{task.title}</h3>
+        <div>
+          <p className="muted task-drawer-ref">{displayTaskRef(task)}</p>
+          <h3>{task.title}</h3>
+        </div>
         <button type="button" onClick={onClose}>
           Close
         </button>
@@ -72,10 +84,11 @@ export default function TaskDrawer({
             value={draft.status}
             onChange={(event) => setDraft((prev) => ({ ...prev, status: event.target.value }))}
           >
-            <option value="blocked">blocked</option>
-            <option value="todo">todo</option>
-            <option value="in_progress">in_progress</option>
-            <option value="done">done</option>
+            {stages.map((s) => (
+              <option key={s.key} value={s.key}>
+                {s.name}
+              </option>
+            ))}
           </select>
         </label>
         <label>

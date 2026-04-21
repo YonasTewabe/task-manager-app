@@ -4,19 +4,23 @@ import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/roles.js";
 import { isNonEmptyString } from "../utils/validation.js";
 import {
-  STATUS_COLUMNS,
   addTaskActivity,
   addTaskComment,
   assignTaskToSprint,
   buildBoard,
   completeSprint,
+  canUserMoveTask,
+  createUserGroup,
   createProject,
   createSprint,
   createTask,
   createUser,
   deleteProject,
   deleteUser,
+  deleteUserGroup,
   deleteTask,
+  getDefaultSettings,
+  getProjectSettings,
   getProjects,
   getSprints,
   getTaskActivity,
@@ -24,33 +28,53 @@ import {
   getTaskComments,
   getTasks,
   getUsers,
-  getSystemSettings,
+  getUserGroups,
+  getWorkflowStageKeys,
+  isValidWorkflowStatus,
+  projectExists,
   removeTaskFromSprint,
-  updateSystemSettings,
+  updateProjectSettings,
   updateUser,
+  updateUserGroup,
   updateProject,
   updateSprint,
   updateTask,
+  TASK_TITLE_CONFLICT_MESSAGE,
 } from "../services/taskService.js";
 
 const router = Router();
 router.use(requireAuth);
 
 router.get("/bootstrap", async (req, res) => {
+  const projectId = req.query.projectId ? String(req.query.projectId) : "";
   const [users, sprints, tasks, projects] = await Promise.all([
     getUsers(),
-    getSprints(),
+    getSprints({ projectId: projectId || undefined }),
     getTasks(),
     getProjects(),
   ]);
+  const settings = projectId ? await getProjectSettings(projectId) : getDefaultSettings();
   res.json({
     currentUser: req.user,
-    columns: STATUS_COLUMNS,
+    columns: getWorkflowStageKeys(settings),
+    workflowStages: settings.boardCardFields.workflowStages,
     users,
     sprints,
     tasks,
     projects,
   });
+});
+
+router.get("/me/assigned-tasks", async (req, res) => {
+  try {
+    const tasks = await getTasks({
+      assigneeId: req.user.id,
+      ...(req.user.role !== "admin" ? { limitProjectsToMemberUserId: req.user.id } : {}),
+    });
+    return res.json(tasks);
+  } catch {
+    return res.status(500).json({ error: "Failed to load assigned tasks" });
+  }
 });
 
 router.get("/projects", async (_req, res) => {
@@ -107,8 +131,30 @@ router.delete("/projects/:projectId", async (req, res) => {
   return res.status(204).send();
 });
 
+router.get("/projects/:projectId/settings", async (req, res) => {
+  if (!(await projectExists(req.params.projectId))) {
+    return res.status(404).json({ error: "Project not found" });
+  }
+  const settings = await getProjectSettings(req.params.projectId);
+  return res.json(settings);
+});
+
+router.patch("/projects/:projectId/settings", requireRole("admin"), async (req, res) => {
+  if (!(await projectExists(req.params.projectId))) {
+    return res.status(404).json({ error: "Project not found" });
+  }
+  try {
+    await updateProjectSettings(req.params.projectId, req.body || {});
+    const settings = await getProjectSettings(req.params.projectId);
+    return res.json(settings);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Invalid settings" });
+  }
+});
+
 router.get("/board", async (req, res) => {
   const sprintId = req.query.sprintId ? String(req.query.sprintId) : "";
+  const projectId = req.query.projectId ? String(req.query.projectId) : "";
   const filters = {
     assigneeId: req.query.assigneeId,
     status: req.query.status,
@@ -116,7 +162,7 @@ router.get("/board", async (req, res) => {
     label: req.query.label,
     search: req.query.search,
   };
-  const columns = await buildBoard(sprintId || null, filters);
+  const columns = await buildBoard(sprintId || null, projectId || null, filters);
   return res.json({ columns });
 });
 
@@ -125,14 +171,49 @@ router.get("/users", async (_req, res) => {
   return res.json(users);
 });
 
-router.get("/settings", async (_req, res) => {
-  const settings = await getSystemSettings();
-  return res.json(settings);
+router.get("/user-groups", async (_req, res) => {
+  const groups = await getUserGroups();
+  return res.json(groups);
 });
 
-router.patch("/settings", requireRole("admin"), async (req, res) => {
-  const settings = await updateSystemSettings(req.body || {});
-  return res.json(settings);
+router.post("/user-groups", requireRole("admin"), async (req, res) => {
+  if (!isNonEmptyString(req.body?.name)) {
+    return res.status(400).json({ error: "name is required" });
+  }
+  try {
+    const group = await createUserGroup({
+      name: req.body.name,
+      memberIds: req.body.memberIds || [],
+    });
+    return res.status(201).json(group);
+  } catch (error) {
+    if (error.code === "23505") {
+      return res.status(409).json({ error: "Group name already exists" });
+    }
+    return res.status(500).json({ error: "Failed to create group" });
+  }
+});
+
+router.patch("/user-groups/:groupId", requireRole("admin"), async (req, res) => {
+  try {
+    const group = await updateUserGroup(req.params.groupId, {
+      ...(req.body.name !== undefined ? { name: req.body.name } : {}),
+      ...(req.body.memberIds !== undefined ? { memberIds: req.body.memberIds } : {}),
+    });
+    if (!group) return res.status(404).json({ error: "Group not found" });
+    return res.json(group);
+  } catch (error) {
+    if (error.code === "23505") {
+      return res.status(409).json({ error: "Group name already exists" });
+    }
+    return res.status(500).json({ error: "Failed to update group" });
+  }
+});
+
+router.delete("/user-groups/:groupId", requireRole("admin"), async (req, res) => {
+  const deleted = await deleteUserGroup(req.params.groupId);
+  if (!deleted) return res.status(404).json({ error: "Group not found" });
+  return res.status(204).send();
 });
 
 router.post("/users", requireRole("admin"), async (req, res) => {
@@ -186,15 +267,15 @@ router.delete("/users/:userId", requireRole("admin"), async (req, res) => {
   return res.status(204).send();
 });
 
-router.get("/sprints", async (_req, res) => {
-  const sprints = await getSprints();
+router.get("/sprints", async (req, res) => {
+  const sprints = await getSprints({ projectId: req.query.projectId });
   return res.json(sprints);
 });
 
 router.post("/sprints", requireRole("admin"), async (req, res) => {
-  const { name } = req.body;
-  if (!name) {
-    return res.status(400).json({ error: "name is required" });
+  const { name, projectId } = req.body;
+  if (!name || !projectId) {
+    return res.status(400).json({ error: "name and projectId are required" });
   }
   const sprint = await createSprint(req.body);
   return res.status(201).json(sprint);
@@ -226,7 +307,7 @@ router.post("/sprints/:sprintId/complete", requireRole("admin"), async (req, res
 });
 
 router.get("/sprints/:sprintId/tasks", async (req, res) => {
-  const tasks = await getTasks({ sprintId: req.params.sprintId });
+  const tasks = await getTasks({ sprintId: req.params.sprintId, projectId: req.query.projectId });
   return res.json(tasks);
 });
 
@@ -259,6 +340,7 @@ router.delete("/sprints/:sprintId/tasks/:taskId", requireRole("admin"), async (r
 router.get("/tasks", async (req, res) => {
   const tasks = await getTasks({
     sprintId: req.query.sprintId,
+    projectId: req.query.projectId,
     assigneeId: req.query.assigneeId,
     status: req.query.status,
     priority: req.query.priority,
@@ -271,6 +353,7 @@ router.get("/tasks", async (req, res) => {
 router.get("/backlog", async (req, res) => {
   const tasks = await getTasks({
     sprintId: "backlog",
+    projectId: req.query.projectId,
     assigneeId: req.query.assigneeId,
     status: req.query.status,
     priority: req.query.priority,
@@ -281,14 +364,27 @@ router.get("/backlog", async (req, res) => {
 });
 
 router.post("/tasks", async (req, res) => {
-  const { title } = req.body;
-  if (!title) {
-    return res.status(400).json({ error: "title is required" });
+  const { title, projectId } = req.body;
+  if (!title || !projectId) {
+    return res.status(400).json({ error: "title and projectId are required" });
   }
 
-  const created = await createTask(req.body, req.user.id);
-  await addTaskActivity(created.id, req.user.id, "task_created", { title: created.title });
-  return res.status(201).json(created);
+  const settings = await getProjectSettings(req.body.projectId);
+  const nextStatus = req.body?.status || "todo";
+  if (!isValidWorkflowStatus(nextStatus, settings)) {
+    return res.status(400).json({ error: "Invalid status" });
+  }
+
+  try {
+    const created = await createTask(req.body, req.user.id);
+    await addTaskActivity(created.id, req.user.id, "task_created", { title: created.title });
+    return res.status(201).json(created);
+  } catch (err) {
+    if (err.message === TASK_TITLE_CONFLICT_MESSAGE) {
+      return res.status(409).json({ error: err.message });
+    }
+    throw err;
+  }
 });
 
 router.get("/tasks/:taskId", async (req, res) => {
@@ -306,28 +402,45 @@ router.patch("/tasks/:taskId", async (req, res) => {
   if (!current) {
     return res.status(404).json({ error: "Task not found" });
   }
-
-  const updated = await updateTask(req.params.taskId, req.body || {});
-  if (!updated) {
-    return res.status(400).json({ error: "No valid fields provided" });
+  if (req.body?.status !== undefined) {
+    const allowed = await canUserMoveTask(current, req.body.status, req.user);
+    if (!allowed) {
+      return res.status(403).json({ error: "You are not allowed to move this task to that stage" });
+    }
   }
 
-  await addTaskActivity(updated.id, req.user.id, "task_updated", {
-    before: current.status,
-    after: updated.status,
-  });
-  return res.json(updated);
+  try {
+    const updated = await updateTask(req.params.taskId, req.body || {});
+    if (!updated) {
+      return res.status(400).json({ error: "No valid fields provided" });
+    }
+
+    await addTaskActivity(updated.id, req.user.id, "task_updated", {
+      before: current.status,
+      after: updated.status,
+    });
+    return res.json(updated);
+  } catch (err) {
+    if (err.message === TASK_TITLE_CONFLICT_MESSAGE) {
+      return res.status(409).json({ error: err.message });
+    }
+    throw err;
+  }
 });
 
 router.patch("/tasks/:taskId/move", async (req, res) => {
   const nextStatus = req.body?.status;
-  if (!STATUS_COLUMNS.includes(nextStatus)) {
-    return res.status(400).json({ error: "Invalid status" });
-  }
-
   const current = await getTaskById(req.params.taskId);
   if (!current) {
     return res.status(404).json({ error: "Task not found" });
+  }
+  const settings = await getProjectSettings(current.projectId);
+  if (!nextStatus || !isValidWorkflowStatus(nextStatus, settings)) {
+    return res.status(400).json({ error: "Invalid status" });
+  }
+  const allowed = await canUserMoveTask(current, nextStatus, req.user);
+  if (!allowed) {
+    return res.status(403).json({ error: "You are not allowed to move this task to that stage" });
   }
   const updated = await updateTask(req.params.taskId, { status: nextStatus });
   await addTaskActivity(updated.id, req.user.id, "task_moved", {

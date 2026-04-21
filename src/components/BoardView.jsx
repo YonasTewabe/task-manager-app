@@ -1,11 +1,6 @@
-const STATUS_TITLES = {
-  blocked: "Blocked",
-  todo: "To Do",
-  in_progress: "In Progress",
-  done: "Done",
-};
+import { displayTaskRef } from "../utils/taskDisplay.js";
 
-function TaskCard({ task, userName, onMove, onOpen }) {
+function TaskCard({ task, userName, workflowStages, onMove, onOpen }) {
   const dragStart = (event) => {
     event.dataTransfer.setData("text/task-id", String(task.id));
   };
@@ -25,7 +20,7 @@ function TaskCard({ task, userName, onMove, onOpen }) {
       </div>
       <div className="card-title">{task.title}</div>
       <div className="board-card-meta">
-        <span>TM-{task.id}</span>
+        <span>{displayTaskRef(task)}</span>
         <span>SP {task.storyPoints}</span>
       </div>
       <div className="board-card-footer">
@@ -38,10 +33,11 @@ function TaskCard({ task, userName, onMove, onOpen }) {
             onMove(task.id, event.target.value);
           }}
         >
-          <option value="blocked">Blocked</option>
-          <option value="todo">To Do</option>
-          <option value="in_progress">In Progress</option>
-          <option value="done">Done</option>
+          {(workflowStages || []).map((s) => (
+            <option key={s.key} value={s.key}>
+              {s.name}
+            </option>
+          ))}
         </select>
         <span className="avatar-bubble" title={userName || "Unassigned"}>
           {initials}
@@ -51,7 +47,7 @@ function TaskCard({ task, userName, onMove, onOpen }) {
   );
 }
 
-export default function BoardView({ columns, usersById, onMove, onOpenTask }) {
+export default function BoardView({ columns, workflowStages, usersById, onMove, onOpenTask }) {
   return (
     <section className="board-lanes">
       {columns.map((column) => (
@@ -65,14 +61,18 @@ export default function BoardView({ columns, usersById, onMove, onOpenTask }) {
           }}
         >
           <header className="board-column-head">
-            <h3>{STATUS_TITLES[column.status] || column.status.replace("_", " ").toUpperCase()}</h3>
-            <span>{column.tasks.length}</span>
+            <div className="board-column-title-row">
+              <h3>{column.name || column.status}</h3>
+              {column.badge ? <span className="board-stage-badge">{column.badge}</span> : null}
+              <span className="board-column-count">{column.tasks.length}</span>
+            </div>
           </header>
           <div className="board-cards">
             {column.tasks.map((task) => (
               <TaskCard
                 key={task.id}
                 task={task}
+                workflowStages={workflowStages}
                 userName={usersById.get(task.assigneeId)}
                 onMove={onMove}
                 onOpen={onOpenTask}

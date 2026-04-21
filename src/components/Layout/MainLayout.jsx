@@ -5,14 +5,26 @@ export default function MainLayout({
   currentUser,
   onLogout,
   activeView,
-  onNavigate,
+  currentProjectId,
+  projects,
+  expandedProjectIds,
+  onNavigateMain,
+  onNavigateProject,
   children,
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
     <div className="app-layout">
-      <Sidebar collapsed={collapsed} activeView={activeView} onNavigate={onNavigate} />
+      <Sidebar
+        collapsed={collapsed}
+        activeView={activeView}
+        currentProjectId={currentProjectId}
+        projects={projects}
+        expandedProjectIds={expandedProjectIds}
+        onNavigateMain={onNavigateMain}
+        onNavigateProject={onNavigateProject}
+      />
 
       <div className="app-main" style={{ marginLeft: collapsed ? 88 : 260 }}>
         <header className="app-header">

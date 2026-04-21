@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { displayTaskRef } from "../utils/taskDisplay.js";
 
 export default function SprintManagementView({
   sprints,
@@ -213,7 +214,8 @@ export default function SprintManagementView({
             {sprintTasks.map((task) => (
               <div key={task.id} className="sprint-task-row">
                 <span>
-                  {task.title} · SP {task.storyPoints} · {usersById.get(task.assigneeId) || "Unassigned"}
+                  {displayTaskRef(task)} · {task.title} · SP {task.storyPoints} ·{" "}
+                  {usersById.get(task.assigneeId) || "Unassigned"}
                 </span>
                 <button type="button" onClick={() => onRemoveTaskFromSprint(selectedSprint.id, task.id)}>
                   Remove

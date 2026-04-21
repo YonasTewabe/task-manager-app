@@ -1,136 +1,100 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 const EMPTY_FORM = {
   name: "",
   projectKey: "",
   description: "",
-  memberIds: [],
 };
 
 export default function ProjectManagementView({
   projects,
-  users,
+  canManage = false,
   onCreateProject,
   onUpdateProject,
   onDeleteProject,
+  onConfigureProject,
 }) {
   const [form, setForm] = useState(EMPTY_FORM);
-  const [editingProjectId, setEditingProjectId] = useState(null);
   const [editForm, setEditForm] = useState(EMPTY_FORM);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingProjectId, setEditingProjectId] = useState(null);
 
-  const sortedUsers = useMemo(() => [...users].sort((a, b) => a.name.localeCompare(b.name)), [users]);
+  const closeEditModal = () => {
+    setShowEditModal(false);
+    setEditingProjectId(null);
+  };
 
-  const toggleMember = (targetKey, userId) => {
-    const setState = targetKey === "create" ? setForm : setEditForm;
-    setState((prev) => {
-      const exists = prev.memberIds.includes(userId);
-      return {
-        ...prev,
-        memberIds: exists
-          ? prev.memberIds.filter((id) => id !== userId)
-          : [...prev.memberIds, userId],
-      };
+  const startEdit = (project) => {
+    setEditingProjectId(project.id);
+    setEditForm({
+      name: project.name,
+      projectKey: project.projectKey,
+      description: project.description || "",
     });
+    setShowEditModal(true);
   };
 
   return (
     <section className="panel project-management-page">
       <div className="panel-head">
-        <h2>Project Management</h2>
-        <button type="button" onClick={() => setShowCreateModal(true)}>
-          Add Project
-        </button>
+        <h2>Projects</h2>
+        {canManage ? (
+          <button type="button" onClick={() => setShowCreateModal(true)}>
+            Add Project
+          </button>
+        ) : null}
       </div>
 
+      {!canManage ? (
+        <p className="muted project-page-note">
+          You can view projects you belong to. Only administrators can create or edit projects.
+        </p>
+      ) : null}
+
       <div className="project-list">
+        {!projects.length ? (
+          <p className="muted">
+            {canManage
+              ? "No projects yet. Use Add Project to create one."
+              : "No projects assigned to you yet. Ask an administrator to add you to a project."}
+          </p>
+        ) : null}
         {projects.map((project) => (
           <article key={project.id} className="project-row">
-            {editingProjectId === project.id ? (
-              <div className="project-form">
-                <input
-                  value={editForm.name}
-                  onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
-                />
-                <input
-                  value={editForm.projectKey}
-                  onChange={(e) =>
-                    setEditForm((prev) => ({ ...prev, projectKey: e.target.value.toUpperCase() }))
-                  }
-                />
-                <textarea
-                  rows={3}
-                  value={editForm.description}
-                  onChange={(e) => setEditForm((prev) => ({ ...prev, description: e.target.value }))}
-                />
-                <div className="member-grid">
-                  {sortedUsers.map((user) => (
-                    <label key={user.id} className="member-item">
-                      <input
-                        type="checkbox"
-                        checked={editForm.memberIds.includes(user.id)}
-                        onChange={() => toggleMember("edit", user.id)}
-                      />
-                      <span>{user.name}</span>
-                    </label>
+            <div className="project-row-main">
+              <button
+                type="button"
+                className="project-row-open"
+                onClick={() => onConfigureProject(project.id)}
+              >
+                <strong>
+                  {project.name} ({project.projectKey})
+                </strong>
+                <div className="muted">{project.description || "No description"}</div>
+                <div className="project-members">
+                  {(project.members || []).map((member) => (
+                    <span key={member.id} className="member-pill">
+                      {member.name}
+                    </span>
                   ))}
                 </div>
+              </button>
+              {canManage ? (
                 <div className="inline-form">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onUpdateProject(project.id, editForm);
-                      setEditingProjectId(null);
-                    }}
-                  >
-                    Save
-                  </button>
-                  <button type="button" className="ghost-btn" onClick={() => setEditingProjectId(null)}>
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="project-row-main">
-                <div>
-                  <strong>
-                    {project.name} ({project.projectKey})
-                  </strong>
-                  <div className="muted">{project.description || "No description"}</div>
-                  <div className="project-members">
-                    {(project.members || []).map((member) => (
-                      <span key={member.id} className="member-pill">
-                        {member.name}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div className="inline-form">
-                  <button
-                    type="button"
-                    className="ghost-btn"
-                    onClick={() => {
-                      setEditingProjectId(project.id);
-                      setEditForm({
-                        name: project.name,
-                        projectKey: project.projectKey,
-                        description: project.description || "",
-                        memberIds: (project.members || []).map((member) => member.id),
-                      });
-                    }}
-                  >
+                  <button type="button" className="ghost-btn" onClick={() => startEdit(project)}>
                     Edit
                   </button>
                   <button type="button" onClick={() => onDeleteProject(project.id)}>
                     Delete
                   </button>
                 </div>
-              </div>
-            )}
+              ) : null}
+            </div>
           </article>
         ))}
       </div>
-      {showCreateModal ? (
+      {canManage && showCreateModal ? (
         <div className="modal-overlay" role="presentation" onClick={() => setShowCreateModal(false)}>
           <div className="modal-card" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <div className="panel-head">
@@ -156,21 +120,6 @@ export default function ProjectManagementView({
                 value={form.description}
                 onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
               />
-              <div>
-                <p className="muted">Assign users</p>
-                <div className="member-grid">
-                  {sortedUsers.map((user) => (
-                    <label key={user.id} className="member-item">
-                      <input
-                        type="checkbox"
-                        checked={form.memberIds.includes(user.id)}
-                        onChange={() => toggleMember("create", user.id)}
-                      />
-                      <span>{user.name}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
               <button
                 type="button"
                 onClick={() => {
@@ -179,7 +128,6 @@ export default function ProjectManagementView({
                     name: form.name.trim(),
                     projectKey: form.projectKey.trim().toUpperCase(),
                     description: form.description,
-                    memberIds: form.memberIds,
                   });
                   setForm(EMPTY_FORM);
                   setShowCreateModal(false);
@@ -187,6 +135,52 @@ export default function ProjectManagementView({
               >
                 Create Project
               </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {canManage && showEditModal && editingProjectId ? (
+        <div className="modal-overlay" role="presentation" onClick={closeEditModal}>
+          <div className="modal-card" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <div className="panel-head">
+              <h3>Edit project</h3>
+              <button type="button" className="ghost-btn" onClick={closeEditModal}>
+                Close
+              </button>
+            </div>
+            <div className="project-form">
+              <input
+                placeholder="Project name"
+                value={editForm.name}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
+              />
+              <input
+                placeholder="Project key (e.g. OPS)"
+                value={editForm.projectKey}
+                onChange={(e) =>
+                  setEditForm((prev) => ({ ...prev, projectKey: e.target.value.toUpperCase() }))
+                }
+              />
+              <textarea
+                rows={3}
+                placeholder="Description"
+                value={editForm.description}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, description: e.target.value }))}
+              />
+              <div className="inline-form">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUpdateProject(editingProjectId, editForm);
+                    closeEditModal();
+                  }}
+                >
+                  Save
+                </button>
+                <button type="button" className="ghost-btn" onClick={closeEditModal}>
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -1,27 +1,51 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { ToastContainer, toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 import AuthView from "./components/AuthView";
 import BacklogView from "./components/BacklogView";
 import BoardView from "./components/BoardView";
+import DashboardView from "./components/DashboardView";
 import ProjectManagementView from "./components/ProjectManagementView";
-import SprintManagementView from "./components/SprintManagementView";
 import SystemSettingsView from "./components/SystemSettingsView";
 import TaskDrawer from "./components/TaskDrawer";
 import UserAdminView from "./components/UserAdminView";
 import MainLayout from "./components/Layout/MainLayout";
 import { apiRequest, getStoredToken, setStoredToken } from "./api/client";
+import { DEFAULT_WORKFLOW_STAGES } from "./workflowDefaults.js";
 
-const VIEW_KEYS = new Set(["board", "backlog", "projects", "sprints", "users", "settings"]);
+const PROJECT_ROUTE = /^\/project\/([^/]+)\/(board|backlog|settings)$/;
 
-function normalizeViewFromPath(pathname) {
-  const rawPath = (pathname || "/").replace(/^\/+/, "");
-  if (!rawPath) return "board";
-  const firstSegment = rawPath.split("/")[0];
-  return VIEW_KEYS.has(firstSegment) ? firstSegment : "board";
+function parseRoute(pathname) {
+  const normalized = (pathname || "").replace(/\/+$/, "");
+  const path = normalized || "/";
+
+  if (path === "/" || path === "/dashboard") {
+    return { view: "dashboard", projectId: null };
+  }
+  if (path === "/users") return { view: "users", projectId: null };
+  if (path === "/settings")
+    return { view: "settings_redirect", projectId: null };
+  if (path === "/projects") return { view: "projects", projectId: null };
+
+  const m = path.match(PROJECT_ROUTE);
+  if (m) return { view: m[2], projectId: m[1] };
+
+  if (path === "/board" || path === "/backlog" || path === "/sprints") {
+    const legacy = path === "/sprints" ? "backlog" : path.slice(1);
+    return { view: "_legacy", legacy };
+  }
+
+  return { view: "dashboard", projectId: null, unknown: true };
 }
 
-function pathFromView(view) {
-  return view === "board" ? "/" : `/${view}`;
+function initialActiveView(pathname) {
+  const p = parseRoute(pathname);
+  if (p.view === "_legacy" || p.unknown) return "dashboard";
+  if (p.view === "settings_redirect") return "dashboard";
+  if (p.view === "board" || p.view === "backlog" || p.view === "settings")
+    return p.view;
+  return p.view;
 }
 
 function App() {
@@ -31,14 +55,16 @@ function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [users, setUsers] = useState([]);
+  const [userGroups, setUserGroups] = useState([]);
   const [sprints, setSprints] = useState([]);
   const [projects, setProjects] = useState([]);
-  const [systemSettings, setSystemSettings] = useState(null);
+  const [projectSettings, setProjectSettings] = useState(null);
   const [columns, setColumns] = useState([]);
   const [backlogTasks, setBacklogTasks] = useState([]);
   const [allTasks, setAllTasks] = useState([]);
   const [sprintTasks, setSprintTasks] = useState([]);
   const [selectedSprintId, setSelectedSprintId] = useState("");
+  const [currentProjectId, setCurrentProjectId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [taskTitle, setTaskTitle] = useState("");
@@ -51,7 +77,10 @@ function App() {
   const [showFilterModal, setShowFilterModal] = useState(false);
   const filterPopoverRef = useRef(null);
   const [taskBundle, setTaskBundle] = useState(null);
-  const [activeView, setActiveView] = useState(() => normalizeViewFromPath(location.pathname));
+  const [activeView, setActiveView] = useState(() =>
+    initialActiveView(location.pathname),
+  );
+  const [dashboardAssignedTasks, setDashboardAssignedTasks] = useState([]);
   const [filters, setFilters] = useState({
     assigneeId: "",
     status: "",
@@ -67,6 +96,9 @@ function App() {
     label: "",
   });
 
+  const notify = (text, tone = "success") =>
+    tone === "error" ? toast.error(text) : toast.success(text);
+
   const usersById = useMemo(() => {
     const map = new Map();
     users.forEach((user) => map.set(user.id, user.name));
@@ -78,12 +110,21 @@ function App() {
   }, [sprints]);
   const assigneeFilterItems = useMemo(() => {
     const sortedUsers = [...users].sort((a, b) => a.name.localeCompare(b.name));
-    const me = currentUser ? sortedUsers.find((user) => String(user.id) === String(currentUser.id)) : null;
+    const me = currentUser
+      ? sortedUsers.find((user) => String(user.id) === String(currentUser.id))
+      : null;
     const others = currentUser
       ? sortedUsers.filter((user) => String(user.id) !== String(currentUser.id))
       : sortedUsers;
 
-    const items = [{ id: "unassigned", label: "Unassigned", initials: "U", isUnassigned: true }];
+    const items = [
+      {
+        id: "unassigned",
+        label: "Unassigned",
+        initials: "U",
+        isUnassigned: true,
+      },
+    ];
     if (me) {
       const meInitials = me.name
         .split(" ")
@@ -91,7 +132,12 @@ function App() {
         .join("")
         .slice(0, 2)
         .toUpperCase();
-      items.push({ id: String(me.id), label: `${me.name} (You)`, initials: meInitials, isUnassigned: false });
+      items.push({
+        id: String(me.id),
+        label: `${me.name} (You)`,
+        initials: meInitials,
+        isUnassigned: false,
+      });
     }
     others.forEach((user) => {
       const initials = user.name
@@ -100,25 +146,64 @@ function App() {
         .join("")
         .slice(0, 2)
         .toUpperCase();
-      items.push({ id: String(user.id), label: user.name, initials, isUnassigned: false });
+      items.push({
+        id: String(user.id),
+        label: user.name,
+        initials,
+        isUnassigned: false,
+      });
     });
     return items;
   }, [users, currentUser]);
 
   const canManage = currentUser?.role === "admin";
 
+  const workflowStages = useMemo(
+    () =>
+      projectSettings?.boardCardFields?.workflowStages?.length > 0
+        ? projectSettings.boardCardFields.workflowStages
+        : DEFAULT_WORKFLOW_STAGES,
+    [projectSettings?.boardCardFields?.workflowStages],
+  );
+
+  const visibleProjects = useMemo(() => {
+    if (!currentUser) return [];
+    if (currentUser.role === "admin") return projects;
+    return projects.filter((project) =>
+      (project.members || []).some(
+        (member) => String(member.id) === String(currentUser.id),
+      ),
+    );
+  }, [projects, currentUser]);
+
+  const projectById = useMemo(() => {
+    const map = new Map();
+    projects.forEach((p) => map.set(String(p.id), p));
+    return map;
+  }, [projects]);
+
+  const fetchMyAssignedTasks = async () => {
+    if (!token || !currentUser) return;
+    try {
+      const data = await apiRequest("/task-management/me/assigned-tasks");
+      setDashboardAssignedTasks(data || []);
+    } catch {
+      setDashboardAssignedTasks([]);
+    }
+  };
+
   const fetchBootstrap = async () => {
     setLoading(true);
     setError("");
     try {
-      const data = await apiRequest("/task-management/bootstrap");
+      const [data, groups] = await Promise.all([
+        apiRequest("/task-management/bootstrap"),
+        apiRequest("/task-management/user-groups"),
+      ]);
       setCurrentUser(data.currentUser);
       setUsers(data.users || []);
-      setSprints(data.sprints || []);
       setProjects(data.projects || []);
-      if (!selectedSprintId && data.sprints?.length) {
-        setSelectedSprintId(String(data.sprints[0].id));
-      }
+      setUserGroups(groups || []);
     } catch (err) {
       setError(err.message || "Failed to load bootstrap");
     } finally {
@@ -126,66 +211,150 @@ function App() {
     }
   };
 
-  const fetchSystemSettings = async () => {
-    const settings = await apiRequest("/task-management/settings");
-    setSystemSettings(settings);
+  const fetchProjectSettings = async (projectId) => {
+    if (!projectId) {
+      setProjectSettings(null);
+      return;
+    }
+    const settings = await apiRequest(
+      `/task-management/projects/${encodeURIComponent(projectId)}/settings`,
+    );
+    setProjectSettings(settings);
   };
 
-  const buildTaskQuery = (sprintId, activeFilters = filters) => {
+  const buildTaskQuery = (
+    sprintId,
+    projectId = currentProjectId,
+    activeFilters = filters,
+  ) => {
     const params = new URLSearchParams();
     params.set("sprintId", sprintId ? String(sprintId) : "backlog");
-    if (activeFilters.assigneeId) params.set("assigneeId", activeFilters.assigneeId);
+    if (projectId) params.set("projectId", String(projectId));
+    if (activeFilters.assigneeId)
+      params.set("assigneeId", activeFilters.assigneeId);
     if (activeFilters.status) params.set("status", activeFilters.status);
     if (activeFilters.priority) params.set("priority", activeFilters.priority);
-    if (activeFilters.label.trim()) params.set("label", activeFilters.label.trim());
-    if (activeFilters.search.trim()) params.set("search", activeFilters.search.trim());
+    if (activeFilters.label.trim())
+      params.set("label", activeFilters.label.trim());
+    if (activeFilters.search.trim())
+      params.set("search", activeFilters.search.trim());
     return `?${params.toString()}`;
   };
 
-  const fetchBoard = async (sprintId, activeFilters = filters) => {
-    const data = await apiRequest(`/task-management/board${buildTaskQuery(sprintId, activeFilters)}`);
+  const fetchBoard = async (
+    sprintId,
+    projectId = currentProjectId,
+    activeFilters = filters,
+  ) => {
+    if (!projectId) {
+      setColumns([]);
+      return;
+    }
+    const data = await apiRequest(
+      `/task-management/board${buildTaskQuery(sprintId, projectId, activeFilters)}`,
+    );
     setColumns(data.columns || []);
   };
 
-  const fetchBacklog = async (activeFilters = filters) => {
+  const fetchBacklog = async (
+    projectId = currentProjectId,
+    activeFilters = filters,
+  ) => {
+    if (!projectId) {
+      setBacklogTasks([]);
+      return;
+    }
     const params = new URLSearchParams();
-    if (activeFilters.assigneeId) params.set("assigneeId", activeFilters.assigneeId);
+    params.set("projectId", String(projectId));
+    if (activeFilters.assigneeId)
+      params.set("assigneeId", activeFilters.assigneeId);
     if (activeFilters.status) params.set("status", activeFilters.status);
     if (activeFilters.priority) params.set("priority", activeFilters.priority);
-    if (activeFilters.label.trim()) params.set("label", activeFilters.label.trim());
-    if (activeFilters.search.trim()) params.set("search", activeFilters.search.trim());
+    if (activeFilters.label.trim())
+      params.set("label", activeFilters.label.trim());
+    if (activeFilters.search.trim())
+      params.set("search", activeFilters.search.trim());
     const query = params.toString();
-    const data = await apiRequest(`/task-management/backlog${query ? `?${query}` : ""}`);
+    const data = await apiRequest(
+      `/task-management/backlog${query ? `?${query}` : ""}`,
+    );
     setBacklogTasks(data || []);
   };
 
-  const fetchAllTasks = async (activeFilters = filters) => {
+  const fetchAllTasks = async (
+    projectId = currentProjectId,
+    activeFilters = filters,
+  ) => {
+    if (!projectId) {
+      setAllTasks([]);
+      return;
+    }
     const params = new URLSearchParams();
-    if (activeFilters.assigneeId) params.set("assigneeId", activeFilters.assigneeId);
+    params.set("projectId", String(projectId));
+    if (activeFilters.assigneeId)
+      params.set("assigneeId", activeFilters.assigneeId);
     if (activeFilters.status) params.set("status", activeFilters.status);
     if (activeFilters.priority) params.set("priority", activeFilters.priority);
-    if (activeFilters.label.trim()) params.set("label", activeFilters.label.trim());
-    if (activeFilters.search.trim()) params.set("search", activeFilters.search.trim());
+    if (activeFilters.label.trim())
+      params.set("label", activeFilters.label.trim());
+    if (activeFilters.search.trim())
+      params.set("search", activeFilters.search.trim());
     const query = params.toString();
-    const data = await apiRequest(`/task-management/tasks${query ? `?${query}` : ""}`);
+    const data = await apiRequest(
+      `/task-management/tasks${query ? `?${query}` : ""}`,
+    );
     setAllTasks(data || []);
   };
 
-  const fetchSprintTasks = async (sprintId) => {
-    if (!sprintId) {
+  const fetchSprints = async (projectId = currentProjectId) => {
+    if (!projectId) {
+      setSprints([]);
+      return [];
+    }
+    const data = await apiRequest(
+      `/task-management/sprints?projectId=${encodeURIComponent(projectId)}`,
+    );
+    setSprints(data || []);
+    return data || [];
+  };
+
+  const fetchSprintTasks = async (sprintId, projectId = currentProjectId) => {
+    if (!sprintId || !projectId) {
       setSprintTasks([]);
       return;
     }
-    const data = await apiRequest(`/task-management/sprints/${sprintId}/tasks`);
+    const data = await apiRequest(
+      `/task-management/sprints/${sprintId}/tasks?projectId=${encodeURIComponent(projectId)}`,
+    );
     setSprintTasks(data || []);
   };
 
-  const refreshViews = async (sprintId = selectedSprintId, activeFilters = filters) => {
+  const refreshViews = async (
+    sprintId = selectedSprintId,
+    projectId = currentProjectId,
+    activeFilters = filters,
+  ) => {
+    if (!projectId) {
+      setColumns([]);
+      setBacklogTasks([]);
+      setAllTasks([]);
+      setSprints([]);
+      setSprintTasks([]);
+      return;
+    }
+    const latestSprints = await fetchSprints(projectId);
+    if (
+      sprintId &&
+      !latestSprints.some((sprint) => String(sprint.id) === String(sprintId))
+    ) {
+      setSelectedSprintId("");
+      sprintId = "";
+    }
     const boardSprintId = activeView === "board" ? activeSprintId : sprintId;
     await Promise.all([
-      fetchBoard(boardSprintId, activeFilters),
-      fetchBacklog(activeFilters),
-      fetchAllTasks(activeFilters),
+      fetchBoard(boardSprintId, projectId, activeFilters),
+      fetchBacklog(projectId, activeFilters),
+      fetchAllTasks(projectId, activeFilters),
     ]);
   };
 
@@ -194,23 +363,63 @@ function App() {
       setLoading(false);
       return;
     }
-    fetchBootstrap()
-      .then(async () => {
-        await Promise.all([refreshViews(selectedSprintId, filters), fetchSystemSettings()]);
-      })
-      .catch(() => {});
+    fetchBootstrap().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   useEffect(() => {
-    if (!token || loading) return;
-    const boardSprintId = activeView === "board" ? activeSprintId : selectedSprintId;
-    fetchBoard(boardSprintId, filters).catch(() => {});
-    if (activeView === "sprints") {
-      fetchSprintTasks(selectedSprintId).catch(() => {});
+    if (!token || !currentProjectId) {
+      setProjectSettings(null);
+      return;
     }
+    fetchProjectSettings(currentProjectId).catch(() =>
+      setProjectSettings(null),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSprintId, activeView, filters, activeSprintId]);
+  }, [token, currentProjectId]);
+
+  useEffect(() => {
+    const d = projectSettings?.generalRules?.defaultStoryPoints;
+    if (d != null && !Number.isNaN(Number(d))) {
+      setStoryPoints(Number(d));
+    }
+  }, [projectSettings?.generalRules?.defaultStoryPoints]);
+
+  useEffect(() => {
+    if (!token || loading || !currentProjectId) return;
+    const boardSprintId =
+      activeView === "board" ? activeSprintId : selectedSprintId;
+    fetchBoard(boardSprintId, currentProjectId, filters).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSprintId, activeView, filters, activeSprintId, currentProjectId]);
+
+  useEffect(() => {
+    if (!token || loading) return;
+    if (!visibleProjects.length) {
+      setCurrentProjectId("");
+      return;
+    }
+    if (
+      !currentProjectId ||
+      !visibleProjects.some(
+        (project) => String(project.id) === String(currentProjectId),
+      )
+    ) {
+      setCurrentProjectId(String(visibleProjects[0].id));
+    }
+  }, [visibleProjects, currentProjectId, token, loading]);
+
+  useEffect(() => {
+    if (!token || loading) return;
+    refreshViews(selectedSprintId, currentProjectId, filters).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProjectId]);
+
+  useEffect(() => {
+    if (!token || loading || activeView !== "dashboard") return;
+    fetchMyAssignedTasks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, loading, activeView, currentUser?.id]);
 
   useEffect(() => {
     if (!showFilterModal) return undefined;
@@ -225,27 +434,92 @@ function App() {
   }, [showFilterModal]);
 
   useEffect(() => {
-    const resolved = normalizeViewFromPath(location.pathname);
-    if (resolved !== activeView) {
-      setActiveView(resolved);
-    }
-  }, [location.pathname, activeView]);
+    const parsed = parseRoute(location.pathname);
 
-  useEffect(() => {
-    const resolved = normalizeViewFromPath(location.pathname);
-    const normalizedPath = pathFromView(resolved);
-    if (location.pathname !== normalizedPath) {
-      navigate(normalizedPath, { replace: true });
+    if (parsed.view === "settings_redirect") {
+      if (!token || loading) return;
+      if (!visibleProjects.length) {
+        navigate("/dashboard", { replace: true });
+        return;
+      }
+      const inScope =
+        currentProjectId &&
+        visibleProjects.some((p) => String(p.id) === String(currentProjectId));
+      const pid = inScope
+        ? String(currentProjectId)
+        : String(visibleProjects[0].id);
+      navigate(`/project/${pid}/settings`, { replace: true });
+      return;
     }
-  }, [location.pathname, navigate]);
 
-  const handleNavigate = (view) => {
-    const safeView = VIEW_KEYS.has(view) ? view : "board";
-    const nextPath = pathFromView(safeView);
-    setActiveView(safeView);
-    if (location.pathname !== nextPath) {
-      navigate(nextPath);
+    if (parsed.view === "_legacy") {
+      if (!token || loading) return;
+      if (!visibleProjects.length) {
+        navigate("/dashboard", { replace: true });
+        return;
+      }
+      const pid = visibleProjects[0].id;
+      navigate(`/project/${pid}/${parsed.legacy}`, { replace: true });
+      return;
     }
+
+    if (
+      parsed.unknown &&
+      location.pathname !== "/dashboard" &&
+      location.pathname !== "/"
+    ) {
+      navigate("/dashboard", { replace: true });
+      return;
+    }
+
+    if (parsed.projectId) {
+      setCurrentProjectId(String(parsed.projectId));
+    }
+
+    let nextActive = "dashboard";
+    if (
+      parsed.view === "board" ||
+      parsed.view === "backlog" ||
+      parsed.view === "settings"
+    ) {
+      nextActive = parsed.view;
+    } else if (parsed.view === "users") nextActive = "users";
+    else if (parsed.view === "projects") nextActive = "projects";
+
+    setActiveView(nextActive);
+  }, [
+    location.pathname,
+    token,
+    loading,
+    visibleProjects,
+    navigate,
+    currentProjectId,
+  ]);
+
+  const handleNavigateMain = (key) => {
+    if (key === "dashboard") {
+      setActiveView("dashboard");
+      navigate("/dashboard");
+      return;
+    }
+    if (key === "projects") {
+      setActiveView("projects");
+      navigate("/projects");
+      return;
+    }
+    if (key === "users") {
+      setActiveView("users");
+      navigate("/users");
+      return;
+    }
+  };
+
+  const handleNavigateProject = (projectId, subview) => {
+    const id = String(projectId);
+    setCurrentProjectId(id);
+    setSelectedSprintId("");
+    setActiveView(subview);
+    navigate(`/project/${id}/${subview}`);
   };
 
   const login = async ({ email, password }) => {
@@ -298,7 +572,7 @@ function App() {
 
   const createTask = async (event) => {
     event.preventDefault();
-    if (!taskTitle.trim()) return;
+    if (!taskTitle.trim() || !currentProjectId) return;
     await apiRequest("/task-management/tasks", {
       method: "POST",
       body: JSON.stringify({
@@ -307,15 +581,9 @@ function App() {
         status: taskStatus,
         priority: taskPriority,
         label: taskLabel.trim(),
+        projectId: currentProjectId,
         assigneeId: assigneeId || null,
-        sprintId:
-          activeView === "board"
-            ? activeSprintId
-              ? activeSprintId
-              : null
-            : selectedSprintId
-              ? selectedSprintId
-              : null,
+        sprintId: activeView === "board" ? activeSprintId || null : null,
       }),
     });
     setTaskTitle("");
@@ -325,7 +593,7 @@ function App() {
     setTaskPriority("medium");
     setTaskLabel("");
     setShowCreateTaskModal(false);
-    await refreshViews(selectedSprintId, filters);
+    await refreshViews(selectedSprintId, currentProjectId, filters);
   };
 
   const moveTask = async (taskId, status) => {
@@ -333,7 +601,7 @@ function App() {
       method: "PATCH",
       body: JSON.stringify({ status }),
     });
-    await refreshViews(selectedSprintId, filters);
+    await refreshViews(selectedSprintId, currentProjectId, filters);
   };
 
   const openTask = async (taskId) => {
@@ -347,7 +615,8 @@ function App() {
       body: JSON.stringify(patch),
     });
     await openTask(taskId);
-    await refreshViews(selectedSprintId, filters);
+    await refreshViews(selectedSprintId, currentProjectId, filters);
+    if (activeView === "dashboard") await fetchMyAssignedTasks();
   };
 
   const addComment = async (taskId, body) => {
@@ -356,14 +625,21 @@ function App() {
       body: JSON.stringify({ body }),
     });
     await openTask(taskId);
+    if (activeView === "dashboard") await fetchMyAssignedTasks();
   };
 
   const createUser = async (payload) => {
-    const created = await apiRequest("/task-management/users", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-    setUsers((prev) => [created, ...prev]);
+    try {
+      const created = await apiRequest("/task-management/users", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      setUsers((prev) => [created, ...prev]);
+      notify("User created.");
+    } catch (error) {
+      notify(error.message || "Failed to create user.", "error");
+      throw error;
+    }
   };
 
   const updateUser = async (userId, draft) => {
@@ -376,29 +652,105 @@ function App() {
       payload.password = draft.password.trim();
     }
 
-    const updated = await apiRequest(`/task-management/users/${userId}`, {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    });
-    setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+    try {
+      const updated = await apiRequest(`/task-management/users/${userId}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+      setUserGroups(await apiRequest("/task-management/user-groups"));
+      notify("User updated.");
+    } catch (error) {
+      notify(error.message || "Failed to update user.", "error");
+      throw error;
+    }
   };
 
   const deleteUser = async (userId) => {
-    await apiRequest(`/task-management/users/${userId}`, { method: "DELETE" });
-    setUsers((prev) => prev.filter((u) => String(u.id) !== String(userId)));
+    try {
+      await apiRequest(`/task-management/users/${userId}`, {
+        method: "DELETE",
+      });
+      setUsers((prev) => prev.filter((u) => String(u.id) !== String(userId)));
+      setUserGroups(await apiRequest("/task-management/user-groups"));
+      notify("User deleted.");
+    } catch (error) {
+      notify(error.message || "Failed to delete user.", "error");
+      throw error;
+    }
+  };
+
+  const createUserGroup = async (payload) => {
+    try {
+      const created = await apiRequest("/task-management/user-groups", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      setUserGroups((prev) =>
+        [created, ...prev].sort((a, b) => a.name.localeCompare(b.name)),
+      );
+      setUsers(await apiRequest("/task-management/users"));
+      notify("User group created.");
+    } catch (error) {
+      notify(error.message || "Failed to create user group.", "error");
+      throw error;
+    }
+  };
+
+  const updateUserGroup = async (groupId, payload) => {
+    try {
+      const updated = await apiRequest(
+        `/task-management/user-groups/${groupId}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        },
+      );
+      setUserGroups((prev) =>
+        prev.map((g) => (String(g.id) === String(groupId) ? updated : g)),
+      );
+      setUsers(await apiRequest("/task-management/users"));
+      notify("User group updated.");
+    } catch (error) {
+      notify(error.message || "Failed to update user group.", "error");
+      throw error;
+    }
+  };
+
+  const deleteUserGroup = async (groupId) => {
+    try {
+      await apiRequest(`/task-management/user-groups/${groupId}`, {
+        method: "DELETE",
+      });
+      setUserGroups((prev) =>
+        prev.filter((g) => String(g.id) !== String(groupId)),
+      );
+      setUsers(await apiRequest("/task-management/users"));
+      notify("User group deleted.");
+    } catch (error) {
+      notify(error.message || "Failed to delete user group.", "error");
+      throw error;
+    }
   };
 
   const createSprint = async (draft) => {
+    if (!currentProjectId) return;
     const created = await apiRequest("/task-management/sprints", {
       method: "POST",
       body: JSON.stringify({
         name: draft.name,
+        projectId: currentProjectId,
         startDate: draft.startDate || null,
         endDate: draft.endDate || null,
         status: "planned",
       }),
     });
-    setSprints((prev) => [created, ...prev]);
+    setSprints((prev) =>
+      [created, ...prev].sort((a, b) =>
+        String(a.name).localeCompare(String(b.name)),
+      ),
+    );
+    notify("Sprint created.");
   };
 
   const updateSprint = async (sprintId, draft) => {
@@ -407,6 +759,7 @@ function App() {
       body: JSON.stringify(draft),
     });
     setSprints((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+    notify("Sprint updated.");
   };
 
   const createProject = async (payload) => {
@@ -415,6 +768,11 @@ function App() {
       body: JSON.stringify(payload),
     });
     setProjects((prev) => [created, ...prev]);
+    const id = String(created.id);
+    setCurrentProjectId(id);
+    setActiveView("settings");
+    navigate(`/project/${id}/settings`);
+    notify("Project created.");
   };
 
   const updateProject = async (projectId, draft) => {
@@ -422,20 +780,56 @@ function App() {
       method: "PATCH",
       body: JSON.stringify(draft),
     });
-    setProjects((prev) => prev.map((project) => (project.id === updated.id ? updated : project)));
+    setProjects((prev) =>
+      prev.map((project) => (project.id === updated.id ? updated : project)),
+    );
+    notify("Project updated.");
   };
 
   const deleteProject = async (projectId) => {
-    await apiRequest(`/task-management/projects/${projectId}`, { method: "DELETE" });
-    setProjects((prev) => prev.filter((project) => String(project.id) !== String(projectId)));
+    await apiRequest(`/task-management/projects/${projectId}`, {
+      method: "DELETE",
+    });
+    setProjects((prev) =>
+      prev.filter((project) => String(project.id) !== String(projectId)),
+    );
+    if (String(currentProjectId) === String(projectId)) {
+      setCurrentProjectId("");
+      setActiveView("dashboard");
+      navigate("/dashboard", { replace: true });
+    }
+    notify("Project deleted.");
   };
 
-  const saveSystemSettings = async (nextSettings) => {
-    const updated = await apiRequest("/task-management/settings", {
-      method: "PATCH",
-      body: JSON.stringify(nextSettings),
-    });
-    setSystemSettings(updated);
+  const saveProjectSettings = async (nextSettings) => {
+    if (!currentProjectId) return null;
+    const updated = await apiRequest(
+      `/task-management/projects/${encodeURIComponent(currentProjectId)}/settings`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(nextSettings),
+      },
+    );
+    setProjectSettings(updated);
+    if (token && currentProjectId) {
+      await refreshViews(selectedSprintId, currentProjectId, filters);
+    }
+    return updated;
+  };
+
+  const saveProjectMembers = async (memberIds) => {
+    if (!currentProjectId) return null;
+    const updated = await apiRequest(
+      `/task-management/projects/${currentProjectId}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ memberIds }),
+      },
+    );
+    setProjects((prev) =>
+      prev.map((project) => (project.id === updated.id ? updated : project)),
+    );
+    notify("Project users saved.");
     return updated;
   };
 
@@ -444,18 +838,30 @@ function App() {
       method: "POST",
       body: "{}",
     });
-    setSprints(await apiRequest("/task-management/sprints"));
-    await fetchSprintTasks(sprintId);
+    setSprints(
+      await apiRequest(
+        `/task-management/sprints?projectId=${encodeURIComponent(currentProjectId)}`,
+      ),
+    );
+    await fetchSprintTasks(sprintId, currentProjectId);
+    await refreshViews(selectedSprintId, currentProjectId, filters);
   };
 
   const completeSprint = async (sprintId) => {
+    const moveIncompleteToBacklog =
+      projectSettings?.generalRules?.autoMoveToBacklogOnSprintComplete !==
+      false;
     await apiRequest(`/task-management/sprints/${sprintId}/complete`, {
       method: "POST",
-      body: JSON.stringify({ moveIncompleteToBacklog: true }),
+      body: JSON.stringify({ moveIncompleteToBacklog }),
     });
-    setSprints(await apiRequest("/task-management/sprints"));
-    await refreshViews(selectedSprintId, filters);
-    await fetchSprintTasks(selectedSprintId);
+    setSprints(
+      await apiRequest(
+        `/task-management/sprints?projectId=${encodeURIComponent(currentProjectId)}`,
+      ),
+    );
+    await refreshViews(selectedSprintId, currentProjectId, filters);
+    await fetchSprintTasks(selectedSprintId, currentProjectId);
   };
 
   const addTasksToSprint = async (sprintId, taskIds) => {
@@ -463,39 +869,62 @@ function App() {
       method: "POST",
       body: JSON.stringify({ taskIds }),
     });
-    await Promise.all([fetchBacklog(filters), fetchSprintTasks(sprintId), fetchBoard(sprintId, filters)]);
+    await Promise.all([
+      fetchBacklog(currentProjectId, filters),
+      fetchSprintTasks(sprintId, currentProjectId),
+      fetchBoard(sprintId, currentProjectId, filters),
+    ]);
   };
 
   const removeTaskFromSprint = async (sprintId, taskId) => {
     await apiRequest(`/task-management/sprints/${sprintId}/tasks/${taskId}`, {
       method: "DELETE",
     });
-    await Promise.all([fetchBacklog(filters), fetchSprintTasks(sprintId), fetchBoard(sprintId, filters)]);
+    await Promise.all([
+      fetchBacklog(currentProjectId, filters),
+      fetchSprintTasks(sprintId, currentProjectId),
+      fetchBoard(sprintId, currentProjectId, filters),
+    ]);
   };
 
   if (!token) {
-    return <AuthView onLogin={login} onRegister={register} loading={authLoading} error={error} />;
+    return (
+      <AuthView
+        onLogin={login}
+        onRegister={register}
+        loading={authLoading}
+        error={error}
+      />
+    );
   }
 
   const safeColumns = columns.length
     ? columns
-    : [
-        { status: "blocked", tasks: [] },
-        { status: "todo", tasks: [] },
-        { status: "in_progress", tasks: [] },
-        { status: "done", tasks: [] },
-      ];
+    : workflowStages.map((s) => ({
+        status: s.key,
+        name: s.name,
+        description: s.description,
+        badge: s.badge,
+        tasks: [],
+      }));
 
   return (
     <MainLayout
       currentUser={currentUser}
       onLogout={logout}
       activeView={activeView}
-      onNavigate={handleNavigate}
+      currentProjectId={currentProjectId}
+      projects={visibleProjects}
+      expandedProjectIds={[]}
+      onNavigateMain={handleNavigateMain}
+      onNavigateProject={handleNavigateProject}
     >
       <div className="jira-shell">
-        {(activeView === "board" || activeView === "backlog") && (
-          <section className={`panel top-task-controls ${activeView === "board" ? "board-toolbar" : ""}`}>
+        {(activeView === "board" || activeView === "backlog") &&
+        currentProjectId ? (
+          <section
+            className={`panel top-task-controls ${activeView === "board" ? "board-toolbar" : ""}`}
+          >
             <div className="board-toolbar-main">
               <div className="board-quickbar">
                 <div className="search-chip">
@@ -503,7 +932,12 @@ function App() {
                   <input
                     placeholder="Search board"
                     value={filters.search}
-                    onChange={(event) => setFilters((prev) => ({ ...prev, search: event.target.value }))}
+                    onChange={(event) =>
+                      setFilters((prev) => ({
+                        ...prev,
+                        search: event.target.value,
+                      }))
+                    }
                   />
                 </div>
                 <div className="assignee-strip" title="Team members">
@@ -515,7 +949,8 @@ function App() {
                       onClick={() =>
                         setFilters((prev) => ({
                           ...prev,
-                          assigneeId: prev.assigneeId === item.id ? "" : item.id,
+                          assigneeId:
+                            prev.assigneeId === item.id ? "" : item.id,
                         }))
                       }
                       title={item.label}
@@ -525,13 +960,19 @@ function App() {
                   ))}
                 </div>
                 <div className="board-toolbar-actions">
-                  <div className="filter-popover-wrapper" ref={filterPopoverRef}>
+                  <div
+                    className="filter-popover-wrapper"
+                    ref={filterPopoverRef}
+                  >
                     <button
                       type="button"
                       className="ghost-btn"
                       onClick={() => {
                         setFilterDraft({
-                          sprintId: activeView === "board" ? "" : selectedSprintId || "",
+                          sprintId:
+                            activeView === "board"
+                              ? ""
+                              : selectedSprintId || "",
                           assigneeId: filters.assigneeId,
                           status: filters.status,
                           priority: filters.priority,
@@ -543,13 +984,23 @@ function App() {
                       Filter
                     </button>
                     {showFilterModal ? (
-                      <div className="filter-popover" role="dialog" aria-modal="false">
+                      <div
+                        className="filter-popover"
+                        role="dialog"
+                        aria-modal="false"
+                      >
                         <div className="filter-popover-head">
                           <div>
                             <h3>Filter</h3>
-                            <p className="muted">Select all filters that apply</p>
+                            <p className="muted">
+                              Select all filters that apply
+                            </p>
                           </div>
-                          <button type="button" className="ghost-btn" onClick={() => setShowFilterModal(false)}>
+                          <button
+                            type="button"
+                            className="ghost-btn"
+                            onClick={() => setShowFilterModal(false)}
+                          >
                             X
                           </button>
                         </div>
@@ -559,7 +1010,12 @@ function App() {
                               Sprint
                               <select
                                 value={filterDraft.sprintId}
-                                onChange={(event) => setFilterDraft((prev) => ({ ...prev, sprintId: event.target.value }))}
+                                onChange={(event) =>
+                                  setFilterDraft((prev) => ({
+                                    ...prev,
+                                    sprintId: event.target.value,
+                                  }))
+                                }
                               >
                                 <option value="">Backlog</option>
                                 {sprints.map((sprint) => (
@@ -574,7 +1030,12 @@ function App() {
                             Assignee
                             <select
                               value={filterDraft.assigneeId}
-                              onChange={(event) => setFilterDraft((prev) => ({ ...prev, assigneeId: event.target.value }))}
+                              onChange={(event) =>
+                                setFilterDraft((prev) => ({
+                                  ...prev,
+                                  assigneeId: event.target.value,
+                                }))
+                              }
                             >
                               <option value="">Select</option>
                               <option value="unassigned">Unassigned</option>
@@ -589,20 +1050,31 @@ function App() {
                             Status
                             <select
                               value={filterDraft.status}
-                              onChange={(event) => setFilterDraft((prev) => ({ ...prev, status: event.target.value }))}
+                              onChange={(event) =>
+                                setFilterDraft((prev) => ({
+                                  ...prev,
+                                  status: event.target.value,
+                                }))
+                              }
                             >
                               <option value="">Select</option>
-                              <option value="blocked">Blocked</option>
-                              <option value="todo">To Do</option>
-                              <option value="in_progress">In Progress</option>
-                              <option value="done">Done</option>
+                              {workflowStages.map((s) => (
+                                <option key={s.key} value={s.key}>
+                                  {s.name}
+                                </option>
+                              ))}
                             </select>
                           </label>
                           <label>
                             Priority
                             <select
                               value={filterDraft.priority}
-                              onChange={(event) => setFilterDraft((prev) => ({ ...prev, priority: event.target.value }))}
+                              onChange={(event) =>
+                                setFilterDraft((prev) => ({
+                                  ...prev,
+                                  priority: event.target.value,
+                                }))
+                              }
                             >
                               <option value="">Select</option>
                               <option value="low">Low</option>
@@ -615,7 +1087,12 @@ function App() {
                             <input
                               placeholder="Select label"
                               value={filterDraft.label}
-                              onChange={(event) => setFilterDraft((prev) => ({ ...prev, label: event.target.value }))}
+                              onChange={(event) =>
+                                setFilterDraft((prev) => ({
+                                  ...prev,
+                                  label: event.target.value,
+                                }))
+                              }
                             />
                           </label>
                         </div>
@@ -657,22 +1134,52 @@ function App() {
                       </div>
                     ) : null}
                   </div>
-                  <button type="button" onClick={() => setShowCreateTaskModal(true)}>
-                    Add Task
-                  </button>
+                  {activeView === "board" ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowCreateTaskModal(true)}
+                    >
+                      Add Task
+                    </button>
+                  ) : null}
                 </div>
               </div>
             </div>
           </section>
-        )}
+        ) : null}
         {error ? <p className="error">{error}</p> : null}
         {loading ? <p>Loading...</p> : null}
+        {activeView === "dashboard" ? (
+          <DashboardView
+            currentUser={currentUser}
+            projects={visibleProjects}
+            assignedTasks={dashboardAssignedTasks}
+            projectById={projectById}
+            workflowStages={workflowStages}
+            canManage={canManage}
+            onOpenProject={(id) => handleNavigateProject(id, "board")}
+            onOpenTask={openTask}
+          />
+        ) : null}
         {showCreateTaskModal ? (
-          <div className="modal-overlay" role="presentation" onClick={() => setShowCreateTaskModal(false)}>
-            <div className="modal-card" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal-overlay"
+            role="presentation"
+            onClick={() => setShowCreateTaskModal(false)}
+          >
+            <div
+              className="modal-card"
+              role="dialog"
+              aria-modal="true"
+              onClick={(e) => e.stopPropagation()}
+            >
               <div className="panel-head">
                 <h3>Create Task</h3>
-                <button type="button" className="ghost-btn" onClick={() => setShowCreateTaskModal(false)}>
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => setShowCreateTaskModal(false)}
+                >
                   Close
                 </button>
               </div>
@@ -687,9 +1194,14 @@ function App() {
                   min="1"
                   max="21"
                   value={storyPoints}
-                  onChange={(event) => setStoryPoints(Number(event.target.value))}
+                  onChange={(event) =>
+                    setStoryPoints(Number(event.target.value))
+                  }
                 />
-                <select value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)}>
+                <select
+                  value={assigneeId}
+                  onChange={(event) => setAssigneeId(event.target.value)}
+                >
                   <option value="">Unassigned</option>
                   {users.map((user) => (
                     <option key={user.id} value={user.id}>
@@ -697,13 +1209,20 @@ function App() {
                     </option>
                   ))}
                 </select>
-                <select value={taskStatus} onChange={(event) => setTaskStatus(event.target.value)}>
-                  <option value="blocked">Blocked</option>
-                  <option value="todo">To Do</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="done">Done</option>
+                <select
+                  value={taskStatus}
+                  onChange={(event) => setTaskStatus(event.target.value)}
+                >
+                  {workflowStages.map((s) => (
+                    <option key={s.key} value={s.key}>
+                      {s.name}
+                    </option>
+                  ))}
                 </select>
-                <select value={taskPriority} onChange={(event) => setTaskPriority(event.target.value)}>
+                <select
+                  value={taskPriority}
+                  onChange={(event) => setTaskPriority(event.target.value)}
+                >
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
                   <option value="high">High</option>
@@ -723,76 +1242,85 @@ function App() {
             tasks={backlogTasks}
             sprints={sprints}
             allTasks={allTasks}
+            workflowStages={workflowStages}
             selectedSprintId={selectedSprintId}
             onSelectSprint={setSelectedSprintId}
             canManage={canManage}
             onStartSprint={startSprint}
             onCompleteSprint={completeSprint}
-            onGoToSprintManagement={() => handleNavigate("sprints")}
+            onCreateSprint={createSprint}
+            onAddTask={() => setShowCreateTaskModal(true)}
+            onOpenTask={openTask}
           />
         ) : null}
 
         {activeView === "board" ? (
           <BoardView
             columns={safeColumns}
+            workflowStages={workflowStages}
             usersById={usersById}
             onMove={moveTask}
             onOpenTask={openTask}
           />
         ) : null}
 
-        {activeView === "sprints" ? (
-          <SprintManagementView
-            sprints={sprints}
-            selectedSprintId={selectedSprintId}
-            usersById={usersById}
-            sprintTasks={sprintTasks}
-            backlogTasks={backlogTasks}
-            onSelectSprint={setSelectedSprintId}
-            onCreateSprint={createSprint}
-            onUpdateSprint={updateSprint}
-            onStartSprint={startSprint}
-            onCompleteSprint={completeSprint}
-            onAddTasksToSprint={addTasksToSprint}
-            onRemoveTaskFromSprint={removeTaskFromSprint}
-          />
-        ) : null}
-
         {activeView === "projects" ? (
           <ProjectManagementView
-            projects={projects}
-            users={users}
+            projects={visibleProjects}
+            canManage={canManage}
             onCreateProject={createProject}
             onUpdateProject={updateProject}
             onDeleteProject={deleteProject}
+            onConfigureProject={(projectId) =>
+              handleNavigateProject(projectId, "settings")
+            }
           />
         ) : null}
 
         {activeView === "users" ? (
           <UserAdminView
             users={users}
+            userGroups={userGroups}
             canManage={canManage}
             currentUserId={currentUser?.id}
             onCreateUser={createUser}
             onUpdateUser={updateUser}
             onDeleteUser={deleteUser}
+            onCreateUserGroup={createUserGroup}
+            onUpdateUserGroup={updateUserGroup}
+            onDeleteUserGroup={deleteUserGroup}
           />
         ) : null}
 
-        {activeView === "settings" ? (
+        {activeView === "settings" && currentProjectId ? (
           <SystemSettingsView
-            settings={systemSettings}
+            settings={projectSettings}
+            projectName={projectById.get(String(currentProjectId))?.name}
+            users={users}
+            userGroups={userGroups}
+            projectMembers={
+              projectById.get(String(currentProjectId))?.members || []
+            }
             canManage={canManage}
-            onSave={saveSystemSettings}
+            onSave={saveProjectSettings}
+            onSaveMembers={saveProjectMembers}
+            onNotify={notify}
           />
         ) : null}
 
         <TaskDrawer
           taskBundle={taskBundle}
           users={users}
+          workflowStages={workflowStages}
           onClose={() => setTaskBundle(null)}
           onSaveTask={saveTask}
           onAddComment={addComment}
+        />
+        <ToastContainer
+          position="top-right"
+          autoClose={1600}
+          hideProgressBar
+          theme="colored"
         />
       </div>
     </MainLayout>
