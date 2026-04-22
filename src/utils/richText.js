@@ -1,6 +1,7 @@
 const SAFE_URL_PROTOCOL = /^(https?:\/\/|\/)/i;
 const HTML_TAG_PATTERN = /<[^>]+>/;
 const ALLOWED_TAGS = new Set([
+  "DIV",
   "P",
   "BR",
   "STRONG",

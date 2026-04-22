@@ -1353,6 +1353,26 @@ export async function addTaskComment(taskId, userId, body) {
   return result.rows[0];
 }
 
+export async function updateTaskComment(taskId, commentId, userId, body) {
+  const result = await dbQuery(
+    `UPDATE task_comments
+        SET body = $1
+      WHERE id = $2 AND task_id = $3 AND user_id = $4
+      RETURNING id, task_id AS "taskId", user_id AS "userId", body, created_at AS "createdAt"`,
+    [body, commentId, taskId, userId],
+  );
+  return result.rows[0] || null;
+}
+
+export async function deleteTaskComment(taskId, commentId, userId) {
+  const result = await dbQuery(
+    `DELETE FROM task_comments
+      WHERE id = $1 AND task_id = $2 AND user_id = $3`,
+    [commentId, taskId, userId],
+  );
+  return result.rowCount > 0;
+}
+
 export async function addTaskActivity(taskId, userId, action, meta = {}) {
   await dbQuery(
     `INSERT INTO task_activity (task_id, user_id, action, meta)

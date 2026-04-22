@@ -61,6 +61,7 @@ export default function BacklogView({
   onCreateSprint,
   onAddTask,
   onOpenTask,
+  onDeleteTask,
   onNotify,
 }) {
   const assigneeLabel = (task) =>
@@ -177,14 +178,14 @@ export default function BacklogView({
   }, []);
 
   return (
-    <section className="panel backlog-page">
-      <div className="panel-head">
+    <section className="grid gap-2 rounded-lg border border-[#dfe1e6] bg-white p-[0.8rem]">
+      <div className="flex items-center justify-between gap-3">
         <h2></h2>
-        <div className="inline-form">
+        <div className="flex flex-wrap gap-2">
           {canManage ? (
             <button
               type="button"
-              className="ghost-btn"
+              className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
               onClick={() => setShowCreateSprintModal(true)}
             >
               Add Sprint
@@ -196,7 +197,7 @@ export default function BacklogView({
           </button>
         </div>
       </div>
-      <div className="backlog-rows">
+      <div className="grid gap-[0.45rem]">
         {rows.map((row) => {
           const redPoints = sumStoryPoints(row.tasks, counterBuckets.upcoming);
           const bluePoints = sumStoryPoints(row.tasks, counterBuckets.active);
@@ -211,9 +212,9 @@ export default function BacklogView({
               ? ""
               : formatSprintDateRange(row.startDate, row.endDate);
           return (
-            <article key={row.key} className="backlog-row-wrap">
+            <article key={row.key} className="grid gap-1">
               <div
-                className={`backlog-row-card ${isSelected ? "active" : ""} ${dragState.sourceKey === row.key ? "drop-source" : ""} ${dragState.overKey === row.key ? "drop-active" : ""} ${blockedDropKey === row.key ? "drop-blocked" : ""}`}
+                className={`flex cursor-pointer items-center justify-between gap-2 rounded border border-[#e3e7ef] bg-[#fbfcfe] px-[0.7rem] py-[0.6rem] transition-[border-color,background-color,box-shadow] duration-150 ${isSelected ? "border-[#b8c9e8] bg-[#f2f6ff]" : ""} ${dragState.sourceKey === row.key ? "border-dashed" : ""} ${dragState.overKey === row.key ? "border-[#2f6feb] bg-[#eaf1ff] shadow-[inset_0_0_0_1px_rgba(47,111,235,0.18)]" : ""} ${blockedDropKey === row.key ? "border-red-600 bg-[#fff2f2] ring-1 ring-red-300" : ""}`}
                 onDragOver={(event) => {
                   if (!canManage) return;
                   event.preventDefault();
@@ -268,23 +269,23 @@ export default function BacklogView({
                   toggleExpanded(row.key);
                 }}
               >
-                <div className="backlog-row-main">
+                <div className="flex items-center gap-[0.45rem]">
                   <span
-                    className={`backlog-chevron ${isExpanded ? "expanded" : ""}`}
+                    className={`inline-block text-[0.85rem] text-[#5e6c84] transition-transform duration-100 ${isExpanded ? "rotate-0" : "-rotate-90"}`}
                   >
                     ▾
                   </span>
                   <strong>{row.name}</strong>
-                  <span className="muted">
+                  <span className="text-[#5e6c84]">
                     ({row.tasks.length} work items )
                     {sprintDateRange ? ` ${sprintDateRange}` : ""}
                   </span>
                 </div>
-                <div className="backlog-row-right">
-                  <div className="status-counters">
-                    <span className="counter blocked">{redPoints}</span>
-                    <span className="counter todo">{bluePoints}</span>
-                    <span className="counter done">{greenPoints}</span>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-[0.3rem]">
+                    <span className="min-w-6 rounded border border-[#f3c6c3] bg-[#fdeceb] px-[0.28rem] py-[0.08rem] text-center text-[0.7rem] text-[#b42318]">{redPoints}</span>
+                    <span className="min-w-6 rounded border border-[#c6d9ff] bg-[#e9f2ff] px-[0.28rem] py-[0.08rem] text-center text-[0.7rem] text-[#114fba]">{bluePoints}</span>
+                    <span className="min-w-6 rounded border border-[#bde7ca] bg-[#e8f7ed] px-[0.28rem] py-[0.08rem] text-center text-[0.7rem] text-[#1a7f37]">{greenPoints}</span>
                   </div>
                   {row.status === "active" && canManage ? (
                     <button
@@ -327,7 +328,7 @@ export default function BacklogView({
                   {row.status === "planned" && canManage ? (
                     <button
                       type="button"
-                      className="ghost-btn"
+                      className="border border-[#dc2626] bg-[#dc2626] text-white hover:border-[#b91c1c] hover:bg-[#b91c1c]"
                       onClick={(event) => {
                         event.stopPropagation();
                         const destinations = [
@@ -362,13 +363,14 @@ export default function BacklogView({
                 </div>
               </div>
               {isExpanded ? (
-                <div className="backlog-task-list">
+                <div className="grid gap-[0.35rem] rounded border border-[#e3e7ef] bg-white p-[0.4rem]">
                   {row.tasks.length ? (
                     row.tasks.map((task) => (
-                      <button
+                      <div
                         key={task.id}
-                        type="button"
-                        className={`backlog-task-item ${dragState.taskId === String(task.id) ? "is-dragging" : ""} ${recentlyMovedTaskId === String(task.id) ? "is-recently-moved" : ""}`}
+                        role="button"
+                        tabIndex={0}
+                        className={`flex w-full justify-between gap-3 rounded-md border border-[#dfe1e6] bg-white px-[0.5rem] py-[0.45rem] text-left text-[#172b4d] transition-[transform,box-shadow,opacity,border-color,background-color] duration-200 ${dragState.taskId === String(task.id) ? "scale-[0.98] opacity-50" : ""} ${recentlyMovedTaskId === String(task.id) ? "animate-pulse" : ""}`}
                         draggable={canManage}
                         onDragStart={(event) => {
                           event.dataTransfer.setData(
@@ -394,17 +396,23 @@ export default function BacklogView({
                           })
                         }
                         onClick={() => onOpenTask(task.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            onOpenTask(task.id);
+                          }
+                        }}
                         data-task-id={String(task.id)}
                         aria-grabbed={dragState.taskId === String(task.id)}
                       >
-                        <span className="backlog-task-title">
-                          <span className="backlog-task-key muted">
+                        <span className="font-semibold">
+                          <span className="mr-[0.35rem] font-semibold text-[#5e6c84]">
                             {displayTaskRef(task)}
                           </span>{" "}
                           {task.title}
                         </span>
-                        <span className="backlog-task-right">
-                          <span className="muted">
+                        <span className="inline-flex items-center gap-[0.45rem]">
+                          <span className="text-[#5e6c84]">
                             {task.priority} · SP{" "}
                             {task.storyPoints == null || task.storyPoints === ""
                               ? "-"
@@ -412,7 +420,7 @@ export default function BacklogView({
                           </span>
                           {task.assigneeId ? (
                             <span
-                              className="avatar-bubble"
+                              className="grid h-[22px] w-[22px] place-items-center rounded-full text-[0.66rem] font-bold text-white"
                               title={assigneeLabel(task)}
                               style={{
                                 backgroundColor: userAvatarColor?.(
@@ -429,17 +437,47 @@ export default function BacklogView({
                             </span>
                           ) : (
                             <span
-                              className="muted backlog-unassigned-pill"
+                              className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-full border border-[#c7cfde] bg-[#f4f5f7] text-[0.66rem] font-bold text-[#5e6c84]"
                               title="Unassigned"
                             >
                               U
                             </span>
                           )}
+                          {canManage ? (
+                            <button
+                              type="button"
+                              className="inline-flex items-center justify-center border border-[#dc2626] bg-[#dc2626] px-[0.45rem] py-[0.2rem] text-[0.72rem] text-white hover:border-[#b91c1c] hover:bg-[#b91c1c]"
+                              onClick={async (event) => {
+                                event.stopPropagation();
+                                await onDeleteTask?.(task.id);
+                              }}
+                              title="Delete task"
+                              aria-label="Delete task"
+                            >
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                className="h-[0.85rem] w-[0.85rem]"
+                                aria-hidden="true"
+                              >
+                                <polyline points="3 6 5 6 21 6" />
+                                <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+                                <path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6" />
+                                <line x1="10" y1="11" x2="10" y2="17" />
+                                <line x1="14" y1="11" x2="14" y2="17" />
+                              </svg>
+                            </button>
+                          ) : null}
                         </span>
-                      </button>
+                      </div>
                     ))
                   ) : (
-                    <div className="muted">
+                    <div className="text-[#5e6c84]">
                       {row.key === "backlog"
                         ? "No backlog tasks."
                         : "No tasks in this sprint."}
@@ -456,20 +494,20 @@ export default function BacklogView({
           open={showCreateSprintModal}
           onOpenChange={setShowCreateSprintModal}
         >
-          <div className="panel-head">
+          <div className="flex items-center justify-between gap-3">
             <h3>Create Sprint</h3>
             <button
               type="button"
-              className="ghost-btn"
+              className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
               onClick={() => setShowCreateSprintModal(false)}
             >
               X
             </button>
           </div>
-          <div className="project-form">
+          <div className="grid gap-[0.6rem]">
             <label>
-              <span className="field-label">
-                Sprint Name <span className="required-indicator">*</span>
+              <span className="inline-flex items-center">
+                Sprint Name <span className="ml-1 text-red-600">*</span>
               </span>
               <input
                 placeholder="Enter sprint name"
@@ -486,9 +524,9 @@ export default function BacklogView({
               />
             </label>
             {createNameError ? (
-              <p className="error">{createNameError}</p>
+              <p className="my-2 text-red-600">{createNameError}</p>
             ) : null}
-            <div className="inline-form">
+            <div className="flex flex-wrap gap-2">
               <label>
                 Start date
                 <input
@@ -516,10 +554,10 @@ export default function BacklogView({
                 />
               </label>
             </div>
-            <div className="modal-actions">
+            <div className="flex justify-end gap-2">
               <button
                 type="button"
-                className="ghost-btn"
+                className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
                 onClick={() => setShowCreateSprintModal(false)}
               >
                 Cancel
@@ -570,6 +608,7 @@ export default function BacklogView({
       {sprintDeleteDialog ? (
         <Modal
           open={Boolean(sprintDeleteDialog)}
+          cardClassName="max-w-[460px]"
           onOpenChange={(open) => {
             if (!open) {
               setSprintDeleteDialog(null);
@@ -577,11 +616,11 @@ export default function BacklogView({
             }
           }}
         >
-          <div className="panel-head">
+          <div className="flex items-center justify-between gap-3">
             <h3>Delete sprint</h3>
             <button
               type="button"
-              className="ghost-btn"
+              className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
               onClick={() => {
                 setSprintDeleteDialog(null);
                 setSprintDeleteError("");
@@ -590,7 +629,7 @@ export default function BacklogView({
               X
             </button>
           </div>
-          <div className="project-form">
+          <div className="grid gap-[0.6rem]">
             <p>
               Move tasks in <strong>{sprintDeleteDialog.sprintName}</strong> to:
             </p>
@@ -615,12 +654,12 @@ export default function BacklogView({
               ))}
             </select>
             {sprintDeleteError ? (
-              <p className="error">{sprintDeleteError}</p>
+              <p className="my-2 text-red-600">{sprintDeleteError}</p>
             ) : null}
-            <div className="modal-actions">
+            <div className="flex justify-end gap-2">
               <button
                 type="button"
-                className="ghost-btn"
+                className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
                 onClick={() => {
                   setSprintDeleteDialog(null);
                   setSprintDeleteError("");
@@ -630,6 +669,7 @@ export default function BacklogView({
               </button>
               <button
                 type="button"
+                className="border border-[#dc2626] bg-[#dc2626] text-white hover:border-[#b91c1c] hover:bg-[#b91c1c]"
                 disabled={!sprintDeleteDialog.destinationSprintId}
                 onClick={async () => {
                   if (!sprintDeleteDialog.destinationSprintId) {
@@ -670,17 +710,17 @@ export default function BacklogView({
             if (!open) setSprintCompleteDialog(null);
           }}
         >
-          <div className="panel-head">
+          <div className="flex items-center justify-between gap-3">
             <h3>Complete sprint</h3>
             <button
               type="button"
-              className="ghost-btn"
+              className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
               onClick={() => setSprintCompleteDialog(null)}
             >
               X
             </button>
           </div>
-          <div className="project-form">
+          <div className="grid gap-[0.6rem]">
             <p>
               Move unfinished tasks in{" "}
               <strong>{sprintCompleteDialog.sprintName}</strong> to:
@@ -705,10 +745,10 @@ export default function BacklogView({
                 </option>
               ))}
             </select>
-            <div className="modal-actions">
+            <div className="flex justify-end gap-2">
               <button
                 type="button"
-                className="ghost-btn"
+                className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
                 onClick={() => setSprintCompleteDialog(null)}
               >
                 Cancel

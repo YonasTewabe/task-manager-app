@@ -34,32 +34,40 @@ function TaskCard({
   return (
     <div
       draggable
-      className={`board-card ${isDragging ? "is-dragging" : ""} ${isRecentlyMoved ? "is-recently-moved" : ""}`}
+      className={`cursor-pointer rounded-[8px] border border-[#dfe4ee] bg-white p-2 shadow-[0_1px_0_rgba(9,30,66,0.08)] transition-[transform,box-shadow,opacity,border-color,background-color] duration-200 ease-out ${isDragging ? "scale-[0.98] opacity-50" : ""} ${isRecentlyMoved ? "animate-pulse" : ""}`}
       onDragStart={dragStart}
       onDragEnd={() => onDragTaskEnd?.()}
       onClick={() => onOpen(task.id)}
     >
-      <div className="card-title">{task.title}</div>
-      <div className="board-card-meta board-card-row">
-        <span className="meta-left">
-          <span className="meta-tag">{workTypeMeta.label}</span>
+      <div className="mb-[0.45rem] font-semibold">{task.title}</div>
+      <div className="mt-[0.4rem] flex items-center justify-between gap-[0.45rem] text-[0.75rem] text-[#667289]">
+        <span className="inline-flex min-w-0 items-center gap-[0.35rem] text-[0.84rem] text-[#697386]">
+          <span className="rounded-full border border-[#dbe3ef] bg-[#f5f7fb] px-[0.4rem] py-[0.06rem] text-[0.7rem] font-semibold uppercase text-[#42526e]">
+            {workTypeMeta.label}
+          </span>
           <span>{displayTaskRef(task)}</span>
         </span>
-        <span className="meta-right">
-          <span className="sp-chip">
+        <span className="ml-auto inline-flex items-center gap-[0.35rem]">
+          <span className="min-w-[20px] rounded-[4px] border border-[#e3e7ef] bg-[#f2f4f7] px-[0.3rem] py-[0.04rem] text-center font-semibold text-[#4f5d75]">
             {task.storyPoints == null || task.storyPoints === ""
               ? "-"
               : task.storyPoints}
           </span>
           <span
-            className={`priority-sign priority-sign-${priorityMeta?.tone || "medium"}`}
+            className={`rounded-full border border-[#e3e7ef] bg-[#f7f9fc] px-[0.42rem] py-[0.1rem] text-[0.7rem] font-semibold uppercase leading-none tracking-[0.02em] ${
+              priorityMeta?.tone === "high"
+                ? "text-[#db4f4f]"
+                : priorityMeta?.tone === "low"
+                  ? "text-[#2f6feb]"
+                  : "text-[#f5a623]"
+            }`}
             title={priorityMeta?.label || "Medium"}
           >
             {priorityMeta?.label || "Medium"}
           </span>
         </span>
         <span
-          className="avatar-bubble"
+          className="grid h-[22px] w-[22px] place-items-center rounded-full bg-[#0b6bcb] text-[0.66rem] font-bold text-white"
           title={userName || "Unassigned"}
           style={
             isUnassigned
@@ -69,7 +77,7 @@ function TaskCard({
         >
           {isUnassigned ? (
             <img
-              className="avatar-icon"
+              className="block h-full w-full rounded-full"
               src={UNASSIGNED_AVATAR_SRC}
               alt=""
               aria-hidden="true"
@@ -159,7 +167,7 @@ export default function BoardView({
   }, []);
 
   return (
-    <section className="board-lanes">
+    <section className="flex items-stretch gap-[0.8rem] overflow-x-auto pb-[0.45rem]">
       {columns.map((column) =>
         (() => {
           const isBlockedByRules = blockedStatusesDuringDrag.has(
@@ -172,7 +180,15 @@ export default function BoardView({
           return (
             <article
               key={column.status}
-              className={`board-column ${dragState.overStatus === column.status ? "drop-active" : ""} ${showBlockedHint ? "drop-blocked" : ""} ${isAllowedTarget ? "drop-allowed" : ""}`}
+              className={`flex w-[280px] min-w-[280px] flex-col rounded-[8px] border border-[#e0e5ee] bg-[#f0f2f5] p-2 transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out max-[1100px]:w-[min(90vw,320px)] max-[1100px]:min-w-[min(90vw,320px)] ${
+                dragState.overStatus === column.status
+                  ? "border-[#2f6feb] bg-[#eaf1ff] shadow-[inset_0_0_0_1px_rgba(47,111,235,0.22)]"
+                  : ""
+              } ${showBlockedHint ? "border-[#dc2626] bg-[#fff2f2] ring-1 ring-red-300" : ""} ${
+                isAllowedTarget
+                  ? "border-[#1a7f37] bg-[#eefcf2] shadow-[inset_0_0_0_1px_rgba(26,127,55,0.18)]"
+                  : ""
+              }`}
               onDragEnter={(event) => {
                 event.preventDefault();
                 if (!dragState.taskId) return;
@@ -255,25 +271,27 @@ export default function BoardView({
                 }
               }}
             >
-              <header className="board-column-head">
-                <div className="board-column-title-row">
-                  <h3>{column.name || column.status}</h3>
-                  <span className="board-column-count">
+              <header className="mb-2 flex flex-col items-stretch gap-[0.15rem] border-b border-[#dde3ee] px-[0.2rem] pb-[0.45rem] pt-[0.2rem]">
+                <div className="flex flex-wrap items-center gap-[0.45rem]">
+                  <h3 className="min-w-0 flex-1 text-[0.92rem] text-[#172b4d]">
+                    {column.name || column.status}
+                  </h3>
+                  <span className="rounded-full border border-[#d1d5db] bg-[#f3f4f6] px-[0.45rem] py-[0.08rem] text-[0.8rem] font-semibold text-[#4b5563]">
                     {assigneeFilterActive
                       ? `${column.tasks.length}/${boardTotalsByStatus[column.status] ?? column.tasks.length}`
                       : column.tasks.length}
                   </span>
                 </div>
               </header>
-              <div className="board-cards">
+              <div className="grid flex-1 content-start gap-2">
                 {showBlockedHint ? (
-                  <div className="board-blocked-drop-hint">
+                  <div className="rounded-[8px] border border-dashed border-[#dc2626] bg-[#fff6f6] px-[0.6rem] py-[0.65rem] text-[0.78rem] leading-[1.35] text-[#7f1d1d]">
                     This task cannot be moved to this column due to workflow or
                     transition access rules.
                   </div>
                 ) : null}
                 {!showBlockedHint && isAllowedTarget ? (
-                  <div className="board-allowed-drop-hint">
+                  <div className="rounded-[8px] border border-dashed border-[#1a7f37] bg-[#f3fff6] px-[0.6rem] py-[0.65rem] text-[0.78rem] leading-[1.35] text-[#14532d]">
                     Drop allowed in this column.
                   </div>
                 ) : null}

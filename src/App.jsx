@@ -22,6 +22,7 @@ import {
 import { DEFAULT_WORKFLOW_STAGES } from "./workflowDefaults.js";
 
 const PROJECT_ROUTE = /^\/project\/([^/]+)\/(board|backlog|settings)$/;
+const ASSIGNEE_VISIBLE_LIMIT = 6;
 const USER_AVATAR_COLORS = [
   "#0B6BCB",
   "#6F42C1",
@@ -103,7 +104,16 @@ function App() {
   const [taskVersion, setTaskVersion] = useState("");
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
   const [showFilterModal, setShowFilterModal] = useState(false);
+  const [showAssigneeOverflow, setShowAssigneeOverflow] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState({
+    open: false,
+    title: "",
+    message: "",
+    confirmLabel: "Confirm",
+  });
   const filterPopoverRef = useRef(null);
+  const assigneeOverflowRef = useRef(null);
+  const confirmResolverRef = useRef(null);
   const latestSettingsProjectIdRef = useRef("");
   const latestProjectIdRef = useRef("");
   const [taskBundle, setTaskBundle] = useState(null);
@@ -129,6 +139,23 @@ function App() {
 
   const notify = (text, tone = "success") =>
     tone === "error" ? toast.error(text) : toast.success(text);
+  const requestConfirmation = ({ title, message, confirmLabel = "Confirm" }) =>
+    new Promise((resolve) => {
+      confirmResolverRef.current = resolve;
+      setConfirmDialog({
+        open: true,
+        title,
+        message,
+        confirmLabel,
+      });
+    });
+  const resolveConfirmation = (confirmed) => {
+    setConfirmDialog((prev) => ({ ...prev, open: false }));
+    if (confirmResolverRef.current) {
+      confirmResolverRef.current(confirmed);
+      confirmResolverRef.current = null;
+    }
+  };
 
   const usersById = useMemo(() => {
     const map = new Map();
@@ -234,6 +261,14 @@ function App() {
     });
     return items;
   }, [projectUsers, currentUser]);
+  const visibleAssigneeItems = useMemo(
+    () => assigneeFilterItems.slice(0, ASSIGNEE_VISIBLE_LIMIT),
+    [assigneeFilterItems],
+  );
+  const overflowAssigneeItems = useMemo(
+    () => assigneeFilterItems.slice(ASSIGNEE_VISIBLE_LIMIT),
+    [assigneeFilterItems],
+  );
 
   const fetchMyAssignedTasks = async () => {
     if (!token || !currentUser) return;
@@ -602,6 +637,7 @@ function App() {
 
   useEffect(() => {
     if (activeView !== "board" && activeView !== "backlog") return;
+    setShowAssigneeOverflow(false);
     setSelectedSprintId("");
     setFilters((prev) => {
       if (
@@ -633,16 +669,26 @@ function App() {
   }, [activeView]);
 
   useEffect(() => {
-    if (!showFilterModal) return undefined;
+    if (!showFilterModal && !showAssigneeOverflow) return undefined;
     const handleClickOutside = (event) => {
-      if (!filterPopoverRef.current) return;
-      if (!filterPopoverRef.current.contains(event.target)) {
+      if (
+        showFilterModal &&
+        filterPopoverRef.current &&
+        !filterPopoverRef.current.contains(event.target)
+      ) {
         setShowFilterModal(false);
+      }
+      if (
+        showAssigneeOverflow &&
+        assigneeOverflowRef.current &&
+        !assigneeOverflowRef.current.contains(event.target)
+      ) {
+        setShowAssigneeOverflow(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showFilterModal]);
+  }, [showFilterModal, showAssigneeOverflow]);
 
   useEffect(() => {
     const parsed = parseRoute(location.pathname);
@@ -857,6 +903,21 @@ function App() {
     await openTask(taskId);
     await refetchAfterCrud({ includeDashboard: true });
   };
+  const updateComment = async (taskId, commentId, body) => {
+    await apiRequest(`/task-management/tasks/${taskId}/comments/${commentId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ body }),
+    });
+    await openTask(taskId);
+    await refetchAfterCrud({ includeDashboard: true });
+  };
+  const deleteComment = async (taskId, commentId) => {
+    await apiRequest(`/task-management/tasks/${taskId}/comments/${commentId}`, {
+      method: "DELETE",
+    });
+    await openTask(taskId);
+    await refetchAfterCrud({ includeDashboard: true });
+  };
 
   const uploadTaskAsset = async (file) => {
     const formData = new FormData();
@@ -917,6 +978,14 @@ function App() {
   };
 
   const deleteUser = async (userId) => {
+    const confirmed = await requestConfirmation({
+      title: "Delete user",
+      message: "Delete this user? ",
+      confirmLabel: "Delete user",
+    });
+    if (!confirmed) {
+      return;
+    }
     try {
       await apiRequest(`/task-management/users/${userId}`, {
         method: "DELETE",
@@ -970,6 +1039,14 @@ function App() {
   };
 
   const deleteUserGroup = async (groupId) => {
+    const confirmed = await requestConfirmation({
+      title: "Delete user group",
+      message: "Delete this user group? ",
+      confirmLabel: "Delete group",
+    });
+    if (!confirmed) {
+      return;
+    }
     try {
       await apiRequest(`/task-management/user-groups/${groupId}`, {
         method: "DELETE",
@@ -1073,6 +1150,14 @@ function App() {
   };
 
   const deleteProject = async (projectId) => {
+    const confirmed = await requestConfirmation({
+      title: "Delete project",
+      message: "Delete this project? ",
+      confirmLabel: "Delete project",
+    });
+    if (!confirmed) {
+      return;
+    }
     await apiRequest(`/task-management/projects/${projectId}`, {
       method: "DELETE",
     });
@@ -1090,6 +1175,30 @@ function App() {
       includeDashboard: true,
     });
     notify("Project deleted.");
+  };
+
+  const deleteTask = async (taskId) => {
+    const confirmed = await requestConfirmation({
+      title: "Delete task",
+      message: "Delete this task? ",
+      confirmLabel: "Delete task",
+    });
+    if (!confirmed) {
+      return;
+    }
+    try {
+      await apiRequest(`/task-management/tasks/${taskId}`, {
+        method: "DELETE",
+      });
+      if (String(taskBundle?.task?.id) === String(taskId)) {
+        setTaskBundle(null);
+      }
+      await refetchAfterCrud({ includeProject: true, includeDashboard: true });
+      notify("Task deleted.");
+    } catch (error) {
+      notify(error.message || "Failed to delete task.", "error");
+      throw error;
+    }
   };
 
   const saveProjectSettings = async (nextSettings) => {
@@ -1208,12 +1317,14 @@ function App() {
 
   if (!token) {
     return (
-      <AuthView
-        onLogin={login}
-        onRegister={register}
-        loading={authLoading}
-        error={error}
-      />
+      <div className="min-h-screen bg-[#f7f8fa] text-[#172b4d]">
+        <AuthView
+          onLogin={login}
+          onRegister={register}
+          loading={authLoading}
+          error={error}
+        />
+      </div>
     );
   }
 
@@ -1236,534 +1347,639 @@ function App() {
   });
 
   return (
-    <MainLayout
-      currentUser={currentUser}
-      onLogout={logout}
-      activeView={activeView}
-      currentProjectId={currentProjectId}
-      projects={sidebarProjects}
-      expandedProjectIds={[]}
-      onNavigateMain={handleNavigateMain}
-      onNavigateProject={handleNavigateProject}
-    >
-      <div className={activeView === "dashboard" ? undefined : "jira-shell"}>
-        {(activeView === "board" || activeView === "backlog") &&
-        currentProjectId ? (
-          <section
-            className={`panel top-task-controls ${activeView === "board" ? "board-toolbar" : ""}`}
-          >
-            <div className="board-toolbar-main">
-              <div className="board-quickbar">
-                <div className="search-chip">
-                  <span className="search-icon">⌕</span>
-                  <input
-                    placeholder="Search board"
-                    value={filters.search}
-                    onChange={(event) =>
-                      setFilters((prev) => ({
-                        ...prev,
-                        search: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div className="assignee-strip" title="Team members">
-                  {assigneeFilterItems.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      className={`chip-avatar ${item.isUnassigned ? "chip-avatar-unassigned" : ""} ${filters.assigneeId === item.id ? "active" : ""}`}
-                      style={
-                        item.isUnassigned
-                          ? undefined
-                          : { backgroundColor: getUserAvatarColor(item.id) }
-                      }
-                      onClick={() =>
+    <div className="min-h-screen bg-[#f7f8fa] text-[#172b4d]">
+      <MainLayout
+        currentUser={currentUser}
+        onLogout={logout}
+        activeView={activeView}
+        currentProjectId={currentProjectId}
+        projects={sidebarProjects}
+        expandedProjectIds={[]}
+        onNavigateMain={handleNavigateMain}
+        onNavigateProject={handleNavigateProject}
+      >
+        <div className={activeView === "dashboard" ? undefined : "p-4"}>
+          {(activeView === "board" || activeView === "backlog") &&
+          currentProjectId ? (
+            <section
+              className={`mb-3 grid gap-2 rounded-lg border border-[#dfe1e6] bg-white p-[0.8rem] ${activeView === "board" ? "border-[#e2e6ee] bg-white" : ""}`}
+            >
+              <div className="grid gap-[0.6rem]">
+                <div className="flex flex-wrap items-center gap-[0.6rem] max-[1100px]:flex-col max-[1100px]:items-stretch">
+                  <div className="flex min-w-[250px] flex-1 basis-[320px] items-center gap-[0.4rem] rounded border border-[#d6dce8] bg-[#f7f8fa] px-2 py-[0.3rem]">
+                    <span className="text-[0.95rem] text-[#6b778c]">⌕</span>
+                    <input
+                      placeholder="Search board"
+                      value={filters.search}
+                      onChange={(event) =>
                         setFilters((prev) => ({
                           ...prev,
-                          assigneeId:
-                            prev.assigneeId === item.id ? "" : item.id,
+                          search: event.target.value,
                         }))
                       }
-                      title={item.label}
-                    >
-                      {item.isUnassigned ? (
-                        <img
-                          className="avatar-icon"
-                          src={UNASSIGNED_AVATAR_SRC}
-                          alt=""
-                          aria-hidden="true"
-                        />
-                      ) : (
-                        item.initials
-                      )}
-                    </button>
-                  ))}
-                </div>
-                <div className="board-toolbar-actions">
+                    />
+                  </div>
                   <div
-                    className="filter-popover-wrapper"
-                    ref={filterPopoverRef}
+                    className="relative flex flex-wrap items-center gap-[0.3rem]"
+                    title="Team members"
+                    ref={assigneeOverflowRef}
                   >
-                    <button
-                      type="button"
-                      className="ghost-btn"
-                      onClick={() => {
-                        setFilterDraft({
-                          sprintId:
-                            activeView === "board"
-                              ? ""
-                              : selectedSprintId || "",
-                          priority: filters.priority,
-                          label: filters.label,
-                          status: filters.status,
-                          type: filters.type,
-                        });
-                        setShowFilterModal((prev) => !prev);
-                      }}
-                    >
-                      Filter
-                    </button>
-                    {showFilterModal ? (
-                      <div
-                        className="filter-popover"
-                        role="dialog"
-                        aria-modal="false"
+                    {visibleAssigneeItems.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className={`h-7 w-7 rounded-full border border-[#d6dce8] bg-[#0b6bcb] p-0 text-[0.72rem] font-bold text-white focus:outline-none focus-visible:outline-none ${item.isUnassigned ? "border-[#c7cfde] bg-[#f4f5f7] text-[#5e6c84]" : ""} ${filters.assigneeId === item.id ? "shadow-[0_0_0_2px_#b9d8ff]" : ""}`}
+                        style={
+                          item.isUnassigned
+                            ? undefined
+                            : { backgroundColor: getUserAvatarColor(item.id) }
+                        }
+                        onClick={() =>
+                          setFilters((prev) => ({
+                            ...prev,
+                            assigneeId:
+                              prev.assigneeId === item.id ? "" : item.id,
+                          }))
+                        }
+                        title={item.label}
                       >
-                        <div className="filter-popover-head">
-                          <div>
-                            <h3>Filter</h3>
-                          </div>
+                        {item.isUnassigned ? (
+                          <img
+                            className="block h-full w-full rounded-full"
+                            src={UNASSIGNED_AVATAR_SRC}
+                            alt=""
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          item.initials
+                        )}
+                      </button>
+                    ))}
+                    {overflowAssigneeItems.length ? (
+                      <button
+                        type="button"
+                        className="rounded-full border border-[#c7cfde] bg-[#f4f5f7] px-[0.45rem] py-[0.1rem] text-[0.72rem] font-semibold text-[#42526e] hover:bg-[#e9edf3]"
+                        onClick={() => setShowAssigneeOverflow((prev) => !prev)}
+                        title="Show more assignees"
+                        aria-expanded={showAssigneeOverflow}
+                        aria-label={`Show ${overflowAssigneeItems.length} more assignees`}
+                      >
+                        +{overflowAssigneeItems.length}
+                      </button>
+                    ) : null}
+                    {showAssigneeOverflow && overflowAssigneeItems.length ? (
+                      <div className="absolute left-0 top-[calc(100%+0.35rem)] z-50 grid max-h-[260px] min-w-[260px] gap-[0.25rem] overflow-auto rounded-[10px] border border-[#d7dce5] bg-white p-[0.4rem] shadow-[0_10px_24px_rgba(9,30,66,0.18)]">
+                        {overflowAssigneeItems.map((item) => (
                           <button
+                            key={`overflow-${item.id}`}
                             type="button"
-                            className="ghost-btn"
-                            onClick={() => setShowFilterModal(false)}
-                          >
-                            X
-                          </button>
-                        </div>
-                        <div className="filter-popover-grid">
-                          {activeView !== "board" ? (
-                            <label>
-                              Sprint
-                              <select
-                                value={filterDraft.sprintId}
-                                onChange={(event) =>
-                                  setFilterDraft((prev) => ({
-                                    ...prev,
-                                    sprintId: event.target.value,
-                                  }))
-                                }
-                              >
-                                <option value="">Backlog</option>
-                                {sprints.map((sprint) => (
-                                  <option key={sprint.id} value={sprint.id}>
-                                    {sprint.name} ({sprint.status})
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                          ) : null}
-                          {activeView === "board" ? (
-                            <>
-                              <label>
-                                Priority
-                                <select
-                                  value={filterDraft.priority}
-                                  onChange={(event) =>
-                                    setFilterDraft((prev) => ({
-                                      ...prev,
-                                      priority: event.target.value,
-                                    }))
-                                  }
-                                >
-                                  <option value="">Select</option>
-                                  {PRIORITY_OPTIONS.map((option) => (
-                                    <option
-                                      key={option.value}
-                                      value={option.value}
-                                    >
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-                              <label className="filter-popover-span">
-                                Label
-                                <select
-                                  value={filterDraft.label}
-                                  onChange={(event) =>
-                                    setFilterDraft((prev) => ({
-                                      ...prev,
-                                      label: event.target.value,
-                                    }))
-                                  }
-                                >
-                                  <option value="">Select</option>
-                                  {projectLabels.map((label) => (
-                                    <option key={label} value={label}>
-                                      {label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-                              <label>
-                                Type
-                                <select
-                                  value={filterDraft.type}
-                                  onChange={(event) =>
-                                    setFilterDraft((prev) => ({
-                                      ...prev,
-                                      type: event.target.value,
-                                    }))
-                                  }
-                                >
-                                  <option value="">Select</option>
-                                  {projectTypes.map((type) => (
-                                    <option key={type} value={type}>
-                                      {type}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-                            </>
-                          ) : (
-                            <label className="filter-popover-span">
-                              Status
-                              <select
-                                value={filterDraft.status}
-                                onChange={(event) =>
-                                  setFilterDraft((prev) => ({
-                                    ...prev,
-                                    status: event.target.value,
-                                  }))
-                                }
-                              >
-                                <option value="">Select</option>
-                                {workflowStages.map((stage) => (
-                                  <option key={stage.key} value={stage.key}>
-                                    {stage.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                          )}
-                        </div>
-                        <div className="filter-popover-actions">
-                          <button
-                            type="button"
-                            className="ghost-btn"
+                            className={`flex items-center gap-[0.45rem] rounded-[8px] border border-transparent px-[0.4rem] py-[0.35rem] text-left text-[0.82rem] text-[#253858] hover:bg-[#f4f6fa] ${filters.assigneeId === item.id ? "bg-[#ecf3ff] text-[#1d4ed8]" : ""}`}
                             onClick={() => {
-                              const clearedDraft = {
-                                sprintId: "",
-                                priority: "",
-                                label: "",
-                                status: "",
-                                type: "",
-                              };
-                              setFilterDraft(clearedDraft);
-                              if (activeView !== "board") {
-                                setSelectedSprintId("");
-                              }
                               setFilters((prev) => ({
                                 ...prev,
-                                priority: "",
-                                label: "",
-                                status: "",
-                                type: "",
+                                assigneeId: prev.assigneeId === item.id ? "" : item.id,
                               }));
+                              setShowAssigneeOverflow(false);
                             }}
+                            title={item.label}
                           >
-                            Reset
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (activeView !== "board") {
-                                setSelectedSprintId(filterDraft.sprintId || "");
+                            <span
+                              className={`grid h-6 w-6 place-items-center rounded-full border border-[#d6dce8] text-[0.66rem] font-bold ${item.isUnassigned ? "bg-[#f4f5f7] text-[#5e6c84]" : "text-white"}`}
+                              style={
+                                item.isUnassigned
+                                  ? undefined
+                                  : { backgroundColor: getUserAvatarColor(item.id) }
                               }
-                              setFilters((prev) => ({
-                                ...prev,
-                                priority:
-                                  activeView === "board"
-                                    ? filterDraft.priority
-                                    : "",
-                                label:
-                                  activeView === "board"
-                                    ? filterDraft.label
-                                    : "",
-                                status:
-                                  activeView === "board"
-                                    ? ""
-                                    : filterDraft.status,
-                                type:
-                                  activeView === "board"
-                                    ? filterDraft.type
-                                    : "",
-                              }));
-                              setShowFilterModal(false);
-                            }}
-                          >
-                            Filter
+                            >
+                              {item.isUnassigned ? (
+                                <img
+                                  className="block h-full w-full rounded-full"
+                                  src={UNASSIGNED_AVATAR_SRC}
+                                  alt=""
+                                  aria-hidden="true"
+                                />
+                              ) : (
+                                item.initials
+                              )}
+                            </span>
+                            <span className="truncate">{item.label}</span>
                           </button>
-                        </div>
+                        ))}
                       </div>
                     ) : null}
                   </div>
-                  {activeView === "board" ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowCreateTaskModal(true)}
-                    >
-                      Add Task
-                    </button>
-                  ) : null}
+                  <div className="ml-auto flex justify-end gap-2 max-[1100px]:ml-0">
+                    <div className="relative" ref={filterPopoverRef}>
+                      <button
+                        type="button"
+                        className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+                        onClick={() => {
+                          setFilterDraft({
+                            sprintId:
+                              activeView === "board"
+                                ? ""
+                                : selectedSprintId || "",
+                            priority: filters.priority,
+                            label: filters.label,
+                            status: filters.status,
+                            type: filters.type,
+                          });
+                          setShowFilterModal((prev) => !prev);
+                        }}
+                      >
+                        Filter
+                      </button>
+                      {showFilterModal ? (
+                        <div
+                          className="absolute right-0 top-[calc(100%+0.45rem)] z-50 w-[min(560px,92vw)] rounded-[12px] border border-[#d7dce5] bg-[#f7f8fa] p-[0.95rem] text-gray-800 shadow-[0_10px_30px_rgba(9,30,66,0.2)]"
+                          role="dialog"
+                          aria-modal="false"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <h3>Filter</h3>
+                            </div>
+                            <button
+                              type="button"
+                              className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+                              onClick={() => setShowFilterModal(false)}
+                            >
+                              X
+                            </button>
+                          </div>
+                          <div className="mt-[0.35rem] grid grid-cols-1 gap-[0.75rem]">
+                            {activeView !== "board" ? (
+                              <label className="grid gap-[0.32rem] text-[0.9rem] text-[#253858]">
+                                Sprint
+                                <select
+                                  className="w-full rounded-[8px] border border-[#c9d2e3] bg-white px-[0.55rem] py-[0.45rem] text-[0.9rem] text-[#172b4d]"
+                                  value={filterDraft.sprintId}
+                                  onChange={(event) =>
+                                    setFilterDraft((prev) => ({
+                                      ...prev,
+                                      sprintId: event.target.value,
+                                    }))
+                                  }
+                                >
+                                  <option value="">Backlog</option>
+                                  {sprints.map((sprint) => (
+                                    <option key={sprint.id} value={sprint.id}>
+                                      {sprint.name} ({sprint.status})
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            ) : null}
+                            {activeView === "board" ? (
+                              <>
+                                <label className="grid gap-[0.32rem] text-[0.9rem] text-[#253858]">
+                                  Priority
+                                  <select
+                                    className="w-full rounded-[8px] border border-[#c9d2e3] bg-white px-[0.55rem] py-[0.45rem] text-[0.9rem] text-[#172b4d]"
+                                    value={filterDraft.priority}
+                                    onChange={(event) =>
+                                      setFilterDraft((prev) => ({
+                                        ...prev,
+                                        priority: event.target.value,
+                                      }))
+                                    }
+                                  >
+                                    <option value="">Select</option>
+                                    {PRIORITY_OPTIONS.map((option) => (
+                                      <option
+                                        key={option.value}
+                                        value={option.value}
+                                      >
+                                        {option.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <label className="col-span-1 grid gap-[0.32rem] text-[0.9rem] text-[#253858]">
+                                  Label
+                                  <select
+                                    className="w-full rounded-[8px] border border-[#c9d2e3] bg-white px-[0.55rem] py-[0.45rem] text-[0.9rem] text-[#172b4d]"
+                                    value={filterDraft.label}
+                                    onChange={(event) =>
+                                      setFilterDraft((prev) => ({
+                                        ...prev,
+                                        label: event.target.value,
+                                      }))
+                                    }
+                                  >
+                                    <option value="">Select</option>
+                                    {projectLabels.map((label) => (
+                                      <option key={label} value={label}>
+                                        {label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <label className="grid gap-[0.32rem] text-[0.9rem] text-[#253858]">
+                                  Type
+                                  <select
+                                    className="w-full rounded-[8px] border border-[#c9d2e3] bg-white px-[0.55rem] py-[0.45rem] text-[0.9rem] text-[#172b4d]"
+                                    value={filterDraft.type}
+                                    onChange={(event) =>
+                                      setFilterDraft((prev) => ({
+                                        ...prev,
+                                        type: event.target.value,
+                                      }))
+                                    }
+                                  >
+                                    <option value="">Select</option>
+                                    {projectTypes.map((type) => (
+                                      <option key={type} value={type}>
+                                        {type}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                              </>
+                            ) : (
+                              <label className="col-span-1 grid gap-[0.32rem] text-[0.9rem] text-[#253858]">
+                                Status
+                                <select
+                                  className="w-full rounded-[8px] border border-[#c9d2e3] bg-white px-[0.55rem] py-[0.45rem] text-[0.9rem] text-[#172b4d]"
+                                  value={filterDraft.status}
+                                  onChange={(event) =>
+                                    setFilterDraft((prev) => ({
+                                      ...prev,
+                                      status: event.target.value,
+                                    }))
+                                  }
+                                >
+                                  <option value="">Select</option>
+                                  {workflowStages.map((stage) => (
+                                    <option key={stage.key} value={stage.key}>
+                                      {stage.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            )}
+                          </div>
+                          <div className="flex justify-end gap-2 border-t border-[#d7dce5] pt-[0.6rem]">
+                            <button
+                              type="button"
+                              className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+                              onClick={() => {
+                                const clearedDraft = {
+                                  sprintId: "",
+                                  priority: "",
+                                  label: "",
+                                  status: "",
+                                  type: "",
+                                };
+                                setFilterDraft(clearedDraft);
+                                if (activeView !== "board") {
+                                  setSelectedSprintId("");
+                                }
+                                setFilters((prev) => ({
+                                  ...prev,
+                                  priority: "",
+                                  label: "",
+                                  status: "",
+                                  type: "",
+                                }));
+                              }}
+                            >
+                              Reset
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (activeView !== "board") {
+                                  setSelectedSprintId(
+                                    filterDraft.sprintId || "",
+                                  );
+                                }
+                                setFilters((prev) => ({
+                                  ...prev,
+                                  priority:
+                                    activeView === "board"
+                                      ? filterDraft.priority
+                                      : "",
+                                  label:
+                                    activeView === "board"
+                                      ? filterDraft.label
+                                      : "",
+                                  status:
+                                    activeView === "board"
+                                      ? ""
+                                      : filterDraft.status,
+                                  type:
+                                    activeView === "board"
+                                      ? filterDraft.type
+                                      : "",
+                                }));
+                                setShowFilterModal(false);
+                              }}
+                            >
+                              Filter
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                    {activeView === "board" ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowCreateTaskModal(true)}
+                      >
+                        Add Task
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               </div>
-            </div>
-          </section>
-        ) : null}
-        {error ? <p className="error">{error}</p> : null}
-        {loading ? <p>Loading...</p> : null}
-        {activeView === "dashboard" ? (
-          <DashboardView
-            currentUser={currentUser}
-            projects={sidebarProjects}
-            assignedTasks={dashboardAssignedTasks}
-            projectById={projectById}
-            workflowStages={workflowStages}
-            canManage={canManage}
-            onOpenProject={(id) => handleNavigateProject(id, "board")}
-            onOpenTask={openTask}
-          />
-        ) : null}
-        {showCreateTaskModal ? (
-          <Modal
-            open={showCreateTaskModal}
-            onOpenChange={setShowCreateTaskModal}
-          >
-            <div className="panel-head">
-              <h3>Create Task</h3>
-              <button
-                type="button"
-                className="ghost-btn"
-                onClick={() => setShowCreateTaskModal(false)}
-              >
-                X
-              </button>
-            </div>
-            <form className="project-form" onSubmit={createTask}>
-              <label>
-                <span className="field-label">
-                  Task title <span className="required-indicator">*</span>
-                </span>
-                <input
-                  placeholder="Enter task title"
-                  value={taskTitle}
-                  onChange={(event) => setTaskTitle(event.target.value)}
-                />
-              </label>
-              <label>
-                Story points
-                <input
-                  type="number"
-                  min="1"
-                  max="21"
-                  placeholder="Enter story points"
-                  value={storyPoints}
-                  onChange={(event) => setStoryPoints(event.target.value)}
-                />
-              </label>
-              <label>
-                <span className="field-label">
-                  Work type <span className="required-indicator">*</span>
-                </span>
-                <select
-                  value={taskType}
-                  onChange={(event) => setTaskType(event.target.value)}
-                >
-                  {projectTypes.map((type) => {
-                    const meta = getWorkTypeMeta(type);
-                    return (
-                      <option key={type} value={type}>
-                        {meta.label}
-                      </option>
-                    );
-                  })}
-                </select>
-              </label>
-              <label>
-                Assignee
-                <select
-                  value={assigneeId}
-                  onChange={(event) => setAssigneeId(event.target.value)}
-                >
-                  <option value="">Unassigned</option>
-                  {projectUsers.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Priority
-                <select
-                  value={taskPriority}
-                  onChange={(event) => setTaskPriority(event.target.value)}
-                >
-                  {PRIORITY_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Label
-                <select
-                  value={taskLabel}
-                  onChange={(event) => setTaskLabel(event.target.value)}
-                >
-                  <option value="">Select label</option>
-                  {projectLabels.map((label) => (
-                    <option key={label} value={label}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Version
-                <select
-                  value={taskVersion}
-                  onChange={(event) => setTaskVersion(event.target.value)}
-                >
-                  <option value="">None</option>
-                  {projectVersions.map((version) => (
-                    <option key={version} value={version}>
-                      {version}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="modal-actions">
+            </section>
+          ) : null}
+          {error ? <p className="my-2 text-red-600">{error}</p> : null}
+          {loading ? <p>Loading...</p> : null}
+          {activeView === "dashboard" ? (
+            <DashboardView
+              currentUser={currentUser}
+              projects={sidebarProjects}
+              assignedTasks={dashboardAssignedTasks}
+              projectById={projectById}
+              workflowStages={workflowStages}
+              canManage={canManage}
+              onOpenProject={(id) => handleNavigateProject(id, "board")}
+              onOpenTask={openTask}
+            />
+          ) : null}
+          {showCreateTaskModal ? (
+            <Modal
+              open={showCreateTaskModal}
+              onOpenChange={setShowCreateTaskModal}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <h3>Create Task</h3>
                 <button
                   type="button"
-                  className="ghost-btn"
+                  className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
                   onClick={() => setShowCreateTaskModal(false)}
                 >
-                  Cancel
+                  X
                 </button>
-                <button type="submit">Create Task</button>
               </div>
-            </form>
-          </Modal>
-        ) : null}
-        {activeView === "backlog" ? (
-          <BacklogView
-            tasks={selectedSprintId ? [] : backlogTasks}
-            sprints={sprints}
-            allTasks={allTasks}
-            usersById={usersById}
-            userAvatarColor={getUserAvatarColor}
+              <form className="grid gap-[0.6rem]" onSubmit={createTask}>
+                <label>
+                  <span className="inline-flex items-center">
+                    Task title <span className="ml-1 text-red-600">*</span>
+                  </span>
+                  <input
+                    placeholder="Enter task title"
+                    value={taskTitle}
+                    onChange={(event) => setTaskTitle(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Story points
+                  <input
+                    type="number"
+                    min="1"
+                    max="21"
+                    placeholder="Enter story points"
+                    value={storyPoints}
+                    onChange={(event) => setStoryPoints(event.target.value)}
+                  />
+                </label>
+                <label>
+                  <span className="inline-flex items-center">
+                    Work type <span className="ml-1 text-red-600">*</span>
+                  </span>
+                  <select
+                    value={taskType}
+                    onChange={(event) => setTaskType(event.target.value)}
+                  >
+                    {projectTypes.map((type) => {
+                      const meta = getWorkTypeMeta(type);
+                      return (
+                        <option key={type} value={type}>
+                          {meta.label}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </label>
+                <label>
+                  Assignee
+                  <select
+                    value={assigneeId}
+                    onChange={(event) => setAssigneeId(event.target.value)}
+                  >
+                    <option value="">Unassigned</option>
+                    {projectUsers.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Priority
+                  <select
+                    value={taskPriority}
+                    onChange={(event) => setTaskPriority(event.target.value)}
+                  >
+                    {PRIORITY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Label
+                  <select
+                    value={taskLabel}
+                    onChange={(event) => setTaskLabel(event.target.value)}
+                  >
+                    <option value="">Select label</option>
+                    {projectLabels.map((label) => (
+                      <option key={label} value={label}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Version
+                  <select
+                    value={taskVersion}
+                    onChange={(event) => setTaskVersion(event.target.value)}
+                  >
+                    <option value="">None</option>
+                    {projectVersions.map((version) => (
+                      <option key={version} value={version}>
+                        {version}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+                    onClick={() => setShowCreateTaskModal(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit">Create Task</button>
+                </div>
+              </form>
+            </Modal>
+          ) : null}
+          {activeView === "backlog" ? (
+            <BacklogView
+              tasks={selectedSprintId ? [] : backlogTasks}
+              sprints={sprints}
+              allTasks={allTasks}
+              usersById={usersById}
+              userAvatarColor={getUserAvatarColor}
+              workflowStages={workflowStages}
+              selectedSprintId={selectedSprintId}
+              onSelectSprint={setSelectedSprintId}
+              canManage={canManage}
+              onStartSprint={startSprint}
+              onCompleteSprint={completeSprint}
+              onDeleteSprint={deleteSprint}
+              onAssignTaskToSprint={assignTaskToSprintFromBacklog}
+              onCreateSprint={createSprint}
+              onAddTask={() => setShowCreateTaskModal(true)}
+              onOpenTask={openTask}
+              onDeleteTask={deleteTask}
+              onNotify={notify}
+            />
+          ) : null}
+
+          {activeView === "board" ? (
+            <BoardView
+              columns={safeColumns}
+              workflowTransitions={workflowTransitions}
+              currentUser={currentUser}
+              userGroups={userGroups}
+              usersById={usersById}
+              userAvatarColor={getUserAvatarColor}
+              boardTotalsByStatus={boardTotalsByStatus}
+              assigneeFilterActive={Boolean(filters.assigneeId)}
+              onMove={moveTask}
+              onOpenTask={openTask}
+            />
+          ) : null}
+
+          {activeView === "projects" ? (
+            <ProjectManagementView
+              projects={visibleProjects}
+              canManage={canManage}
+              onCreateProject={createProject}
+              onUpdateProject={updateProject}
+              onDeleteProject={deleteProject}
+              onConfigureProject={(projectId) =>
+                handleNavigateProject(projectId, "settings")
+              }
+              onNotify={notify}
+            />
+          ) : null}
+
+          {activeView === "users" ? (
+            <UserAdminView
+              users={users}
+              userGroups={userGroups}
+              canManage={canManage}
+              currentUserId={currentUser?.id}
+              onCreateUser={createUser}
+              onUpdateUser={updateUser}
+              onDeleteUser={deleteUser}
+              onCreateUserGroup={createUserGroup}
+              onUpdateUserGroup={updateUserGroup}
+              onDeleteUserGroup={deleteUserGroup}
+            />
+          ) : null}
+
+          {activeView === "settings" && currentProjectId ? (
+            <SystemSettingsView
+              settings={projectSettings}
+              projectName={projectById.get(String(currentProjectId))?.name}
+              users={users}
+              userGroups={userGroups}
+              projectMembers={
+                projectById.get(String(currentProjectId))?.members || []
+              }
+              canManage={canManage}
+              onSave={saveProjectSettings}
+              onSaveMembers={saveProjectMembers}
+              onNotify={notify}
+            />
+          ) : null}
+
+          <TaskDrawer
+            taskBundle={taskBundle}
+          currentUserId={currentUser?.id}
+            users={users}
+            assigneeUsers={projectUsers}
             workflowStages={workflowStages}
-            selectedSprintId={selectedSprintId}
-            onSelectSprint={setSelectedSprintId}
-            canManage={canManage}
-            onStartSprint={startSprint}
-            onCompleteSprint={completeSprint}
-            onDeleteSprint={deleteSprint}
-            onAssignTaskToSprint={assignTaskToSprintFromBacklog}
-            onCreateSprint={createSprint}
-            onAddTask={() => setShowCreateTaskModal(true)}
-            onOpenTask={openTask}
-            onNotify={notify}
-          />
-        ) : null}
-
-        {activeView === "board" ? (
-          <BoardView
-            columns={safeColumns}
             workflowTransitions={workflowTransitions}
-            currentUser={currentUser}
-            userGroups={userGroups}
-            usersById={usersById}
-            userAvatarColor={getUserAvatarColor}
-            boardTotalsByStatus={boardTotalsByStatus}
-            assigneeFilterActive={Boolean(filters.assigneeId)}
-            onMove={moveTask}
-            onOpenTask={openTask}
-          />
-        ) : null}
-
-        {activeView === "projects" ? (
-          <ProjectManagementView
-            projects={visibleProjects}
-            canManage={canManage}
-            onCreateProject={createProject}
-            onUpdateProject={updateProject}
-            onDeleteProject={deleteProject}
-            onConfigureProject={(projectId) =>
-              handleNavigateProject(projectId, "settings")
-            }
+            labels={projectLabels}
+            versions={projectVersions}
+            onClose={() => setTaskBundle(null)}
+            onSaveTask={saveTask}
+            onAddComment={addComment}
+          onUpdateComment={updateComment}
+          onDeleteComment={deleteComment}
+            onUploadAsset={uploadTaskAsset}
             onNotify={notify}
           />
-        ) : null}
-
-        {activeView === "users" ? (
-          <UserAdminView
-            users={users}
-            userGroups={userGroups}
-            canManage={canManage}
-            currentUserId={currentUser?.id}
-            onCreateUser={createUser}
-            onUpdateUser={updateUser}
-            onDeleteUser={deleteUser}
-            onCreateUserGroup={createUserGroup}
-            onUpdateUserGroup={updateUserGroup}
-            onDeleteUserGroup={deleteUserGroup}
+          {confirmDialog.open ? (
+            <Modal
+              open={confirmDialog.open}
+              cardClassName="max-w-[460px]"
+              onOpenChange={(open) => {
+                if (!open) resolveConfirmation(false);
+              }}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <h3>{confirmDialog.title}</h3>
+                <button
+                  type="button"
+                  className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+                  onClick={() => resolveConfirmation(false)}
+                >
+                  X
+                </button>
+              </div>
+              <div className="grid gap-[0.8rem]">
+                <p>{confirmDialog.message}</p>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+                    onClick={() => resolveConfirmation(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="border border-[#dc2626] bg-[#dc2626] text-white hover:border-[#b91c1c] hover:bg-[#b91c1c]"
+                    onClick={() => resolveConfirmation(true)}
+                  >
+                    {confirmDialog.confirmLabel}
+                  </button>
+                </div>
+              </div>
+            </Modal>
+          ) : null}
+          <ToastContainer
+            position="top-right"
+            autoClose={1600}
+            hideProgressBar
+            theme="colored"
           />
-        ) : null}
-
-        {activeView === "settings" && currentProjectId ? (
-          <SystemSettingsView
-            settings={projectSettings}
-            projectName={projectById.get(String(currentProjectId))?.name}
-            users={users}
-            userGroups={userGroups}
-            projectMembers={
-              projectById.get(String(currentProjectId))?.members || []
-            }
-            canManage={canManage}
-            onSave={saveProjectSettings}
-            onSaveMembers={saveProjectMembers}
-            onNotify={notify}
-          />
-        ) : null}
-
-        <TaskDrawer
-          taskBundle={taskBundle}
-          users={users}
-          assigneeUsers={projectUsers}
-          workflowStages={workflowStages}
-          workflowTransitions={workflowTransitions}
-          labels={projectLabels}
-          versions={projectVersions}
-          onClose={() => setTaskBundle(null)}
-          onSaveTask={saveTask}
-          onAddComment={addComment}
-          onUploadAsset={uploadTaskAsset}
-          onNotify={notify}
-        />
-        <ToastContainer
-          position="top-right"
-          autoClose={1600}
-          hideProgressBar
-          theme="colored"
-        />
-      </div>
-    </MainLayout>
+        </div>
+      </MainLayout>
+    </div>
   );
 }
 

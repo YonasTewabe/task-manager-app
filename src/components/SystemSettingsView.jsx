@@ -684,14 +684,16 @@ export default function SystemSettingsView({
   };
 
   return (
-    <section className="panel system-settings-page">
-      <div className="panel-head">
-        <h2>Project settings: {projectName}</h2>
+    <section className="grid gap-[0.8rem] rounded-lg border border-[#dfe1e6] bg-white p-[0.8rem]">
+      <div className="flex items-center justify-between gap-3">
+        <h2>
+          <strong>Project settings : </strong> {projectName}
+        </h2>
       </div>
 
-      <div className="settings-tabs">
+      <div className="flex flex-col gap-3">
         <div
-          className="settings-tablist"
+          className="flex flex-wrap gap-1 rounded-lg border border-[#dfe3ea] bg-[#f4f5f7] p-[0.15rem]"
           role="tablist"
           aria-label="Settings categories"
         >
@@ -703,7 +705,7 @@ export default function SystemSettingsView({
               id={`settings-tab-${tab.id}`}
               aria-selected={activeTab === tab.id}
               aria-controls={`settings-panel-${tab.id}`}
-              className={`settings-tab ${activeTab === tab.id ? "is-active" : ""}`}
+              className={`m-0 rounded-md border-none bg-transparent px-[0.85rem] py-[0.45rem] text-[0.88rem] font-medium text-[#42526e] transition-colors hover:bg-white/65 hover:text-[#172b4d] ${activeTab === tab.id ? "bg-white text-[#172b4d] shadow-[0_1px_2px_rgba(9,30,66,0.12)]" : ""}`}
               onClick={() => setActiveTab(tab.id)}
             >
               {tab.label}
@@ -711,17 +713,26 @@ export default function SystemSettingsView({
           ))}
         </div>
 
-        <div className="settings-tab-panels">
+        <div className="min-h-8">
           {activeTab === "board-columns" ? (
             <article
               id="settings-panel-board-columns"
               role="tabpanel"
               aria-labelledby="settings-tab-board-columns"
-              className="settings-section settings-tab-panel"
+              className="grid max-w-full gap-[0.55rem] rounded-lg border border-[#dfe3ea] bg-white p-[0.7rem]"
             >
-              <div className="workflow-stages-head">
+              <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                  <h3>Board columns</h3>
+                  <h3 className="text-[1rem] font-bold text-[#172b4d]">
+                    Board columns
+                  </h3>
+                  <p className="mt-[0.2rem] max-w-[62ch] text-[0.82rem] leading-[1.35] text-[#6b778c]">
+                    Define the statuses shown on your board. Each column maps to
+                    a task status and roll-up group (Not started, Active, or
+                    Done). Drag columns to reorder within the same roll-up
+                    group, and use remove to migrate tasks to another column in
+                    that group.
+                  </p>
                 </div>
                 {canManage ? (
                   <button type="button" onClick={addStage}>
@@ -730,11 +741,11 @@ export default function SystemSettingsView({
                 ) : null}
               </div>
 
-              <div className="workflow-stage-list">
+              <div className="flex flex-col gap-2">
                 {stages.map((stage, index) => (
                   <div
                     key={stage.key}
-                    className={`workflow-stage-row ${allowedDropIndexes.has(index) ? "drop-allowed" : ""} ${blockedDropIndexes.has(index) ? "drop-blocked" : ""} ${stageDragState.fromIndex === index ? "drop-source" : ""} ${stageDragState.overIndex === index ? "drop-hovered" : ""}`}
+                    className={`flex items-start gap-[0.6rem] rounded-lg border border-[#dfe1e6] bg-white px-[0.75rem] py-[0.65rem] transition-[border-color,background-color,box-shadow,transform,opacity] duration-150 ${allowedDropIndexes.has(index) ? "border-[#1a7f37] bg-[#eefcf2] shadow-[inset_0_0_0_1px_rgba(26,127,55,0.16)]" : ""} ${blockedDropIndexes.has(index) ? "border-red-600 bg-[#fff2f2] ring-1 ring-red-300" : ""} ${stageDragState.fromIndex === index ? "opacity-65" : ""} ${stageDragState.overIndex === index ? "-translate-y-px" : ""}`}
                     onDragEnter={(e) => {
                       if (!canManage || dragFromRef.current == null) return;
                       e.preventDefault();
@@ -805,7 +816,7 @@ export default function SystemSettingsView({
                   >
                     <button
                       type="button"
-                      className="workflow-drag-handle"
+                      className="grid h-10 w-8 flex-shrink-0 place-items-center rounded-md border-none bg-[#f4f5f7] p-0 text-[#6b778c] disabled:cursor-not-allowed disabled:opacity-50"
                       draggable={
                         canManage && !BUILTIN_STAGE_KEYS.has(stage.key)
                       }
@@ -859,19 +870,22 @@ export default function SystemSettingsView({
                       }}
                       disabled={!canManage || BUILTIN_STAGE_KEYS.has(stage.key)}
                     >
-                      <span className="workflow-drag-dots" aria-hidden>
-                        <span />
-                        <span />
-                        <span />
-                        <span />
-                        <span />
-                        <span />
+                      <span
+                        className="grid grid-cols-2 justify-center gap-x-1 gap-y-[3px]"
+                        aria-hidden
+                      >
+                        <span className="h-[3px] w-[3px] rounded-full bg-[#7a869a]" />
+                        <span className="h-[3px] w-[3px] rounded-full bg-[#7a869a]" />
+                        <span className="h-[3px] w-[3px] rounded-full bg-[#7a869a]" />
+                        <span className="h-[3px] w-[3px] rounded-full bg-[#7a869a]" />
+                        <span className="h-[3px] w-[3px] rounded-full bg-[#7a869a]" />
+                        <span className="h-[3px] w-[3px] rounded-full bg-[#7a869a]" />
                       </span>
                     </button>
-                    <div className="workflow-stage-body">
-                      <div className="workflow-stage-topline">
+                    <div className="flex min-w-0 flex-1 flex-col gap-[0.35rem]">
+                      <div className="flex flex-wrap items-center gap-2">
                         <input
-                          className="workflow-stage-name"
+                          className="min-w-[8rem] flex-1 rounded border border-[#dfe1e6] px-[0.5rem] py-[0.35rem] font-bold"
                           value={stage.name}
                           placeholder="Stage name"
                           disabled={!canManage}
@@ -880,9 +894,9 @@ export default function SystemSettingsView({
                           }
                         />
                       </div>
-                      <div className="workflow-stage-meta">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-3 text-[0.78rem]">
                         <span
-                          className="workflow-stage-key muted"
+                          className="text-[#5e6c84]"
                           title="Stored on tasks; used in API"
                         >
                           Key: <code>{stage.key}</code>
@@ -890,7 +904,7 @@ export default function SystemSettingsView({
                             ? " · built-in"
                             : ""}
                         </span>
-                        <label className="workflow-counter-label">
+                        <label className="flex items-center gap-[0.35rem] text-[0.78rem] text-[#42526e]">
                           Backlog roll-up
                           <select
                             value={stage.counterGroup || ""}
@@ -912,7 +926,7 @@ export default function SystemSettingsView({
                     {canManage && !BUILTIN_STAGE_KEYS.has(stage.key) ? (
                       <button
                         type="button"
-                        className="ghost-btn workflow-stage-remove"
+                        className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
                         onClick={() => {
                           const destinations = stages.filter(
                             (candidate) =>
@@ -933,13 +947,13 @@ export default function SystemSettingsView({
                         Remove
                       </button>
                     ) : (
-                      <span className="workflow-stage-remove-spacer" />
+                      <span className="w-[4.5rem] flex-shrink-0" />
                     )}
                   </div>
                 ))}
               </div>
               {stageDragState.fromIndex >= 0 && blockedDropReason ? (
-                <div className="workflow-drop-hint blocked">
+                <div className="rounded-lg border border-dashed border-red-600 bg-[#fff6f6] px-[0.7rem] py-[0.6rem] text-[0.82rem] leading-[1.35] text-[#7f1d1d]">
                   {blockedDropReason}
                 </div>
               ) : null}
@@ -951,10 +965,10 @@ export default function SystemSettingsView({
               id="settings-panel-labels"
               role="tabpanel"
               aria-labelledby="settings-tab-labels"
-              className="settings-section settings-tab-panel"
+              className="grid max-w-full gap-[0.55rem] rounded-lg border border-[#dfe3ea] bg-white p-[0.7rem]"
             >
-              <div className="panel-head">
-                <h3>Labels</h3>
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-[1rem] font-bold text-[#172b4d]">Labels</h3>
                 {canManage ? (
                   <button
                     type="button"
@@ -964,15 +978,23 @@ export default function SystemSettingsView({
                   </button>
                 ) : null}
               </div>
-              <div className="member-grid">
+              <p className="text-[0.82rem] text-[#6b778c]">
+                Manage reusable task labels for this project.
+              </p>
+              <div className="grid grid-cols-1 gap-[0.42rem] sm:grid-cols-2 lg:grid-cols-3">
                 {labels.length ? (
                   labels.map((label) => (
-                    <div key={label} className="member-item">
-                      <span className="member-pill">{label}</span>
+                    <div
+                      key={label}
+                      className="flex items-center justify-between gap-[0.5rem] rounded-[10px] border border-[#e2e7f1] bg-[#f8fbff] px-[0.55rem] py-[0.45rem]"
+                    >
+                      <span className="truncate rounded-full border border-[#c1d3ff] bg-[#edf3ff] px-[0.52rem] py-[0.2rem] text-[0.75rem] font-semibold text-[#1f3f7f]">
+                        {label}
+                      </span>
                       {canManage ? (
                         <button
                           type="button"
-                          className="ghost-btn"
+                          className="border border-[#dfe1e6] bg-transparent text-[0.78rem] text-[#42526e] hover:bg-[#f4f5f7]"
                           onClick={() => removeLabel(label)}
                         >
                           Remove
@@ -981,7 +1003,7 @@ export default function SystemSettingsView({
                     </div>
                   ))
                 ) : (
-                  <p className="muted">No labels configured yet.</p>
+                  <p className="text-[#5e6c84]">No labels configured yet.</p>
                 )}
               </div>
             </article>
@@ -991,10 +1013,10 @@ export default function SystemSettingsView({
               id="settings-panel-types"
               role="tabpanel"
               aria-labelledby="settings-tab-types"
-              className="settings-section settings-tab-panel"
+              className="grid max-w-full gap-[0.55rem] rounded-lg border border-[#dfe3ea] bg-white p-[0.7rem]"
             >
-              <div className="panel-head">
-                <h3>Types</h3>
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-[1rem] font-bold text-[#172b4d]">Types</h3>
                 {canManage ? (
                   <button
                     type="button"
@@ -1004,17 +1026,25 @@ export default function SystemSettingsView({
                   </button>
                 ) : null}
               </div>
-              <div className="member-grid">
+              <p className="text-[0.82rem] text-[#6b778c]">
+                Configure available work item types.
+              </p>
+              <div className="grid grid-cols-1 gap-[0.42rem] sm:grid-cols-2 lg:grid-cols-3">
                 {types.length ? (
                   types.map((type) => {
                     const meta = getWorkTypeMeta(type);
                     return (
-                      <div key={type} className="member-item">
-                        <span className="member-pill">{meta.label}</span>
+                      <div
+                        key={type}
+                        className="flex items-center justify-between gap-[0.5rem] rounded-[10px] border border-[#e2e7f1] bg-[#f8fbff] px-[0.55rem] py-[0.45rem]"
+                      >
+                        <span className="truncate rounded-full border border-[#c1d3ff] bg-[#edf3ff] px-[0.52rem] py-[0.2rem] text-[0.75rem] font-semibold text-[#1f3f7f]">
+                          {meta.label}
+                        </span>
                         {canManage ? (
                           <button
                             type="button"
-                            className="ghost-btn"
+                            className="border border-[#dfe1e6] bg-transparent text-[0.78rem] text-[#42526e] hover:bg-[#f4f5f7]"
                             onClick={() => removeType(type)}
                           >
                             Remove
@@ -1024,7 +1054,7 @@ export default function SystemSettingsView({
                     );
                   })
                 ) : (
-                  <p className="muted">No types configured yet.</p>
+                  <p className="text-[#5e6c84]">No types configured yet.</p>
                 )}
               </div>
             </article>
@@ -1034,10 +1064,12 @@ export default function SystemSettingsView({
               id="settings-panel-versions"
               role="tabpanel"
               aria-labelledby="settings-tab-versions"
-              className="settings-section settings-tab-panel"
+              className="grid max-w-full gap-[0.55rem] rounded-lg border border-[#dfe3ea] bg-white p-[0.7rem]"
             >
-              <div className="panel-head">
-                <h3>Versions</h3>
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-[1rem] font-bold text-[#172b4d]">
+                  Versions
+                </h3>
                 {canManage ? (
                   <button
                     type="button"
@@ -1047,15 +1079,23 @@ export default function SystemSettingsView({
                   </button>
                 ) : null}
               </div>
-              <div className="member-grid">
+              <p className="text-[0.82rem] text-[#6b778c]">
+                Track release versions used by tasks.
+              </p>
+              <div className="grid grid-cols-1 gap-[0.42rem] sm:grid-cols-2 lg:grid-cols-3">
                 {versions.length ? (
                   versions.map((version) => (
-                    <div key={version} className="member-item">
-                      <span className="member-pill">{version}</span>
+                    <div
+                      key={version}
+                      className="flex items-center justify-between gap-[0.5rem] rounded-[10px] border border-[#e2e7f1] bg-[#f8fbff] px-[0.55rem] py-[0.45rem]"
+                    >
+                      <span className="truncate rounded-full border border-[#c1d3ff] bg-[#edf3ff] px-[0.52rem] py-[0.2rem] text-[0.75rem] font-semibold text-[#1f3f7f]">
+                        {version}
+                      </span>
                       {canManage ? (
                         <button
                           type="button"
-                          className="ghost-btn"
+                          className="border border-[#dfe1e6] bg-transparent text-[0.78rem] text-[#42526e] hover:bg-[#f4f5f7]"
                           onClick={() => removeVersion(version)}
                         >
                           Remove
@@ -1064,7 +1104,7 @@ export default function SystemSettingsView({
                     </div>
                   ))
                 ) : (
-                  <p className="muted">No versions configured yet.</p>
+                  <p className="text-[#5e6c84]">No versions configured yet.</p>
                 )}
               </div>
             </article>
@@ -1074,34 +1114,61 @@ export default function SystemSettingsView({
               id="settings-panel-workflow"
               role="tabpanel"
               aria-labelledby="settings-tab-workflow"
-              className="settings-section settings-tab-panel"
+              className="grid max-w-full gap-[0.55rem] rounded-lg border border-[#dfe3ea] bg-white p-[0.7rem]"
             >
-              <h3>Workflow rules</h3>
-              <div className="inline-form" style={{ marginBottom: 12 }}>
-                <select
-                  value={workflowFromKey}
-                  onChange={(e) => setWorkflowFromKey(e.target.value)}
-                  disabled={!canManage}
-                >
-                  <option value="">From stage</option>
-                  {stages.map((stage) => (
-                    <option key={`from-${stage.key}`} value={stage.key}>
-                      {stage.name}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={workflowToKey}
-                  onChange={(e) => setWorkflowToKey(e.target.value)}
-                  disabled={!canManage}
-                >
-                  <option value="">To stage</option>
-                  {stages.map((stage) => (
-                    <option key={`to-${stage.key}`} value={stage.key}>
-                      {stage.name}
-                    </option>
-                  ))}
-                </select>
+              <h3 className="text-[1rem] font-bold text-[#172b4d]">
+                Workflow rules
+              </h3>
+              <p className="max-w-[72ch] text-[0.82rem] leading-[1.35] text-[#6b778c]">
+                Workflow rules control which status moves are allowed and who
+                can perform them. Add a move from one stage to another, then
+                allow all users or select specific users/groups. If no users or
+                groups are selected for a move, or a move is not created that
+                transition is blocked.
+              </p>
+              <div className="mb-3 flex flex-wrap items-end gap-2">
+                <label className="grid gap-[0.25rem] text-[0.82rem] font-semibold text-[#42526e]">
+                  From stage
+                  <span className="relative inline-flex min-w-[11rem]">
+                    <select
+                      className="w-full appearance-none rounded-[10px] border border-[#c7d2e5] bg-white px-[0.65rem] pr-8 text-[0.9rem] text-[#172b4d]"
+                      value={workflowFromKey}
+                      onChange={(e) => setWorkflowFromKey(e.target.value)}
+                      disabled={!canManage}
+                    >
+                      <option value="">From stage</option>
+                      {stages.map((stage) => (
+                        <option key={`from-${stage.key}`} value={stage.key}>
+                          {stage.name}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="pointer-events-none absolute inset-y-0 right-2 inline-flex items-center text-[#6b778c]">
+                      ▾
+                    </span>
+                  </span>
+                </label>
+                <label className="grid gap-[0.25rem] text-[0.82rem] font-semibold text-[#42526e]">
+                  To stage
+                  <span className="relative inline-flex min-w-[11rem]">
+                    <select
+                      className="w-full appearance-none rounded-[10px] border border-[#c7d2e5] bg-white px-[0.65rem] pr-8 text-[0.9rem] text-[#172b4d]"
+                      value={workflowToKey}
+                      onChange={(e) => setWorkflowToKey(e.target.value)}
+                      disabled={!canManage}
+                    >
+                      <option value="">To stage</option>
+                      {stages.map((stage) => (
+                        <option key={`to-${stage.key}`} value={stage.key}>
+                          {stage.name}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="pointer-events-none absolute inset-y-0 right-2 inline-flex items-center text-[#6b778c]">
+                      ▾
+                    </span>
+                  </span>
+                </label>
                 <button
                   type="button"
                   disabled={
@@ -1111,7 +1178,10 @@ export default function SystemSettingsView({
                     workflowFromKey === workflowToKey
                   }
                   onClick={() => {
-                    const created = addTransition(workflowFromKey, workflowToKey);
+                    const created = addTransition(
+                      workflowFromKey,
+                      workflowToKey,
+                    );
                     if (created) {
                       setWorkflowFromKey("");
                       setWorkflowToKey("");
@@ -1122,18 +1192,18 @@ export default function SystemSettingsView({
                 </button>
               </div>
 
-              <div className="workflow-stage-list">
+              <div className="flex flex-col gap-2">
                 {workflowTransitions.map((transition) => (
                   <div
                     key={`${transition.from}->${transition.to}`}
-                    className="workflow-stage-row"
+                    className="flex items-start gap-[0.6rem] rounded-lg border border-[#dfe1e6] bg-white px-[0.75rem] py-[0.65rem]"
                   >
-                    <div className="workflow-stage-body">
-                      <div className="workflow-stage-topline">
+                    <div className="flex min-w-0 flex-1 flex-col gap-[0.35rem]">
+                      <div className="flex flex-wrap items-center gap-2">
                         <strong>{`${stageNameByKey.get(transition.from) || transition.from} -> ${stageNameByKey.get(transition.to) || transition.to}`}</strong>
                         <button
                           type="button"
-                          className="ghost-btn"
+                          className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
                           disabled={!canManage}
                           onClick={() =>
                             removeTransition(transition.from, transition.to)
@@ -1142,10 +1212,10 @@ export default function SystemSettingsView({
                           Remove
                         </button>
                       </div>
-                      <div className="member-grid">
+                      <div className="grid grid-cols-3 gap-[0.4rem]">
                         <label
                           key={`${transition.from}-${transition.to}-all-users`}
-                          className="member-item"
+                          className="flex items-center gap-[0.35rem] text-[0.85rem]"
                         >
                           <input
                             type="checkbox"
@@ -1164,7 +1234,7 @@ export default function SystemSettingsView({
                         {projectMembers.map((member) => (
                           <label
                             key={`${transition.from}-${transition.to}-${member.id}`}
-                            className="member-item"
+                            className="flex items-center gap-[0.35rem] text-[0.85rem]"
                           >
                             <input
                               type="checkbox"
@@ -1187,7 +1257,7 @@ export default function SystemSettingsView({
                         {userGroups.map((group) => (
                           <label
                             key={`${transition.from}-${transition.to}-group-${group.id}`}
-                            className="member-item"
+                            className="flex items-center gap-[0.35rem] text-[0.85rem]"
                           >
                             <input
                               type="checkbox"
@@ -1209,12 +1279,12 @@ export default function SystemSettingsView({
                         ))}
                       </div>
                       {transition.allowAllUsers ? (
-                        <p className="muted">
+                        <p className="text-[#5e6c84]">
                           All assigned project users can move this transition.
                         </p>
                       ) : (transition.allowedUserIds || []).length === 0 &&
                         (transition.allowedGroupIds || []).length === 0 ? (
-                        <p className="muted">
+                        <p className="text-[#5e6c84]">
                           No users selected: this transition is blocked.
                         </p>
                       ) : null}
@@ -1229,17 +1299,22 @@ export default function SystemSettingsView({
               id="settings-panel-users"
               role="tabpanel"
               aria-labelledby="settings-tab-users"
-              className="settings-section settings-tab-panel"
+              className="grid max-w-full gap-[0.55rem] rounded-lg border border-[#dfe3ea] bg-white p-[0.7rem]"
             >
-              <h3>Project users</h3>
-              <p className="muted">
+              <h3 className="text-[1rem] font-bold text-[#172b4d]">
+                Project users
+              </h3>
+              <p className="text-[0.82rem] leading-[1.35] text-[#6b778c]">
                 Assign who can access and work in this project.
               </p>
               <div
-                className={`member-grid ${sortedUsers.length > 6 ? "settings-users-scroll" : ""}`}
+                className={`grid grid-cols-3 gap-[0.4rem] ${sortedUsers.length > 6 ? "max-h-[5.75rem] overflow-y-auto pr-1" : ""}`}
               >
                 {sortedUsers.map((user) => (
-                  <label key={user.id} className="member-item">
+                  <label
+                    key={user.id}
+                    className="flex items-center gap-[0.35rem] text-[0.85rem]"
+                  >
                     <input
                       type="checkbox"
                       checked={memberIds.includes(user.id)}
@@ -1262,305 +1337,305 @@ export default function SystemSettingsView({
       </div>
       {showAddStageModal ? (
         <Modal open={showAddStageModal} onOpenChange={setShowAddStageModal}>
-            <div className="panel-head">
-              <h3>Add stage</h3>
+          <div className="flex items-center justify-between gap-3">
+            <h3>Add stage</h3>
+            <button
+              type="button"
+              className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+              onClick={() => setShowAddStageModal(false)}
+            >
+              X
+            </button>
+          </div>
+          <div className="grid gap-[0.6rem]">
+            <label>
+              <span className="inline-flex items-center">
+                Stage name <span className="ml-1 text-red-600">*</span>
+              </span>
+              <input
+                value={newStageDraft.name}
+                placeholder="Enter stage name"
+                onChange={(event) =>
+                  setNewStageDraft((prev) => ({
+                    ...prev,
+                    name: event.target.value,
+                  }))
+                }
+              />
+            </label>
+            <label>
+              <span className="inline-flex items-center">
+                Backlog roll-up <span className="ml-1 text-red-600">*</span>
+              </span>
+              <select
+                value={newStageDraft.counterGroup}
+                onChange={(event) =>
+                  setNewStageDraft((prev) => ({
+                    ...prev,
+                    counterGroup: event.target.value,
+                    afterKey: STAGE_PLACEMENT_START,
+                  }))
+                }
+              >
+                <option value="">Select roll-up</option>
+                <option value="upcoming">Not started (red)</option>
+                <option value="active">Active (blue)</option>
+                <option value="done">Done (green)</option>
+              </select>
+            </label>
+            <label>
+              Place after
+              <select
+                value={newStageDraft.afterKey}
+                disabled={!newStageDraft.counterGroup}
+                onChange={(event) =>
+                  setNewStageDraft((prev) => ({
+                    ...prev,
+                    afterKey: event.target.value,
+                  }))
+                }
+              >
+                <option value={STAGE_PLACEMENT_START}>
+                  Start of this group
+                </option>
+                {addStagePlacementOptions.map((stage) => (
+                  <option key={stage.key} value={stage.key}>
+                    {stage.name}
+                  </option>
+                ))}
+                <option value={STAGE_PLACEMENT_END}>End of this group</option>
+              </select>
+            </label>
+            <p className="text-[#5e6c84]">
+              Column ordering is grouped by roll-up color: red first, blue
+              second, green last. Placement applies within the selected roll-up
+              group.
+            </p>
+            <div className="flex justify-end gap-2">
               <button
                 type="button"
-                className="ghost-btn"
+                className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
                 onClick={() => setShowAddStageModal(false)}
               >
-                X
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={createStageFromDraft}
+                disabled={
+                  !String(newStageDraft.name || "").trim() ||
+                  !newStageDraft.counterGroup
+                }
+              >
+                Add stage
               </button>
             </div>
-            <div className="project-form">
-              <label>
-                <span className="field-label">
-                  Stage name <span className="required-indicator">*</span>
-                </span>
-                <input
-                  value={newStageDraft.name}
-                  placeholder="Enter stage name"
-                  onChange={(event) =>
-                    setNewStageDraft((prev) => ({
-                      ...prev,
-                      name: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label>
-                <span className="field-label">
-                  Backlog roll-up <span className="required-indicator">*</span>
-                </span>
-                <select
-                  value={newStageDraft.counterGroup}
-                  onChange={(event) =>
-                    setNewStageDraft((prev) => ({
-                      ...prev,
-                      counterGroup: event.target.value,
-                      afterKey: STAGE_PLACEMENT_START,
-                    }))
-                  }
-                >
-                  <option value="">Select roll-up</option>
-                  <option value="upcoming">Not started (red)</option>
-                  <option value="active">Active (blue)</option>
-                  <option value="done">Done (green)</option>
-                </select>
-              </label>
-              <label>
-                Place after
-                <select
-                  value={newStageDraft.afterKey}
-                  disabled={!newStageDraft.counterGroup}
-                  onChange={(event) =>
-                    setNewStageDraft((prev) => ({
-                      ...prev,
-                      afterKey: event.target.value,
-                    }))
-                  }
-                >
-                  <option value={STAGE_PLACEMENT_START}>
-                    Start of this group
-                  </option>
-                  {addStagePlacementOptions.map((stage) => (
-                    <option key={stage.key} value={stage.key}>
-                      {stage.name}
-                    </option>
-                  ))}
-                  <option value={STAGE_PLACEMENT_END}>End of this group</option>
-                </select>
-              </label>
-              <p className="muted">
-                Column ordering is grouped by roll-up color: red first, blue
-                second, green last. Placement applies within the selected
-                roll-up group.
-              </p>
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="ghost-btn"
-                  onClick={() => setShowAddStageModal(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={createStageFromDraft}
-                  disabled={
-                    !String(newStageDraft.name || "").trim() ||
-                    !newStageDraft.counterGroup
-                  }
-                >
-                  Add stage
-                </button>
-              </div>
-            </div>
+          </div>
         </Modal>
       ) : null}
       {showAddLabelModal ? (
         <Modal open={showAddLabelModal} onOpenChange={setShowAddLabelModal}>
-            <div className="panel-head">
-              <h3>Add Label</h3>
+          <div className="flex items-center justify-between gap-3">
+            <h3>Add Label</h3>
+            <button
+              type="button"
+              className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+              onClick={() => setShowAddLabelModal(false)}
+            >
+              X
+            </button>
+          </div>
+          <div className="grid gap-[0.6rem]">
+            <label>
+              <span className="inline-flex items-center">
+                Label <span className="ml-1 text-red-600">*</span>
+              </span>
+              <input
+                value={newLabel}
+                placeholder="Enter label name"
+                onChange={(event) => setNewLabel(event.target.value)}
+              />
+            </label>
+            <div className="flex justify-end gap-2">
               <button
                 type="button"
-                className="ghost-btn"
+                className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
                 onClick={() => setShowAddLabelModal(false)}
               >
-                X
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!String(newLabel || "").trim()) return;
+                  addLabel();
+                  setShowAddLabelModal(false);
+                }}
+              >
+                Add Label
               </button>
             </div>
-            <div className="project-form">
-              <label>
-                <span className="field-label">
-                  Label <span className="required-indicator">*</span>
-                </span>
-                <input
-                  value={newLabel}
-                  placeholder="Enter label name"
-                  onChange={(event) => setNewLabel(event.target.value)}
-                />
-              </label>
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="ghost-btn"
-                  onClick={() => setShowAddLabelModal(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!String(newLabel || "").trim()) return;
-                    addLabel();
-                    setShowAddLabelModal(false);
-                  }}
-                >
-                  Add Label
-                </button>
-              </div>
-            </div>
+          </div>
         </Modal>
       ) : null}
       {showAddTypeModal ? (
         <Modal open={showAddTypeModal} onOpenChange={setShowAddTypeModal}>
-            <div className="panel-head">
-              <h3>Add Type</h3>
+          <div className="flex items-center justify-between gap-3">
+            <h3>Add Type</h3>
+            <button
+              type="button"
+              className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+              onClick={() => setShowAddTypeModal(false)}
+            >
+              X
+            </button>
+          </div>
+          <div className="grid gap-[0.6rem]">
+            <label>
+              <span className="inline-flex items-center">
+                Type <span className="ml-1 text-red-600">*</span>
+              </span>
+              <input
+                value={newType}
+                placeholder="Enter type name"
+                onChange={(event) => setNewType(event.target.value)}
+              />
+            </label>
+            <div className="flex justify-end gap-2">
               <button
                 type="button"
-                className="ghost-btn"
+                className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
                 onClick={() => setShowAddTypeModal(false)}
               >
-                X
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!String(newType || "").trim()) return;
+                  addType();
+                  setShowAddTypeModal(false);
+                }}
+              >
+                Add Type
               </button>
             </div>
-            <div className="project-form">
-              <label>
-                <span className="field-label">
-                  Type <span className="required-indicator">*</span>
-                </span>
-                <input
-                  value={newType}
-                  placeholder="Enter type name"
-                  onChange={(event) => setNewType(event.target.value)}
-                />
-              </label>
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="ghost-btn"
-                  onClick={() => setShowAddTypeModal(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!String(newType || "").trim()) return;
-                    addType();
-                    setShowAddTypeModal(false);
-                  }}
-                >
-                  Add Type
-                </button>
-              </div>
-            </div>
+          </div>
         </Modal>
       ) : null}
       {showAddVersionModal ? (
         <Modal open={showAddVersionModal} onOpenChange={setShowAddVersionModal}>
-            <div className="panel-head">
-              <h3>Add Version</h3>
+          <div className="flex items-center justify-between gap-3">
+            <h3>Add Version</h3>
+            <button
+              type="button"
+              className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+              onClick={() => setShowAddVersionModal(false)}
+            >
+              X
+            </button>
+          </div>
+          <div className="grid gap-[0.6rem]">
+            <label>
+              <span className="inline-flex items-center">
+                Version <span className="ml-1 text-red-600">*</span>
+              </span>
+              <input
+                value={newVersion}
+                placeholder="Enter version name"
+                onChange={(event) => setNewVersion(event.target.value)}
+              />
+            </label>
+            <div className="flex justify-end gap-2">
               <button
                 type="button"
-                className="ghost-btn"
+                className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
                 onClick={() => setShowAddVersionModal(false)}
               >
-                X
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!String(newVersion || "").trim()) return;
+                  addVersion();
+                  setShowAddVersionModal(false);
+                }}
+              >
+                Add Version
               </button>
             </div>
-            <div className="project-form">
-              <label>
-                <span className="field-label">
-                  Version <span className="required-indicator">*</span>
-                </span>
-                <input
-                  value={newVersion}
-                  placeholder="Enter version name"
-                  onChange={(event) => setNewVersion(event.target.value)}
-                />
-              </label>
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="ghost-btn"
-                  onClick={() => setShowAddVersionModal(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!String(newVersion || "").trim()) return;
-                    addVersion();
-                    setShowAddVersionModal(false);
-                  }}
-                >
-                  Add Version
-                </button>
-              </div>
-            </div>
+          </div>
         </Modal>
       ) : null}
 
-      <div className="settings-actions">
+      <div className="flex justify-end gap-2">
         {canManage && (savingSettings || savingMembers) ? (
-          <span className="muted">Saving...</span>
+          <span className="text-[#5e6c84]">Saving...</span>
         ) : null}
       </div>
       {stageDeleteDialog ? (
         <Modal
           open={Boolean(stageDeleteDialog)}
+          cardClassName="max-w-[460px]"
           onOpenChange={(open) => {
             if (!open) setStageDeleteDialog(null);
           }}
         >
-            <div className="panel-head">
-              <h3>Delete column</h3>
+          <div className="flex items-center justify-between gap-3">
+            <h3>Delete column</h3>
+            <button
+              type="button"
+              className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+              onClick={() => setStageDeleteDialog(null)}
+            >
+              X
+            </button>
+          </div>
+          <div className="grid gap-[0.6rem]">
+            <p>
+              Move tasks in <strong>{stageDeleteDialog.stageName}</strong> to:
+            </p>
+            <select
+              value={stageDeleteDialog.destinationKey}
+              onChange={(event) =>
+                setStageDeleteDialog((prev) =>
+                  prev ? { ...prev, destinationKey: event.target.value } : prev,
+                )
+              }
+            >
+              <option value="">Select destination column</option>
+              {dialogDestinationOptions.map((stage) => (
+                <option key={stage.key} value={stage.key}>
+                  {stage.name}
+                </option>
+              ))}
+            </select>
+            <div className="flex justify-end gap-2">
               <button
                 type="button"
-                className="ghost-btn"
+                className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
                 onClick={() => setStageDeleteDialog(null)}
               >
-                X
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="border border-[#dc2626] bg-[#dc2626] text-white hover:border-[#b91c1c] hover:bg-[#b91c1c]"
+                disabled={!stageDeleteDialog.destinationKey}
+                onClick={() => {
+                  if (!stageDeleteDialog.destinationKey) return;
+                  removeStageAt(
+                    stageDeleteDialog.index,
+                    stageDeleteDialog.destinationKey,
+                  );
+                  setStageDeleteDialog(null);
+                }}
+              >
+                Confirm delete
               </button>
             </div>
-            <div className="project-form">
-              <p>
-                Move tasks in <strong>{stageDeleteDialog.stageName}</strong> to:
-              </p>
-              <select
-                value={stageDeleteDialog.destinationKey}
-                onChange={(event) =>
-                  setStageDeleteDialog((prev) =>
-                    prev
-                      ? { ...prev, destinationKey: event.target.value }
-                      : prev,
-                  )
-                }
-              >
-                <option value="">Select destination column</option>
-                {dialogDestinationOptions.map((stage) => (
-                  <option key={stage.key} value={stage.key}>
-                    {stage.name}
-                  </option>
-                ))}
-              </select>
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="ghost-btn"
-                  onClick={() => setStageDeleteDialog(null)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={!stageDeleteDialog.destinationKey}
-                  onClick={() => {
-                    if (!stageDeleteDialog.destinationKey) return;
-                    removeStageAt(
-                      stageDeleteDialog.index,
-                      stageDeleteDialog.destinationKey,
-                    );
-                    setStageDeleteDialog(null);
-                  }}
-                >
-                  Confirm delete
-                </button>
-              </div>
-            </div>
+          </div>
         </Modal>
       ) : null}
     </section>

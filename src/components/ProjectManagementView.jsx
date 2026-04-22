@@ -37,8 +37,8 @@ export default function ProjectManagementView({
   };
 
   return (
-    <section className="panel project-management-page">
-      <div className="panel-head">
+    <section className="grid gap-[0.9rem] rounded-lg border border-[#dfe1e6] bg-white p-[0.8rem]">
+      <div className="flex items-center justify-between gap-3">
         <h2>Projects</h2>
         {canManage ? (
           <button type="button" onClick={() => setShowCreateModal(true)}>
@@ -48,53 +48,53 @@ export default function ProjectManagementView({
       </div>
 
       {!canManage ? (
-        <p className="muted project-page-note">
+        <p className="mb-3 text-[#5e6c84]">
           You can view projects you belong to. Only administrators can create or
           edit projects.
         </p>
       ) : null}
 
-      <div className="project-list">
+      <div className="grid gap-[0.7rem]">
         {!projects.length ? (
-          <p className="muted">
+          <p className="text-[#5e6c84]">
             {canManage
               ? "No projects yet. Use Add Project to create one."
               : "No projects assigned to you yet. Ask an administrator to add you to a project."}
           </p>
         ) : null}
         {projects.map((project) => (
-          <article key={project.id} className="project-row">
-            <div className="project-row-main">
+          <article key={project.id} className="rounded-lg border border-[#dfe1e6] bg-white p-[0.8rem]">
+            <div className="flex items-start justify-between gap-3">
               <button
                 type="button"
-                className="project-row-open"
+                className="m-[-0.15rem_-0.35rem] min-w-0 flex-1 rounded-md border-none bg-transparent px-[0.35rem] py-[0.15rem] text-left text-inherit hover:bg-[#f4f5f7]"
                 onClick={() => onConfigureProject(project.id)}
               >
                 <strong>
                   {project.name} ({project.projectKey})
                 </strong>
-                <div className="muted">
+                <div className="text-[#5e6c84]">
                   {project.description || "No description"}
                 </div>
-                <div className="project-members">
+                <div className="mt-1 flex flex-wrap gap-[0.35rem]">
                   {(project.members || []).map((member) => (
-                    <span key={member.id} className="member-pill">
+                    <span key={member.id} className="rounded-full border border-[#c1d3ff] bg-[#edf3ff] px-[0.45rem] py-[0.2rem] text-[0.75rem] text-[#1f3f7f]">
                       {member.name}
                     </span>
                   ))}
                 </div>
               </button>
               {canManage ? (
-                <div className="inline-form">
+                <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
-                    className="ghost-btn"
                     onClick={() => startEdit(project)}
                   >
                     Edit
                   </button>
                   <button
                     type="button"
+                    className="border border-[#dc2626] bg-[#dc2626] text-white hover:border-[#b91c1c] hover:bg-[#b91c1c]"
                     onClick={() => onDeleteProject(project.id)}
                   >
                     Delete
@@ -107,20 +107,20 @@ export default function ProjectManagementView({
       </div>
       {canManage && showCreateModal ? (
         <Modal open={showCreateModal} onOpenChange={setShowCreateModal}>
-            <div className="panel-head">
+            <div className="flex items-center justify-between gap-3">
               <h3>Create Project</h3>
               <button
                 type="button"
-                className="ghost-btn"
+                className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
                 onClick={() => setShowCreateModal(false)}
               >
                 X
               </button>
             </div>
-            <div className="project-form">
+            <div className="grid gap-[0.6rem]">
               <label>
-                <span className="field-label">
-                  Project Name <span className="required-indicator">*</span>
+                <span className="inline-flex items-center">
+                  Project Name <span className="ml-1 text-red-600">*</span>
                 </span>
                 <input
                   placeholder="Enter project name"
@@ -131,8 +131,8 @@ export default function ProjectManagementView({
                 />
               </label>
               <label>
-                <span className="field-label">
-                  Short code <span className="required-indicator">*</span>
+                <span className="inline-flex items-center">
+                  Short code <span className="ml-1 text-red-600">*</span>
                 </span>
                 <input
                   placeholder="e.g. OPS"
@@ -159,10 +159,10 @@ export default function ProjectManagementView({
                   }
                 />
               </label>
-              <div className="modal-actions">
+              <div className="flex justify-end gap-2">
                 <button
                   type="button"
-                  className="ghost-btn"
+                  className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
                   onClick={() => setShowCreateModal(false)}
                 >
                   Cancel
@@ -222,20 +222,20 @@ export default function ProjectManagementView({
             if (!open) closeEditModal();
           }}
         >
-            <div className="panel-head">
+            <div className="flex items-center justify-between gap-3">
               <h3>Edit project</h3>
               <button
                 type="button"
-                className="ghost-btn"
+                className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
                 onClick={closeEditModal}
               >
                 X
               </button>
             </div>
-            <div className="project-form">
+            <div className="grid gap-[0.6rem]">
               <label>
-                <span className="field-label">
-                  Project Name <span className="required-indicator">*</span>
+                <span className="inline-flex items-center">
+                  Project Name <span className="ml-1 text-red-600">*</span>
                 </span>
                 <input
                   placeholder="Enter project name"
@@ -246,8 +246,8 @@ export default function ProjectManagementView({
                 />
               </label>
               <label>
-                <span className="field-label">
-                  Short code <span className="required-indicator">*</span>
+                <span className="inline-flex items-center">
+                  Short code <span className="ml-1 text-red-600">*</span>
                 </span>
 
                 <input
@@ -276,7 +276,14 @@ export default function ProjectManagementView({
                   }
                 />
               </label>
-              <div className="modal-actions">
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+                  onClick={closeEditModal}
+                >
+                  Cancel
+                </button>
                 <button
                   type="button"
                   onClick={async () => {
@@ -324,13 +331,6 @@ export default function ProjectManagementView({
                   }}
                 >
                   Save
-                </button>
-                <button
-                  type="button"
-                  className="ghost-btn"
-                  onClick={closeEditModal}
-                >
-                  Cancel
                 </button>
               </div>
             </div>

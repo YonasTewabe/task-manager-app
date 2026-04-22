@@ -8,6 +8,7 @@ import { sendEmail } from "../utils/email.js";
 import {
   addTaskActivity,
   addTaskComment,
+  deleteTaskComment,
   assignTaskToSprint,
   buildBoard,
   completeSprint,
@@ -42,6 +43,7 @@ import {
   updateUser,
   updateUserGroup,
   updateProject,
+  updateTaskComment,
   updateSprint,
   updateTask,
   TASK_TITLE_CONFLICT_MESSAGE,
@@ -743,6 +745,48 @@ router.post("/tasks/:taskId/comments", async (req, res) => {
   );
   await addTaskActivity(req.params.taskId, req.user.id, "comment_added", {});
   return res.status(201).json(comment);
+});
+
+router.patch("/tasks/:taskId/comments/:commentId", async (req, res) => {
+  if (!isNonEmptyString(req.body?.body)) {
+    return res.status(400).json({ error: "Comment body is required" });
+  }
+  const task = await getTaskById(req.params.taskId);
+  if (!task) {
+    return res.status(404).json({ error: "Task not found" });
+  }
+  const updated = await updateTaskComment(
+    req.params.taskId,
+    req.params.commentId,
+    req.user.id,
+    req.body.body.trim(),
+  );
+  if (!updated) {
+    return res
+      .status(404)
+      .json({ error: "Comment not found or not owned by user" });
+  }
+  await addTaskActivity(req.params.taskId, req.user.id, "comment_updated", {});
+  return res.json(updated);
+});
+
+router.delete("/tasks/:taskId/comments/:commentId", async (req, res) => {
+  const task = await getTaskById(req.params.taskId);
+  if (!task) {
+    return res.status(404).json({ error: "Task not found" });
+  }
+  const deleted = await deleteTaskComment(
+    req.params.taskId,
+    req.params.commentId,
+    req.user.id,
+  );
+  if (!deleted) {
+    return res
+      .status(404)
+      .json({ error: "Comment not found or not owned by user" });
+  }
+  await addTaskActivity(req.params.taskId, req.user.id, "comment_deleted", {});
+  return res.status(204).send();
 });
 
 export default router;

@@ -59,8 +59,8 @@ export default function SprintManagementView({
   };
 
   return (
-    <section className="panel sprint-management-page">
-      <div className="panel-head">
+    <section className="grid gap-[0.9rem] rounded-lg border border-[#dfe1e6] bg-white p-[0.8rem]">
+      <div className="flex items-center justify-between gap-3">
         <h2>Sprint Management</h2>
         <button type="button" onClick={() => setShowCreateModal(true)}>
           Add Sprint
@@ -79,11 +79,11 @@ export default function SprintManagementView({
         </select>
       </label>
 
-      <div className="project-form">
+      <div className="grid gap-[0.6rem]">
         <h3>Backlog</h3>
-        <div className="task-pick-list">
+        <div className="grid max-h-[230px] gap-[0.45rem] overflow-auto rounded-lg border border-[#dfe1e6] p-[0.55rem]">
           {backlogTasks.map((task) => (
-            <label key={task.id} className="member-item backlog-draggable-item">
+            <label key={task.id} className="flex items-center gap-[0.35rem] text-[0.85rem]">
               <input
                 type="checkbox"
                 checked={selectedBacklogTaskIds.includes(task.id)}
@@ -116,10 +116,10 @@ export default function SprintManagementView({
       </div>
 
       {selectedSprint ? (
-        <div className="project-form">
+        <div className="grid gap-[0.6rem]">
           <h3>Selected Sprint ({selectedSprint.status})</h3>
           {selectedSprint.status === "planned" ? (
-            <p className="muted">This is a future sprint. You can assign tasks now and start it later.</p>
+            <p className="text-[#5e6c84]">This is a future sprint. You can assign tasks now and start it later.</p>
           ) : null}
           {editingSprintId === selectedSprint.id ? (
             <>
@@ -127,7 +127,7 @@ export default function SprintManagementView({
                 value={editDraft.name}
                 onChange={(e) => setEditDraft((prev) => ({ ...prev, name: e.target.value }))}
               />
-              <div className="inline-form">
+              <div className="flex flex-wrap gap-2">
                 <input
                   type="date"
                   value={editDraft.startDate || ""}
@@ -147,7 +147,7 @@ export default function SprintManagementView({
                 <option value="active">active</option>
                 <option value="completed">completed</option>
               </select>
-              <div className="inline-form">
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => {
@@ -157,20 +157,19 @@ export default function SprintManagementView({
                 >
                   Save
                 </button>
-                <button type="button" className="ghost-btn" onClick={() => setEditingSprintId(null)}>
+                <button type="button" className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]" onClick={() => setEditingSprintId(null)}>
                   Cancel
                 </button>
               </div>
             </>
           ) : (
             <>
-              <div className="muted">
+              <div className="text-[#5e6c84]">
                 {selectedSprint.startDate || "No start"} - {selectedSprint.endDate || "No end"}
               </div>
-              <div className="inline-form">
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  className="ghost-btn"
                   onClick={() => {
                     setEditingSprintId(selectedSprint.id);
                     setEditDraft({
@@ -196,10 +195,10 @@ export default function SprintManagementView({
       ) : null}
 
       {selectedSprint ? (
-        <div className="project-form">
+        <div className="grid gap-[0.6rem]">
           <h3>Sprint Tasks</h3>
           <div
-            className={`task-pick-list sprint-drop-zone ${isDropActive ? "drop-active" : ""}`}
+            className={`grid max-h-[230px] gap-[0.45rem] overflow-auto rounded-lg border border-[#dfe1e6] p-[0.55rem] transition-[border-color,background-color] duration-100 ${isDropActive ? "border-[#2f6feb] bg-[#eef4ff]" : ""}`}
             onDragOver={(event) => {
               event.preventDefault();
               setIsDropActive(true);
@@ -215,9 +214,9 @@ export default function SprintManagementView({
             }}
             onDrop={handleSprintDrop}
           >
-            <div className="muted sprint-drop-hint">Drag a backlog task here to add it to this sprint</div>
+            <div className="mb-[0.35rem] text-[0.8rem] text-[#5e6c84]">Drag a backlog task here to add it to this sprint</div>
             {sprintTasks.map((task) => (
-              <div key={task.id} className="sprint-task-row">
+              <div key={task.id} className="flex items-center justify-between gap-[0.7rem] rounded-md border border-[#e6e9ee] bg-white px-[0.5rem] py-[0.45rem]">
                 <span>
                   {displayTaskRef(task)} · {task.title} · SP{" "}
                   {task.storyPoints == null || task.storyPoints === ""
@@ -236,16 +235,16 @@ export default function SprintManagementView({
       ) : null}
       {showCreateModal ? (
         <Modal open={showCreateModal} onOpenChange={setShowCreateModal}>
-            <div className="panel-head">
+            <div className="flex items-center justify-between gap-3">
               <h3>Create Sprint</h3>
-              <button type="button" className="ghost-btn" onClick={() => setShowCreateModal(false)}>
+              <button type="button" className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]" onClick={() => setShowCreateModal(false)}>
                 X
               </button>
             </div>
-            <div className="project-form">
+            <div className="grid gap-[0.6rem]">
               <label>
-                <span className="field-label">
-                  Sprint Name <span className="required-indicator">*</span>
+                <span className="inline-flex items-center">
+                  Sprint Name <span className="ml-1 text-red-600">*</span>
                 </span>
                 <input
                   placeholder="Enter sprint name"
@@ -253,7 +252,7 @@ export default function SprintManagementView({
                   onChange={(e) => setCreateDraft((prev) => ({ ...prev, name: e.target.value }))}
                 />
               </label>
-              <div className="inline-form">
+              <div className="flex flex-wrap gap-2">
                 <label>
                   Start date
                   <input
@@ -271,10 +270,10 @@ export default function SprintManagementView({
                   />
                 </label>
               </div>
-              <div className="modal-actions">
+              <div className="flex justify-end gap-2">
                 <button
                   type="button"
-                  className="ghost-btn"
+                  className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
                   onClick={() => setShowCreateModal(false)}
                 >
                   Cancel
