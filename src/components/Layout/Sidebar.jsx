@@ -5,6 +5,7 @@ const mainNavItems = [
   { key: "dashboard", label: "Overview", icon: "◫" },
   { key: "projects", label: "Projects", icon: "☰" },
   { key: "users", label: "User management", icon: "◌" },
+  { key: "app-settings", label: "Settings", icon: "⚙" },
 ];
 
 const PROJECT_SUB_ROUTE = /^\/project\/([^/]+)\/(board|backlog|settings)$/;

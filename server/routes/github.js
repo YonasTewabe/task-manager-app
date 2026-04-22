@@ -1,16 +1,33 @@
 import { Router } from "express";
 import axios from "axios";
+import { requireAuth } from "../middleware/auth.js";
+import { requireRole } from "../middleware/roles.js";
+import {
+  createProjectRepo,
+  deleteProjectRepo,
+  ingestGithubWebhook,
+  listAutomationRules,
+  listProjectRepos,
+  replaceAutomationRules,
+  resyncProjectLinks,
+  updateProjectRepo,
+  verifyGithubWebhookSignature,
+} from "../services/githubIntegrationService.js";
+import { getGithubIntegrationSettings } from "../services/appSettingsService.js";
 const router = Router();
 
 function trimBaseUrl(url) {
   return String(url || "").replace(/\/+$/, "");
 }
 
-function githubConfig() {
+async function githubConfig() {
+  const appSettings = await getGithubIntegrationSettings();
   return {
     apiBase: trimBaseUrl(process.env.GITHUB_API_BASE) || "https://api.github.com",
-    org: process.env.GITHUB_ORG,
-    token: process.env.GITHUB_TOKEN,
+    org: appSettings.githubOrg || process.env.GITHUB_ORG,
+    token: appSettings.githubToken || process.env.GITHUB_TOKEN,
+    webhookSecret:
+      appSettings.githubWebhookSecret || process.env.GITHUB_WEBHOOK_SECRET || "",
   };
 }
 
@@ -27,7 +44,7 @@ function githubClient(config) {
 
 router.get("/repos", async (req, res) => {
   try {
-    const cfg = githubConfig();
+    const cfg = await githubConfig();
     if (!cfg.org) {
       return res.status(400).json({ error: "GITHUB_ORG is not configured" });
     }
@@ -51,12 +68,135 @@ router.get("/repos", async (req, res) => {
   }
 });
 
+router.post("/webhook", async (req, res) => {
+  const cfg = await githubConfig();
+  const secret = cfg.webhookSecret;
+  const signature = req.get("x-hub-signature-256");
+  const rawPayload = Buffer.from(JSON.stringify(req.body || {}));
+  if (!verifyGithubWebhookSignature(rawPayload, signature, secret)) {
+    return res.status(401).json({ error: "Invalid webhook signature" });
+  }
+  try {
+    const eventName = req.get("x-github-event") || "";
+    const result = await ingestGithubWebhook(eventName, req.body || {});
+    return res.status(202).json(result);
+  } catch (error) {
+    console.error("GitHub webhook ingestion failed:", error);
+    return res.status(500).json({ error: "Webhook processing failed" });
+  }
+});
+
+router.use(requireAuth);
+
+router.get("/projects/:projectId/repos", async (req, res) => {
+  try {
+    const rows = await listProjectRepos(req.params.projectId);
+    return res.json(rows);
+  } catch {
+    return res.status(500).json({ error: "Failed to load project repositories" });
+  }
+});
+
+router.post("/projects/:projectId/repos", requireRole("admin"), async (req, res) => {
+  const cfg = await githubConfig();
+  const owner = String(req.body?.owner || cfg.org || "").trim();
+  const repo = String(req.body?.repo || "").trim();
+  if (!owner || !repo) {
+    return res
+      .status(400)
+      .json({ error: "repo is required and global GitHub org must be configured" });
+  }
+  try {
+    const row = await createProjectRepo(req.params.projectId, {
+      ...(req.body || {}),
+      owner,
+    });
+    return res.status(201).json(row);
+  } catch (error) {
+    if (error.code === "23505") {
+      return res.status(409).json({ error: "Repository already connected to project" });
+    }
+    return res.status(500).json({ error: "Failed to add repository mapping" });
+  }
+});
+
+router.put(
+  "/projects/:projectId/repos/:repoId",
+  requireRole("admin"),
+  async (req, res) => {
+    try {
+      const row = await updateProjectRepo(
+        req.params.projectId,
+        req.params.repoId,
+        req.body || {},
+      );
+      if (!row) return res.status(404).json({ error: "Repository mapping not found" });
+      return res.json(row);
+    } catch {
+      return res.status(500).json({ error: "Failed to update repository mapping" });
+    }
+  },
+);
+
+router.post(
+  "/projects/:projectId/resync",
+  requireRole("admin"),
+  async (req, res) => {
+    try {
+      const cfg = await githubConfig();
+      const result = await resyncProjectLinks(req.params.projectId, cfg.token);
+      return res.json(result);
+    } catch (error) {
+      return res.status(500).json({ error: error.message || "Resync failed" });
+    }
+  },
+);
+
+router.delete(
+  "/projects/:projectId/repos/:repoId",
+  requireRole("admin"),
+  async (req, res) => {
+    try {
+      const removed = await deleteProjectRepo(req.params.projectId, req.params.repoId);
+      if (!removed) return res.status(404).json({ error: "Repository mapping not found" });
+      return res.status(204).send();
+    } catch {
+      return res.status(500).json({ error: "Failed to remove repository mapping" });
+    }
+  },
+);
+
+router.get("/projects/:projectId/automation-rules", async (req, res) => {
+  try {
+    const rules = await listAutomationRules(req.params.projectId);
+    return res.json(rules);
+  } catch {
+    return res.status(500).json({ error: "Failed to load automation rules" });
+  }
+});
+
+router.put(
+  "/projects/:projectId/automation-rules",
+  requireRole("admin"),
+  async (req, res) => {
+    try {
+      const rules = await replaceAutomationRules(
+        req.params.projectId,
+        Array.isArray(req.body?.rules) ? req.body.rules : [],
+      );
+      return res.json(rules);
+    } catch {
+      return res.status(500).json({ error: "Failed to save automation rules" });
+    }
+  },
+);
+
 router.get("/branches", async (req, res) => {
   const { repo, org } = req.query;
   if (!repo) return res.status(400).json({ error: "Repo is required" });
 
   try {
-    const cfg = githubConfig();
+    const cfg = await githubConfig();
     if (!cfg.org && !org) {
       return res.status(400).json({ error: "Organization is required" });
     }
@@ -90,7 +230,7 @@ router.post("/create-pr", async (req, res) => {
   }
 
   try {
-    const cfg = githubConfig();
+    const cfg = await githubConfig();
     if (!cfg.token) {
       return res.status(400).json({ message: "GITHUB_TOKEN is not configured." });
     }
@@ -129,7 +269,7 @@ router.post("/pr-status", async (req, res) => {
   const { owner, repo, prNumber } = req.body;
 
   try {
-    const cfg = githubConfig();
+    const cfg = await githubConfig();
     if (!cfg.token) {
       return res.status(400).json({ message: "GITHUB_TOKEN is not configured." });
     }

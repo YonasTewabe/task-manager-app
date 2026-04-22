@@ -30,6 +30,7 @@ import {
   getTaskActivity,
   getTaskById,
   getTaskComments,
+  getTaskLinkedDev,
   getTasks,
   getUsers,
   getUserGroups,
@@ -48,6 +49,10 @@ import {
   updateTask,
   TASK_TITLE_CONFLICT_MESSAGE,
 } from "../services/taskService.js";
+import {
+  getGithubIntegrationSettings,
+  updateGithubIntegrationSettings,
+} from "../services/appSettingsService.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -179,6 +184,38 @@ router.get("/me/assigned-tasks", async (req, res) => {
     return res.json(tasks);
   } catch {
     return res.status(500).json({ error: "Failed to load assigned tasks" });
+  }
+});
+
+router.get("/app-settings/github", requireRole("admin"), async (_req, res) => {
+  try {
+    const settings = await getGithubIntegrationSettings();
+    return res.json({
+      githubOrg: settings.githubOrg,
+      hasGithubToken: Boolean(settings.githubToken),
+      hasGithubWebhookSecret: Boolean(settings.githubWebhookSecret),
+      githubToken: settings.githubToken,
+      githubWebhookSecret: settings.githubWebhookSecret,
+      updatedAt: settings.updatedAt,
+    });
+  } catch {
+    return res.status(500).json({ error: "Failed to load app GitHub settings" });
+  }
+});
+
+router.patch("/app-settings/github", requireRole("admin"), async (req, res) => {
+  try {
+    const updated = await updateGithubIntegrationSettings(req.body || {});
+    return res.json({
+      githubOrg: updated.githubOrg,
+      hasGithubToken: Boolean(updated.githubToken),
+      hasGithubWebhookSecret: Boolean(updated.githubWebhookSecret),
+      githubToken: updated.githubToken,
+      githubWebhookSecret: updated.githubWebhookSecret,
+      updatedAt: updated.updatedAt,
+    });
+  } catch {
+    return res.status(500).json({ error: "Failed to save app GitHub settings" });
   }
 });
 
@@ -660,7 +697,8 @@ router.get("/tasks/:taskId", async (req, res) => {
   }
   const comments = await getTaskComments(req.params.taskId);
   const activity = await getTaskActivity(req.params.taskId);
-  return res.json({ task, comments, activity });
+  const linkedDev = await getTaskLinkedDev(req.params.taskId);
+  return res.json({ task, comments, activity, linkedDev });
 });
 
 router.patch("/tasks/:taskId", async (req, res) => {

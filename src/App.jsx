@@ -8,6 +8,7 @@ import BacklogView from "./components/BacklogView";
 import BoardView from "./components/BoardView";
 import DashboardView from "./components/DashboardView";
 import ProjectManagementView from "./components/ProjectManagementView";
+import AppSettingsView from "./components/AppSettingsView";
 import SystemSettingsView from "./components/SystemSettingsView";
 import TaskDrawer from "./components/TaskDrawer";
 import UserAdminView from "./components/UserAdminView";
@@ -53,8 +54,7 @@ function parseRoute(pathname) {
     return { view: "dashboard", projectId: null };
   }
   if (path === "/users") return { view: "users", projectId: null };
-  if (path === "/settings")
-    return { view: "settings_redirect", projectId: null };
+  if (path === "/settings") return { view: "app-settings", projectId: null };
   if (path === "/projects") return { view: "projects", projectId: null };
 
   const m = path.match(PROJECT_ROUTE);
@@ -71,7 +71,6 @@ function parseRoute(pathname) {
 function initialActiveView(pathname) {
   const p = parseRoute(pathname);
   if (p.view === "_legacy" || p.unknown) return "dashboard";
-  if (p.view === "settings_redirect") return "dashboard";
   if (p.view === "board" || p.view === "backlog" || p.view === "settings")
     return p.view;
   return p.view;
@@ -785,22 +784,6 @@ function App() {
   useEffect(() => {
     const parsed = parseRoute(location.pathname);
 
-    if (parsed.view === "settings_redirect") {
-      if (!token || loading) return;
-      if (!visibleProjects.length) {
-        navigate("/dashboard", { replace: true });
-        return;
-      }
-      const inScope =
-        currentProjectId &&
-        visibleProjects.some((p) => String(p.id) === String(currentProjectId));
-      const pid = inScope
-        ? String(currentProjectId)
-        : String(visibleProjects[0].id);
-      navigate(`/project/${pid}/settings`, { replace: true });
-      return;
-    }
-
     if (parsed.view === "_legacy") {
       if (!token || loading) return;
       if (!visibleProjects.length) {
@@ -834,6 +817,7 @@ function App() {
       nextActive = parsed.view;
     } else if (parsed.view === "users") nextActive = "users";
     else if (parsed.view === "projects") nextActive = "projects";
+    else if (parsed.view === "app-settings") nextActive = "app-settings";
 
     setActiveView(nextActive);
   }, [
@@ -859,6 +843,11 @@ function App() {
     if (key === "users") {
       setActiveView("users");
       navigate("/users");
+      return;
+    }
+    if (key === "app-settings") {
+      setActiveView("app-settings");
+      navigate("/settings");
       return;
     }
   }, [navigate, setActiveView]);
@@ -2003,8 +1992,13 @@ function App() {
             />
           ) : null}
 
+          {activeView === "app-settings" ? (
+            <AppSettingsView canManage={canManage} onNotify={notify} />
+          ) : null}
+
           {activeView === "settings" && currentProjectId ? (
             <SystemSettingsView
+              projectId={currentProjectId}
               settings={projectSettings}
               projectName={projectById.get(String(currentProjectId))?.name}
               users={users}

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Modal from "./ui/Modal";
 import {
   BUILTIN_STAGE_KEYS,
@@ -10,6 +10,7 @@ import {
 } from "../constants/workTypes.js";
 import { useAppStore } from "../store/appStore";
 import { useShallow } from "zustand/react/shallow";
+import { apiRequest } from "../api/client";
 
 const DEFAULT_FORM = {
   boardCardFields: {
@@ -109,6 +110,7 @@ const SETTINGS_TABS = [
   { id: "users", label: "Users" },
   { id: "board-columns", label: "Board columns" },
   { id: "workflow", label: "Workflow" },
+  { id: "integrations", label: "Integrations" },
   { id: "labels", label: "Labels" },
   { id: "types", label: "Types" },
   { id: "versions", label: "Versions" },
@@ -182,6 +184,7 @@ function payloadFromForm(form, workflowStageMigrations = {}) {
 }
 
 export default function SystemSettingsView({
+  projectId,
   settings,
   projectName,
   canManage,
@@ -282,6 +285,22 @@ export default function SystemSettingsView({
     })),
   );
   const form = settingsForm ?? toForm(settings);
+  const [githubRepos, setGithubRepos] = useState([]);
+  const [automationRules, setAutomationRules] = useState([]);
+  const [repoDraft, setRepoDraft] = useState({
+    repo: "",
+    defaultBranch: "develop",
+    githubInstallationId: "",
+  });
+  const [appGithubOrg, setAppGithubOrg] = useState("");
+  const [ruleDraft, setRuleDraft] = useState({
+    eventType: "pr_merged",
+    targetStatus: "done",
+    branchScope: "any",
+    baseBranch: "",
+  });
+  const [showAddRepoModal, setShowAddRepoModal] = useState(false);
+  const [showAddAutomationModal, setShowAddAutomationModal] = useState(false);
   const dragFromRef = useRef(null);
   const blockedDropTimeoutRef = useRef(null);
   const lastSavedSettingsRef = useRef("");
@@ -330,6 +349,37 @@ export default function SystemSettingsView({
       projectMembers.map((member) => member.id).sort(),
     );
   }, [projectMembers]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const [repos, rules, appSettings] = await Promise.all([
+          apiRequest(`/github/projects/${encodeURIComponent(projectId)}/repos`),
+          apiRequest(
+            `/github/projects/${encodeURIComponent(projectId)}/automation-rules`,
+          ),
+          apiRequest("/task-management/app-settings/github"),
+        ]);
+        if (cancelled) return;
+        setGithubRepos(Array.isArray(repos) ? repos : []);
+        setAutomationRules(Array.isArray(rules) ? rules : []);
+        setAppGithubOrg(String(appSettings?.githubOrg || "").trim());
+      } catch (error) {
+        if (!cancelled) {
+          onNotify?.(
+            error.message || "Failed to load GitHub integration settings.",
+            "error",
+          );
+        }
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, onNotify]);
 
   useEffect(() => {
     if (!canManage) return undefined;
@@ -741,6 +791,168 @@ export default function SystemSettingsView({
       allowAllUsers: checked,
     };
     setWorkflowTransitions(transitions);
+  };
+
+  const addRepoMapping = async () => {
+    const repo = String(repoDraft.repo || "").trim();
+    if (!repo || !projectId) return;
+    try {
+      const created = await apiRequest(
+        `/github/projects/${encodeURIComponent(projectId)}/repos`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            repo,
+            defaultBranch:
+              String(repoDraft.defaultBranch || "").trim() || "develop",
+            githubInstallationId: repoDraft.githubInstallationId
+              ? Number(repoDraft.githubInstallationId)
+              : null,
+          }),
+        },
+      );
+      setGithubRepos((prev) => [...prev, created]);
+      setRepoDraft({
+        repo: "",
+        defaultBranch: "develop",
+        githubInstallationId: "",
+      });
+      setShowAddRepoModal(false);
+      onNotify?.("Repository mapping added.", "success");
+    } catch (error) {
+      onNotify?.(error.message || "Failed to add repository.", "error");
+    }
+  };
+
+  const toggleRepoEnabled = async (repoItem, nextEnabled) => {
+    if (!projectId) return;
+    try {
+      const updated = await apiRequest(
+        `/github/projects/${encodeURIComponent(projectId)}/repos/${encodeURIComponent(repoItem.id)}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ isEnabled: nextEnabled }),
+        },
+      );
+      setGithubRepos((prev) =>
+        prev.map((item) => (item.id === updated.id ? updated : item)),
+      );
+    } catch (error) {
+      onNotify?.(
+        error.message || "Failed to update repository mapping.",
+        "error",
+      );
+    }
+  };
+
+  const removeRepoMapping = async (repoId) => {
+    if (!projectId) return;
+    try {
+      await apiRequest(
+        `/github/projects/${encodeURIComponent(projectId)}/repos/${encodeURIComponent(repoId)}`,
+        { method: "DELETE" },
+      );
+      setGithubRepos((prev) => prev.filter((item) => item.id !== repoId));
+    } catch (error) {
+      onNotify?.(
+        error.message || "Failed to remove repository mapping.",
+        "error",
+      );
+    }
+  };
+
+  const saveAutomationRules = async (nextRules) => {
+    if (!projectId) return;
+    try {
+      const saved = await apiRequest(
+        `/github/projects/${encodeURIComponent(projectId)}/automation-rules`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ rules: nextRules }),
+        },
+      );
+      setAutomationRules(Array.isArray(saved) ? saved : []);
+    } catch (error) {
+      onNotify?.(error.message || "Failed to save automation rules.", "error");
+    }
+  };
+
+  const toAutomationRuleSignature = (rule) => {
+    const eventType = String(rule?.eventType || "")
+      .trim()
+      .toLowerCase();
+    const targetStatus = String(rule?.actions?.targetStatus || "")
+      .trim()
+      .toLowerCase();
+    const baseBranch = String(rule?.conditions?.baseBranch || "")
+      .trim()
+      .toLowerCase();
+    const branchIncludes = String(rule?.conditions?.branchIncludes || "")
+      .trim()
+      .toLowerCase();
+    const requireTaskKey = rule?.conditions?.requireTaskKey === true ? "1" : "0";
+    return [eventType, targetStatus, baseBranch, branchIncludes, requireTaskKey].join(
+      "|",
+    );
+  };
+
+  const addAutomationRule = async () => {
+    const eventType = String(ruleDraft.eventType || "").trim();
+    const targetStatus = String(ruleDraft.targetStatus || "").trim();
+    if (!eventType || !targetStatus) return;
+    const newRule = {
+      eventType,
+      isEnabled: true,
+      priority: automationRules.length + 1,
+      conditions: {
+        requireTaskKey: true,
+        ...(ruleDraft.branchScope === "specific" && ruleDraft.baseBranch
+          ? { baseBranch: String(ruleDraft.baseBranch).trim() }
+          : {}),
+      },
+      actions: { targetStatus },
+    };
+    const nextSignature = toAutomationRuleSignature(newRule);
+    const hasDuplicate = automationRules.some(
+      (rule) => toAutomationRuleSignature(rule) === nextSignature,
+    );
+    if (hasDuplicate) {
+      onNotify?.("An identical automation rule already exists.", "error");
+      return;
+    }
+    const nextRules = [...automationRules, newRule];
+    await saveAutomationRules(nextRules);
+    setRuleDraft({
+      eventType: "pr_merged",
+      targetStatus: "done",
+      branchScope: "any",
+      baseBranch: "",
+    });
+    setShowAddAutomationModal(false);
+  };
+
+  const deleteAutomationRule = async (ruleId) => {
+    const nextRules = automationRules.filter((rule) => rule.id !== ruleId);
+    await saveAutomationRules(nextRules);
+  };
+
+  const runManualResync = async () => {
+    if (!projectId) return;
+    try {
+      const result = await apiRequest(
+        `/github/projects/${encodeURIComponent(projectId)}/resync`,
+        {
+          method: "POST",
+          body: "{}",
+        },
+      );
+      onNotify?.(
+        `Resync finished: ${result?.linksUpserted || 0} links refreshed.`,
+        "success",
+      );
+    } catch (error) {
+      onNotify?.(error.message || "Failed to run GitHub resync.", "error");
+    }
   };
 
   return (
@@ -1354,6 +1566,162 @@ export default function SystemSettingsView({
               </div>
             </article>
           ) : null}
+          {activeTab === "integrations" ? (
+            <article
+              id="settings-panel-integrations"
+              role="tabpanel"
+              aria-labelledby="settings-tab-integrations"
+              className="grid max-w-full gap-[0.75rem] rounded-lg border border-[#dfe3ea] bg-white p-[0.8rem]"
+            >
+              <div className="grid gap-[0.25rem]">
+                <h3 className="text-[1rem] font-bold text-[#172b4d]">
+                  GitHub integrations
+                </h3>
+                <p className="text-[0.82rem] leading-[1.35] text-[#6b778c]">
+                  Connect repositories and define automation rules for task
+                  transitions based on GitHub events.
+                </p>
+              </div>
+
+              <div className="grid gap-[0.45rem] rounded-[12px] border border-[#dfe3ea] bg-[#fbfcff] p-[0.75rem]">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="grid gap-[0.2rem]">
+                    <strong className="text-[0.94rem] text-[#172b4d]">
+                      Repository mapping
+                    </strong>
+                    <p className="text-[0.8rem] text-[#6b778c]">
+                      Owner/org from global settings:{" "}
+                      <code>{appGithubOrg || "Not configured"}</code>
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="border border-[#0b63c5] bg-[#0b6bcb] text-white hover:border-[#0957a3] hover:bg-[#095db2]"
+                    disabled={!canManage || !appGithubOrg}
+                    onClick={() => setShowAddRepoModal(true)}
+                  >
+                    Add repository
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid gap-[0.55rem] rounded-[12px] border border-[#dfe3ea] bg-white p-[0.75rem]">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <strong className="text-[0.94rem] text-[#172b4d]">
+                    Connected repositories
+                  </strong>
+                  <button
+                    type="button"
+                    className="border border-[#d0d7e2] bg-[#f7f8fa] text-[#42526e] hover:border-[#a8b3c5] hover:bg-white/65 hover:text-[#2f3d55]"
+                    disabled={!canManage}
+                    onClick={runManualResync}
+                  >
+                    Run manual resync
+                  </button>
+                </div>
+                {githubRepos.length === 0 ? (
+                  <p className="text-[#5e6c84]">
+                    No repositories connected yet.
+                  </p>
+                ) : (
+                  githubRepos.map((repoItem) => (
+                    <div
+                      key={repoItem.id}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-[#e6ebf3] bg-[#f8fbff] px-[0.7rem] py-[0.55rem]"
+                    >
+                      <div className="grid gap-[0.1rem] text-[0.86rem]">
+                        <div>
+                          <strong>{repoItem.owner}</strong>/{repoItem.repo}
+                        </div>
+                        <div className="text-[0.78rem] text-[#5e6c84]">
+                          Base branch:{" "}
+                          <code>{repoItem.defaultBranch || "develop"}</code>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          disabled={!canManage}
+                          className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+                          onClick={() =>
+                            toggleRepoEnabled(repoItem, !repoItem.isEnabled)
+                          }
+                        >
+                          {repoItem.isEnabled ? "Disable" : "Enable"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!canManage}
+                          className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+                          onClick={() => removeRepoMapping(repoItem.id)}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="grid gap-[0.55rem] rounded-[12px] border border-[#dfe3ea] bg-white p-[0.75rem]">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="grid gap-[0.2rem]">
+                    <strong className="text-[0.94rem] text-[#172b4d]">
+                      Automation rules
+                    </strong>
+                    <p className="text-[0.8rem] text-[#6b778c]">
+                      Configure status transitions by event. Rules run in
+                      priority order.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="border border-[#0b63c5] bg-[#0b6bcb] text-white hover:border-[#0957a3] hover:bg-[#095db2]"
+                    disabled={!canManage}
+                    onClick={() => setShowAddAutomationModal(true)}
+                  >
+                    Add automation rule
+                  </button>
+                </div>
+                {automationRules.length === 0 ? (
+                  <p className="text-[#5e6c84]">
+                    No automation rules configured yet.
+                  </p>
+                ) : (
+                  automationRules.map((rule) => (
+                    <div
+                      key={rule.id}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-[#e6ebf3] bg-[#f8fbff] px-[0.7rem] py-[0.55rem]"
+                    >
+                      <div className="grid gap-[0.1rem] text-[0.86rem]">
+                        <div>
+                          <strong>{rule.eventType}</strong> {"->"}{" "}
+                          <code>
+                            {stageNameByKey.get(rule?.actions?.targetStatus) ||
+                              rule?.actions?.targetStatus ||
+                              "-"}
+                          </code>
+                        </div>
+                        <div className="text-[0.78rem] text-[#5e6c84]">
+                          {rule?.conditions?.baseBranch
+                            ? `Branch: ${rule.conditions.baseBranch}`
+                            : "Branch: Any"}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={!canManage}
+                        className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+                        onClick={() => deleteAutomationRule(rule.id)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </article>
+          ) : null}
           {activeTab === "users" ? (
             <article
               id="settings-panel-users"
@@ -1623,6 +1991,189 @@ export default function SystemSettingsView({
                 }}
               >
                 Add Version
+              </button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
+      {showAddRepoModal ? (
+        <Modal open={showAddRepoModal} onOpenChange={setShowAddRepoModal}>
+          <div className="flex items-center justify-between gap-3">
+            <h3>Add repository mapping</h3>
+            <button
+              type="button"
+              className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+              onClick={() => setShowAddRepoModal(false)}
+            >
+              X
+            </button>
+          </div>
+          <div className="grid gap-[0.6rem]">
+            <p className="text-[0.82rem] text-[#6b778c]">
+              Organization: <strong>{appGithubOrg || "Not configured"}</strong>
+            </p>
+            <label>
+              <span className="inline-flex items-center">
+                Repository name <span className="ml-1 text-red-600">*</span>
+              </span>
+              <input
+                placeholder="Enter repository name"
+                value={repoDraft.repo}
+                onChange={(event) =>
+                  setRepoDraft((prev) => ({
+                    ...prev,
+                    repo: event.target.value,
+                  }))
+                }
+              />
+            </label>
+            <label>
+              Default branch
+              <input
+                placeholder="develop"
+                value={repoDraft.defaultBranch}
+                onChange={(event) =>
+                  setRepoDraft((prev) => ({
+                    ...prev,
+                    defaultBranch: event.target.value,
+                  }))
+                }
+              />
+            </label>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+                onClick={() => setShowAddRepoModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!String(repoDraft.repo || "").trim() || !appGithubOrg}
+                onClick={addRepoMapping}
+              >
+                Add repository
+              </button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
+      {showAddAutomationModal ? (
+        <Modal
+          open={showAddAutomationModal}
+          onOpenChange={setShowAddAutomationModal}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <h3>Add automation rule</h3>
+            <button
+              type="button"
+              className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+              onClick={() => setShowAddAutomationModal(false)}
+            >
+              X
+            </button>
+          </div>
+          <div className="grid gap-[0.6rem]">
+            <label>
+              <span className="inline-flex items-center">
+                Event trigger <span className="ml-1 text-red-600">*</span>
+              </span>
+              <select
+                value={ruleDraft.eventType}
+                onChange={(event) =>
+                  setRuleDraft((prev) => ({
+                    ...prev,
+                    eventType: event.target.value,
+                  }))
+                }
+              >
+                <option value="branch_created">Branch created</option>
+                <option value="commit_pushed">Commit pushed</option>
+                <option value="pr_opened">PR opened</option>
+                <option value="pr_updated">PR updated</option>
+                <option value="pr_merged">PR merged</option>
+                <option value="pr_closed">PR closed</option>
+              </select>
+            </label>
+            <label>
+              <span className="inline-flex items-center">
+                Target status <span className="ml-1 text-red-600">*</span>
+              </span>
+              <select
+                value={ruleDraft.targetStatus}
+                onChange={(event) =>
+                  setRuleDraft((prev) => ({
+                    ...prev,
+                    targetStatus: event.target.value,
+                  }))
+                }
+              >
+                {stages.map((stage) => (
+                  <option key={`rule-stage-${stage.key}`} value={stage.key}>
+                    {stage.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="branch-filter-options">
+              <span>Branch filter</span>
+              <label className="branch-scope-option !grid !grid-cols-[16px_auto] !items-center !gap-2">
+                <input
+                  type="radio"
+                  name="rule-branch-scope"
+                  className="!m-0 !h-4 !w-4 !min-h-4 !min-w-4 !p-0 !inline-block"
+                  checked={ruleDraft.branchScope === "any"}
+                  onChange={() =>
+                    setRuleDraft((prev) => ({
+                      ...prev,
+                      branchScope: "any",
+                      baseBranch: "",
+                    }))
+                  }
+                />
+                <span className="!m-0 !inline-block leading-5">On any branch</span>
+              </label>
+              <label className="branch-scope-option !grid !grid-cols-[16px_auto] !items-center !gap-2">
+                <input
+                  type="radio"
+                  name="rule-branch-scope"
+                  className="!m-0 !h-4 !w-4 !min-h-4 !min-w-4 !p-0 !inline-block"
+                  checked={ruleDraft.branchScope === "specific"}
+                  onChange={() =>
+                    setRuleDraft((prev) => ({
+                      ...prev,
+                      branchScope: "specific",
+                    }))
+                  }
+                />
+                <span className="!m-0 !inline-block leading-5">
+                  On specific branch
+                </span>
+              </label>
+              {ruleDraft.branchScope === "specific" ? (
+                <input
+                  placeholder="develop"
+                  value={ruleDraft.baseBranch}
+                  onChange={(event) =>
+                    setRuleDraft((prev) => ({
+                      ...prev,
+                      baseBranch: event.target.value,
+                    }))
+                  }
+                />
+              ) : null}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+                onClick={() => setShowAddAutomationModal(false)}
+              >
+                Cancel
+              </button>
+              <button type="button" onClick={addAutomationRule}>
+                Add automation rule
               </button>
             </div>
           </div>

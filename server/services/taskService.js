@@ -1394,6 +1394,77 @@ export async function getTaskActivity(taskId) {
   return result.rows;
 }
 
+export async function getTaskLinkedDev(taskId) {
+  const result = await dbQuery(
+    `SELECT links.artifact_type AS "artifactType",
+            links.external_id AS "externalId",
+            links.owner AS owner,
+            links.repo AS repo,
+            links.url AS url,
+            links.title_or_message AS "titleOrMessage",
+            links.status AS status,
+            links.payload_json AS "payload",
+            COALESCE(repo_cfg.default_branch, 'develop') AS "defaultBranch",
+            links.updated_at AS "updatedAt"
+     FROM task_dev_links links
+     LEFT JOIN tasks t ON t.id = links.task_id
+     LEFT JOIN project_github_repos repo_cfg
+       ON repo_cfg.project_id = t.project_id
+      AND LOWER(repo_cfg.owner) = LOWER(links.owner)
+      AND LOWER(repo_cfg.repo) = LOWER(links.repo)
+      AND repo_cfg.is_enabled = TRUE
+     WHERE links.task_id = $1
+     ORDER BY links.updated_at DESC`,
+    [asUuid(taskId)],
+  );
+  const grouped = {
+    branches: [],
+    commits: [],
+    pullRequests: [],
+  };
+  for (const row of result.rows) {
+    const base = {
+      id: row.externalId,
+      owner: row.owner || "",
+      repo: row.repo || "",
+      url: row.url || "",
+      title: row.titleOrMessage || "",
+      status: row.status || "",
+      defaultBranch: row.defaultBranch || "develop",
+      updatedAt: row.updatedAt,
+    };
+    if (row.artifactType === "branch") {
+      grouped.branches.push(base);
+    } else if (row.artifactType === "commit") {
+      grouped.commits.push(base);
+    } else if (row.artifactType === "pull_request") {
+      grouped.pullRequests.push(base);
+    }
+  }
+  return grouped;
+}
+
+export async function moveTaskStatusForAutomation(taskId, nextStatus, sourceMeta = {}) {
+  const current = await getTaskById(taskId);
+  if (!current) return null;
+  const target = String(nextStatus || "").trim();
+  if (!target || target === String(current.status || "").trim()) return current;
+  const settings = await getProjectSettings(current.projectId);
+  if (!isValidWorkflowStatus(target, settings)) {
+    throw new Error(`Invalid workflow status for automation: ${target}`);
+  }
+  const updated = await updateTask(taskId, { status: target });
+  if (!updated) return null;
+  await addTaskActivity(taskId, null, "task_moved", {
+    from: current.status,
+    to: updated.status,
+    source: "github_automation",
+    performedBy: "Automation rule",
+    ...sourceMeta,
+  });
+  return updated;
+}
+
 export async function buildBoard(sprintId, projectId, filters = {}) {
   const settings = await getProjectSettings(projectId);
   const stages = normalizeWorkflowStages(

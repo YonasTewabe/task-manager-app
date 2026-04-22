@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_WORKFLOW_STAGES } from "../workflowDefaults.js";
 import { displayTaskRef } from "../utils/taskDisplay.js";
 import { useAppStore } from "../store/appStore";
@@ -176,6 +176,11 @@ export default function TaskDrawer({
       .filter(Boolean);
   }, []);
   const task = taskBundle?.task;
+  const linkedDev = taskBundle?.linkedDev || {
+    branches: [],
+    commits: [],
+    pullRequests: [],
+  };
   const {
     drawerDraft: draft,
     setDrawerDraft: setDraft,
@@ -230,8 +235,11 @@ export default function TaskDrawer({
     })),
   );
   const titleEditorRef = useRef(null);
+  const devPanelContainerRef = useRef(null);
   const lastSavedPatchRef = useRef("");
   const previousTaskIdRef = useRef(null);
+  const [isDevLinksModalOpen, setIsDevLinksModalOpen] = useState(false);
+  const [devLinksActiveTab, setDevLinksActiveTab] = useState("branches");
 
   const userMap = useMemo(() => {
     const map = new Map();
@@ -307,6 +315,18 @@ export default function TaskDrawer({
     selection?.addRange(range);
   }, [isEditingTitle]);
 
+  useEffect(() => {
+    if (!devPanel) return undefined;
+    const handleOutsideClick = (event) => {
+      if (!devPanelContainerRef.current) return;
+      if (!devPanelContainerRef.current.contains(event.target)) {
+        setDevPanel(null);
+      }
+    };
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [devPanel, setDevPanel]);
+
   const formatDateTime = (value) => {
     if (!value) return "None";
     const date = new Date(value);
@@ -331,6 +351,11 @@ export default function TaskDrawer({
       default:
         return String(action || "Activity");
     }
+  };
+  const formatActivityActor = (item) => {
+    if (item?.meta?.performedBy) return String(item.meta.performedBy);
+    if (item?.meta?.source === "github_automation") return "Automation rule";
+    return item.userName || userMap.get(item.userId) || "Unknown";
   };
 
   const buildPatch = useCallback((source) => {
@@ -491,12 +516,94 @@ export default function TaskDrawer({
   const branchName = `${taskRef}-${toBranchSlug(task.title)}`;
   const branchCommand = `git checkout -b ${branchName}`;
   const commitCommand = `git commit -m "${taskRef} ${String(task.title || "").trim()}"`;
+  const branchLinks = Array.isArray(linkedDev.branches) ? linkedDev.branches : [];
+  const commitLinks = Array.isArray(linkedDev.commits) ? linkedDev.commits : [];
+  const prLinks = Array.isArray(linkedDev.pullRequests)
+    ? linkedDev.pullRequests
+    : [];
+  const repoBuckets = (() => {
+    const buckets = new Map();
+    const touch = (owner, repo) => {
+      const key = `${owner}/${repo}`;
+      if (!buckets.has(key)) {
+        buckets.set(key, {
+          key,
+          owner,
+          repo,
+          branches: [],
+          commits: [],
+          pullRequests: [],
+        });
+      }
+      return buckets.get(key);
+    };
+    branchLinks.forEach((item) => {
+      const owner = item.owner || "unknown";
+      const repo = item.repo || "unknown";
+      touch(owner, repo).branches.push(item);
+    });
+    commitLinks.forEach((item) => {
+      const owner = item.owner || "unknown";
+      const repo = item.repo || "unknown";
+      touch(owner, repo).commits.push(item);
+    });
+    prLinks.forEach((item) => {
+      const owner = item.owner || "unknown";
+      const repo = item.repo || "unknown";
+      touch(owner, repo).pullRequests.push(item);
+    });
+    return [...buckets.values()].sort((a, b) => a.key.localeCompare(b.key));
+  })();
+  const openDevLinksModal = (tab) => {
+    setDevLinksActiveTab(tab);
+    setIsDevLinksModalOpen(true);
+  };
+  const selectedRepoBuckets = repoBuckets.filter((repoBucket) => {
+    if (devLinksActiveTab === "branches") return repoBucket.branches.length > 0;
+    if (devLinksActiveTab === "commits") return repoBucket.commits.length > 0;
+    return repoBucket.pullRequests.length > 0;
+  });
+  const openCreatePullRequest = (branchItem) => {
+    const owner = String(branchItem?.owner || "").trim();
+    const repo = String(branchItem?.repo || "").trim();
+    const externalId = String(branchItem?.id || "").trim();
+    const titleBranch = String(branchItem?.title || "").trim();
+    const externalBranch = externalId.includes(":")
+      ? externalId.split(":").slice(1).join(":").trim()
+      : externalId;
+    const branchName = String(titleBranch || externalBranch)
+      .trim()
+      .replace(/^refs\/heads\//i, "");
+    if (!owner || !repo || !branchName) return;
+    const defaultBranch = String(branchItem?.defaultBranch || "develop").trim();
+    const compareUrl = `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/compare/${encodeURIComponent(defaultBranch)}...${encodeURIComponent(branchName)}?expand=1`;
+    window.open(compareUrl, "_blank", "noopener,noreferrer");
+  };
+  const normalizePrStatus = (value) => {
+    const status = String(value || "open").trim().toLowerCase();
+    if (status === "merged") return "merged";
+    if (status === "closed") return "closed";
+    return "open";
+  };
+  const prStatusBadgeClass = (value) => {
+    const status = normalizePrStatus(value);
+    if (status === "merged") {
+      return "border-[#1f845a] bg-[#e3fcef] text-[#216e4e]";
+    }
+    if (status === "closed") {
+      return "border-[#c9372c] bg-[#ffeceb] text-[#ae2e24]";
+    }
+    return "border-[#0c66e4] bg-[#e9f2ff] text-[#0c66e4]";
+  };
 
   return (
     <div
       className="fixed inset-0 z-[35] grid place-items-center bg-[rgba(9,30,66,0.34)] p-4"
       role="presentation"
-      onClick={handleClose}
+      onClick={() => {
+        if (isDevLinksModalOpen) return;
+        handleClose();
+      }}
     >
       <aside
         className="grid h-[min(88vh,900px)] w-[min(1160px,calc(100vw-2rem))] grid-rows-[auto_1fr] overflow-hidden rounded-[10px] border border-[#dfe1e6] bg-white shadow-[0_18px_40px_rgba(9,30,66,0.25)] max-[1100px]:h-[calc(100vh-1rem)] max-[1100px]:w-[min(100vw-1rem,980px)]"
@@ -554,9 +661,15 @@ export default function TaskDrawer({
           </div>
           <div className="flex items-center gap-2">
             {isAutoSaving ? <span className="text-[#5e6c84]">Saving...</span> : null}
-            <button type="button" className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]" onClick={handleClose}>
-              X
-            </button>
+            {!isDevLinksModalOpen ? (
+              <button
+                type="button"
+                className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+                onClick={handleClose}
+              >
+                X
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -842,6 +955,7 @@ export default function TaskDrawer({
                                 type="button"
                                 className="border border-[#d0d7e2] bg-[#f7f8fa] text-[#42526e] hover:border-[#a8b3c5] hover:bg-white/65 hover:text-[#2f3d55]"
                                 onClick={() => {
+
                                   setEditingCommentId(null);
                                   setEditingCommentBody("");
                                 }}
@@ -887,9 +1001,7 @@ export default function TaskDrawer({
                           {formatActivityAction(item.action)}
                         </div>
                         <div className="text-[#5e6c84]">
-                          {item.userName ||
-                            userMap.get(item.userId) ||
-                            "Unknown"}{" "}
+                          {formatActivityActor(item)}{" "}
                           - {formatDateTime(item.createdAt)}
                         </div>
                         {item.meta?.from !== undefined ||
@@ -1052,20 +1164,24 @@ export default function TaskDrawer({
                 </label>
               </div>
 
-              <div className="grid gap-[0.55rem] rounded-lg border border-[#dfe1e6] bg-white p-[0.75rem]">
+              <div className="grid gap-[0.6rem] rounded-lg border border-[#dfe1e6] bg-white p-[0.75rem]">
                 <h4>Development</h4>
-                <div className="relative grid gap-1">
+                <div ref={devPanelContainerRef} className="relative grid gap-1">
                   {devPanel === "branch" ? (
                     <div className="absolute bottom-[calc(100%+0.45rem)] left-0 right-0 z-[5]">
-                      <div className="grid gap-2 rounded-lg border border-[#dfe1e6] bg-white p-[0.55rem] shadow-[0_8px_22px_rgba(9,30,66,0.16)]">
+                      <div className="grid gap-[0.55rem] rounded-lg border border-[#dfe1e6] bg-white p-[0.65rem] shadow-[0_8px_22px_rgba(9,30,66,0.16)]">
                         <div className="text-[0.74rem] font-bold uppercase tracking-[0.02em] text-[#42526e]">
                           Git create & checkout a new branch
                         </div>
-                        <div className="grid grid-cols-[1fr_auto] items-center gap-[0.35rem]">
-                          <input readOnly value={branchCommand} />
+                        <div className="grid grid-cols-[1fr_auto] items-center gap-[0.4rem]">
+                          <input
+                            className="w-full rounded-[8px] border border-[#c9d2e3] bg-white px-[0.55rem] py-[0.45rem] text-[0.9rem] text-[#172b4d]"
+                            readOnly
+                            value={branchCommand}
+                          />
                           <button
                             type="button"
-                            className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+                            className="h-[38px] min-w-[54px] border border-[#d0d7e2] bg-[#f7f8fa] text-[0.8rem] font-semibold text-[#42526e] hover:border-[#a8b3c5] hover:bg-white/65 hover:text-[#2f3d55]"
                             onClick={async () => {
                               try {
                                 await navigator.clipboard.writeText(
@@ -1088,48 +1204,71 @@ export default function TaskDrawer({
                   ) : null}
                   {devPanel === "commit" ? (
                     <div className="absolute bottom-[calc(100%+0.45rem)] left-0 right-0 z-[5]">
-                      <div className="grid gap-2 rounded-lg border border-[#dfe1e6] bg-white p-[0.55rem] shadow-[0_8px_22px_rgba(9,30,66,0.16)]">
-                        <div className="text-[0.74rem] font-bold uppercase tracking-[0.02em] text-[#42526e]">
-                          Link commits to task
+                      <div className="grid gap-[0.55rem] rounded-lg border border-[#dfe1e6] bg-white p-[0.65rem] shadow-[0_8px_22px_rgba(9,30,66,0.16)]">
+                        <div className="grid gap-[0.2rem]">
+                          <div className="text-[0.95rem] font-semibold text-[#253858]">
+                            Link commits to task work items
+                          </div>
+                          <div className="text-[0.8rem] text-[#5e6c84]">
+                            Include task key in your commit message to link it.
+                          </div>
                         </div>
-                        <div className="grid grid-cols-[1fr_auto] items-center gap-[0.35rem]">
-                          <input readOnly value={taskRef} />
-                          <button
-                            type="button"
-                            className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
-                            onClick={async () => {
-                              try {
-                                await navigator.clipboard.writeText(taskRef);
-                                onNotify?.("Task key copied.");
-                              } catch {
-                                onNotify?.("Failed to copy task key.", "error");
-                              }
-                            }}
-                          >
-                            Copy
-                          </button>
+                        <div className="grid gap-[0.25rem]">
+                          <div className="text-[0.8rem] font-semibold text-[#42526e]">
+                            Copy key
+                          </div>
+                          <div className="grid grid-cols-[1fr_auto] items-center gap-[0.4rem]">
+                            <input
+                              className="w-full rounded-[8px] border border-[#c9d2e3] bg-white px-[0.55rem] py-[0.45rem] text-[0.9rem] text-[#172b4d]"
+                              readOnly
+                              value={taskRef}
+                            />
+                            <button
+                              type="button"
+                              className="h-[38px] min-w-[54px] border border-[#d0d7e2] bg-[#f7f8fa] text-[0.8rem] font-semibold text-[#42526e] hover:border-[#a8b3c5] hover:bg-white/65 hover:text-[#2f3d55]"
+                              onClick={async () => {
+                                try {
+                                  await navigator.clipboard.writeText(taskRef);
+                                  onNotify?.("Task key copied.");
+                                } catch {
+                                  onNotify?.("Failed to copy task key.", "error");
+                                }
+                              }}
+                            >
+                              Copy
+                            </button>
+                          </div>
                         </div>
-                        <div className="grid grid-cols-[1fr_auto] items-center gap-[0.35rem]">
-                          <input readOnly value={commitCommand} />
-                          <button
-                            type="button"
-                            className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
-                            onClick={async () => {
-                              try {
-                                await navigator.clipboard.writeText(
-                                  commitCommand,
-                                );
-                                onNotify?.("Commit command copied.");
-                              } catch {
-                                onNotify?.(
-                                  "Failed to copy commit command.",
-                                  "error",
-                                );
-                              }
-                            }}
-                          >
-                            Copy
-                          </button>
+                        <div className="grid gap-[0.25rem]">
+                          <div className="text-[0.8rem] font-semibold text-[#42526e]">
+                            Copy sample Git commit
+                          </div>
+                          <div className="grid grid-cols-[1fr_auto] items-center gap-[0.4rem]">
+                            <input
+                              className="w-full rounded-[8px] border border-[#c9d2e3] bg-white px-[0.55rem] py-[0.45rem] text-[0.9rem] text-[#172b4d]"
+                              readOnly
+                              value={commitCommand}
+                            />
+                            <button
+                              type="button"
+                              className="h-[38px] min-w-[54px] border border-[#d0d7e2] bg-[#f7f8fa] text-[0.8rem] font-semibold text-[#42526e] hover:border-[#a8b3c5] hover:bg-white/65 hover:text-[#2f3d55]"
+                              onClick={async () => {
+                                try {
+                                  await navigator.clipboard.writeText(
+                                    commitCommand,
+                                  );
+                                  onNotify?.("Commit command copied.");
+                                } catch {
+                                  onNotify?.(
+                                    "Failed to copy commit command.",
+                                    "error",
+                                  );
+                                }
+                              }}
+                            >
+                              Copy
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1157,11 +1296,178 @@ export default function TaskDrawer({
                     Create commit
                   </button>
                 </div>
+                <div className="grid gap-[0.25rem] border-t border-[#dfe1e6] pt-[0.55rem] text-[0.88rem]">
+                  {branchLinks.length ? (
+                    <button
+                      type="button"
+                      className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-left text-[#0c66e4] hover:bg-[#f4f5f7]"
+                      onClick={() => openDevLinksModal("branches")}
+                    >
+                      {branchLinks.length} branches
+                    </button>
+                  ) : null}
+                  {commitLinks.length ? (
+                    <button
+                      type="button"
+                      className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-left text-[#0c66e4] hover:bg-[#f4f5f7]"
+                      onClick={() => openDevLinksModal("commits")}
+                    >
+                      {commitLinks.length} commits
+                    </button>
+                  ) : null}
+                  {prLinks.length ? (
+                    <button
+                      type="button"
+                      className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-left text-[#0c66e4] hover:bg-[#f4f5f7]"
+                      onClick={() => openDevLinksModal("pullRequests")}
+                    >
+                      {prLinks.length} pull requests
+                    </button>
+                  ) : null}
+                  {!branchLinks.length && !commitLinks.length && !prLinks.length ? (
+                    <span className="px-2 py-1 text-[#5e6c84]">
+                      No linked branches, commits, or pull requests yet.
+                    </span>
+                  ) : null}
+                </div>
               </div>
             </aside>
           </div>
         </div>
       </aside>
+      {isDevLinksModalOpen ? (
+        <div
+          className="fixed inset-0 z-[45] grid place-items-center bg-[rgba(9,30,66,0.4)] p-4"
+          role="presentation"
+          onClick={(event) => event.stopPropagation()}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setIsDevLinksModalOpen(false);
+            }
+          }}
+        >
+          <div
+            className="grid max-h-[84vh] w-[min(940px,100%)] gap-[0.7rem] overflow-hidden rounded-xl border border-[#dfe1e6] bg-white p-[0.9rem]"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Development ${taskRef}`}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-[1.08rem] font-semibold text-[#172b4d]">
+                Development {taskRef}
+              </h3>
+              <button
+                type="button"
+                className="rounded-md border border-transparent bg-transparent px-2 py-1 text-[#42526e] hover:bg-[#f4f5f7]"
+                onClick={() => setIsDevLinksModalOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 border-b border-[#dfe1e6] pb-[0.45rem] text-[0.85rem]">
+              {[
+                { key: "branches", label: "Branches", count: branchLinks.length },
+                { key: "commits", label: "Commits", count: commitLinks.length },
+                { key: "pullRequests", label: "Pull requests", count: prLinks.length },
+              ].map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  className={`rounded-[6px] px-[0.55rem] py-[0.35rem] ${
+                    devLinksActiveTab === tab.key
+                      ? "bg-[#e9f2ff] text-[#0c66e4]"
+                      : "text-[#42526e] hover:bg-[#f4f5f7]"
+                  }`}
+                  onClick={() => setDevLinksActiveTab(tab.key)}
+                >
+                  {tab.label} ({tab.count})
+                </button>
+              ))}
+            </div>
+            <div className="grid max-h-[58vh] gap-[0.6rem] overflow-auto pr-1">
+              {selectedRepoBuckets.length ? (
+                selectedRepoBuckets.map((repoBucket) => (
+                  <div
+                    key={`modal-${devLinksActiveTab}-${repoBucket.key}`}
+                    className="grid gap-[0.45rem] rounded-lg border border-[#e3e8f1] p-[0.6rem]"
+                  >
+                    <div className="text-[0.9rem] font-semibold text-[#1f3657]">
+                      {repoBucket.owner}/{repoBucket.repo}
+                    </div>
+                    {devLinksActiveTab === "branches" ? (
+                      repoBucket.branches.map((item) => (
+                        <div
+                          key={`modal-branch-${item.id}`}
+                          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border border-[#e5e9f0] bg-[#fbfcff] px-[0.55rem] py-[0.4rem]"
+                        >
+                          <a
+                            href={item.url || "#"}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="truncate text-[0.84rem] text-[#0c66e4] underline"
+                            title={item.title || item.id}
+                          >
+                            {item.title || item.id}
+                          </a>
+                          <button
+                            type="button"
+                            className="rounded border border-[#d0d7e2] bg-white px-[0.45rem] py-[0.2rem] text-[0.75rem] font-semibold text-[#0c66e4] hover:border-[#b3bfd3] hover:bg-[#f7f8fa]"
+                            onClick={() => openCreatePullRequest(item)}
+                          >
+                            Create pull request
+                          </button>
+                        </div>
+                      ))
+                    ) : null}
+                    {devLinksActiveTab === "commits" ? (
+                      repoBucket.commits.map((item) => (
+                        <a
+                          key={`modal-commit-${item.id}`}
+                          href={item.url || "#"}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="truncate rounded-md border border-[#e5e9f0] bg-[#fbfcff] px-[0.55rem] py-[0.4rem] text-[0.84rem] text-[#0c66e4] underline"
+                        >
+                          {(item.title || item.id || "").slice(0, 110)}
+                        </a>
+                      ))
+                    ) : null}
+                    {devLinksActiveTab === "pullRequests" ? (
+                      repoBucket.pullRequests.map((item) => (
+                        <div
+                          key={`modal-pr-${item.id}`}
+                          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border border-[#e5e9f0] bg-[#fbfcff] px-[0.55rem] py-[0.4rem]"
+                        >
+                          <a
+                            href={item.url || "#"}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="truncate text-[0.84rem] text-[#0c66e4] underline"
+                            title={item.title || item.id}
+                          >
+                            {item.title || item.id}
+                          </a>
+                          <span
+                            className={`rounded border px-[0.35rem] py-[0.08rem] text-[0.68rem] font-semibold uppercase tracking-[0.02em] ${prStatusBadgeClass(
+                              item.status,
+                            )}`}
+                          >
+                            {normalizePrStatus(item.status)}
+                          </span>
+                        </div>
+                      ))
+                    ) : null}
+                  </div>
+                ))
+              ) : (
+                <p className="text-[0.84rem] text-[#5e6c84]">
+                  No linked items for this tab.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
