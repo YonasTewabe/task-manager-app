@@ -47,12 +47,13 @@ import {
   updateTaskComment,
   updateSprint,
   updateTask,
-  TASK_TITLE_CONFLICT_MESSAGE,
 } from "../services/taskService.js";
 import {
   getGithubIntegrationSettings,
   updateGithubIntegrationSettings,
 } from "../services/appSettingsService.js";
+import { resolveMentionedUserIds } from "../utils/mentionParser.js";
+import { createAndDispatchNotifications } from "../services/notificationService.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -73,6 +74,7 @@ const TRACKED_TASK_FIELDS = [
   "description",
   "status",
   "storyPoints",
+  "dueDate",
   "priority",
   "type",
   "version",
@@ -149,6 +151,16 @@ function buildTaskChanges(beforeTask, afterTask) {
     return acc;
   }, []);
   return [...changes, ...buildAcceptanceCriteriaChanges(beforeTask, afterTask)];
+}
+
+function taskNotificationMeta(task, extra = {}) {
+  return {
+    project_id: task?.projectId || null,
+    task_id: task?.id || null,
+    entity_type: "task",
+    target_view: "board",
+    ...extra,
+  };
 }
 
 router.get("/bootstrap", async (req, res) => {
@@ -288,6 +300,21 @@ router.post("/projects", async (req, res) => {
       description: req.body.description || "",
       memberIds: req.body.memberIds || [],
     });
+    const memberIds = (project.members || []).map((member) => member.id);
+    await createAndDispatchNotifications({
+      actorUserId: req.user.id,
+      recipientUserIds: memberIds,
+      type: "project_membership_added",
+      title: `Added to project ${project.name}`,
+      body: `${req.user.name} added you to ${project.name}.`,
+      entityType: "project",
+      entityId: project.id,
+      metadata: {
+        project_id: project.id,
+        target_view: "board",
+      },
+      dedupeKey: `project-created-membership:${project.id}`,
+    });
     return res.status(201).json(project);
   } catch (error) {
     if (error.code === "23505") {
@@ -307,9 +334,36 @@ router.patch("/projects/:projectId", async (req, res) => {
   if (req.body.memberIds !== undefined) patch.memberIds = req.body.memberIds;
 
   try {
+    const beforeProjects = await getProjects();
+    const beforeProject = beforeProjects.find(
+      (item) => String(item.id) === String(req.params.projectId),
+    );
     const project = await updateProject(req.params.projectId, patch);
     if (!project) {
       return res.status(404).json({ error: "Project not found" });
+    }
+    if (patch.memberIds !== undefined && beforeProject) {
+      const beforeMemberIds = new Set(
+        (beforeProject.members || []).map((member) => String(member.id)),
+      );
+      const newMemberIds = (project.members || [])
+        .map((member) => String(member.id))
+        .filter((id) => !beforeMemberIds.has(id));
+      if (newMemberIds.length) {
+        await createAndDispatchNotifications({
+          actorUserId: req.user.id,
+          recipientUserIds: newMemberIds,
+          type: "project_membership_added",
+          title: `Added to project ${project.name}`,
+          body: `${req.user.name} added you to ${project.name}.`,
+          entityType: "project",
+          entityId: project.id,
+          metadata: {
+            project_id: project.id,
+            target_view: "board",
+          },
+        });
+      }
     }
     return res.json(project);
   } catch (error) {
@@ -681,11 +735,20 @@ router.post("/tasks", async (req, res) => {
     await addTaskActivity(created.id, req.user.id, "task_created", {
       title: created.title,
     });
+    if (created.assigneeId) {
+      await createAndDispatchNotifications({
+        actorUserId: req.user.id,
+        recipientUserIds: [created.assigneeId],
+        type: "task_assigned",
+        title: `Assigned: ${created.title}`,
+        body: `${req.user.name} assigned you a task.`,
+        entityType: "task",
+        entityId: created.id,
+        metadata: taskNotificationMeta(created),
+      });
+    }
     return res.status(201).json(created);
   } catch (err) {
-    if (err.message === TASK_TITLE_CONFLICT_MESSAGE) {
-      return res.status(409).json({ error: err.message });
-    }
     throw err;
   }
 });
@@ -725,12 +788,58 @@ router.patch("/tasks/:taskId", async (req, res) => {
       await addTaskActivity(updated.id, req.user.id, "task_updated", {
         changes,
       });
+      const assigneeChange = changes.find(
+        (change) => change.field === "assigneeId",
+      );
+      // Emit task_updated for any task change.
+      if (updated.assigneeId) {
+        await createAndDispatchNotifications({
+          actorUserId: req.user.id,
+          recipientUserIds: [updated.assigneeId],
+          type: "task_updated",
+          title: `Task updated: ${updated.title}`,
+          body: `${req.user.name} updated a task assigned to you.`,
+          entityType: "task",
+          entityId: updated.id,
+          metadata: taskNotificationMeta(updated, { changes }),
+          dedupeKey: `task-update:${updated.id}:${updated.updatedAt}`,
+        });
+      }
+      // If assignment changed, also emit a dedicated task_assigned notification.
+      if (assigneeChange?.to) {
+        await createAndDispatchNotifications({
+          actorUserId: req.user.id,
+          recipientUserIds: [assigneeChange.to],
+          type: "task_assigned",
+          title: `Assigned: ${updated.title}`,
+          body: `${req.user.name} assigned you this task.`,
+          entityType: "task",
+          entityId: updated.id,
+          metadata: taskNotificationMeta(updated),
+          dedupeKey: `task-assigned:${updated.id}:${assigneeChange.to}:${updated.updatedAt}`,
+        });
+      }
+      if (req.body?.description !== undefined) {
+        const mentionedUserIds = await resolveMentionedUserIds(req.body.description, {
+          excludeUserId: req.user.id,
+        });
+        if (mentionedUserIds.length) {
+          await createAndDispatchNotifications({
+            actorUserId: req.user.id,
+            recipientUserIds: mentionedUserIds,
+            type: "mention_description",
+            title: `Mentioned in ${updated.title}`,
+            body: `${req.user.name} mentioned you in a task description.`,
+            entityType: "task",
+            entityId: updated.id,
+            metadata: taskNotificationMeta(updated, { source: "description" }),
+            dedupeKey: `mention-description:${updated.id}:${updated.updatedAt}`,
+          });
+        }
+      }
     }
     return res.json(updated);
   } catch (err) {
-    if (err.message === TASK_TITLE_CONFLICT_MESSAGE) {
-      return res.status(409).json({ error: err.message });
-    }
     throw err;
   }
 });
@@ -756,6 +865,21 @@ router.patch("/tasks/:taskId/move", async (req, res) => {
     from: current.status,
     to: updated.status,
   });
+  if (updated.assigneeId) {
+    await createAndDispatchNotifications({
+      actorUserId: req.user.id,
+      recipientUserIds: [updated.assigneeId],
+      type: "task_updated",
+      title: `Task updated: ${updated.title}`,
+      body: `${req.user.name} updated task status (${current.status} -> ${updated.status}).`,
+      entityType: "task",
+      entityId: updated.id,
+      metadata: taskNotificationMeta(updated, {
+        changes: [{ field: "status", from: current.status, to: updated.status }],
+      }),
+      dedupeKey: `task-move:${updated.id}:${updated.updatedAt}`,
+    });
+  }
   return res.json(updated);
 });
 
@@ -782,6 +906,40 @@ router.post("/tasks/:taskId/comments", async (req, res) => {
     req.body.body.trim(),
   );
   await addTaskActivity(req.params.taskId, req.user.id, "comment_added", {});
+  if (task.assigneeId) {
+    await createAndDispatchNotifications({
+      actorUserId: req.user.id,
+      recipientUserIds: [task.assigneeId],
+      type: "task_comment_added",
+      title: `New comment on ${task.title}`,
+      body: `${req.user.name} commented on an assigned task.`,
+      entityType: "task",
+      entityId: task.id,
+      metadata: taskNotificationMeta(task, {
+        source: "comment",
+        target_comment_id: comment.id,
+      }),
+    });
+  }
+  const mentionedUserIds = await resolveMentionedUserIds(req.body.body.trim(), {
+    excludeUserId: req.user.id,
+  });
+  if (mentionedUserIds.length) {
+    await createAndDispatchNotifications({
+      actorUserId: req.user.id,
+      recipientUserIds: mentionedUserIds,
+      type: "mention_comment",
+      title: `Mentioned in ${task.title}`,
+      body: `${req.user.name} mentioned you in a comment.`,
+      entityType: "task",
+      entityId: task.id,
+      metadata: taskNotificationMeta(task, {
+        source: "comment",
+        target_comment_id: comment.id,
+      }),
+      dedupeKey: `mention-comment:${comment.id}`,
+    });
+  }
   return res.status(201).json(comment);
 });
 
@@ -805,6 +963,25 @@ router.patch("/tasks/:taskId/comments/:commentId", async (req, res) => {
       .json({ error: "Comment not found or not owned by user" });
   }
   await addTaskActivity(req.params.taskId, req.user.id, "comment_updated", {});
+  const mentionedUserIds = await resolveMentionedUserIds(req.body.body.trim(), {
+    excludeUserId: req.user.id,
+  });
+  if (mentionedUserIds.length) {
+    await createAndDispatchNotifications({
+      actorUserId: req.user.id,
+      recipientUserIds: mentionedUserIds,
+      type: "mention_comment",
+      title: `Mentioned in ${task.title}`,
+      body: `${req.user.name} mentioned you in a comment.`,
+      entityType: "task",
+      entityId: task.id,
+      metadata: taskNotificationMeta(task, {
+        source: "comment",
+        target_comment_id: updated.id,
+      }),
+      dedupeKey: `mention-comment:${updated.id}:updated`,
+    });
+  }
   return res.json(updated);
 });
 

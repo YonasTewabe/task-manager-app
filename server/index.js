@@ -8,6 +8,7 @@ import githubRoutes from "./routes/github.js";
 import jenkinsRoutes from "./routes/jenkins.js";
 import taskManagementRoutes from "./routes/taskManagement.js";
 import authRoutes from "./routes/auth.js";
+import notificationsRoutes from "./routes/notifications.js";
 import { initSchema } from "./db/initSchema.js";
 import { pool } from "./db/pool.js";
 
@@ -59,6 +60,7 @@ export function createApp() {
   app.use("/api/github", githubRoutes);
   app.use("/api/jenkins", jenkinsRoutes);
   app.use("/api/task-management", taskManagementRoutes);
+  app.use("/api/notifications", notificationsRoutes);
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true });
   });

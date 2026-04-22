@@ -40,3 +40,11 @@ export async function apiRequest(path, options = {}) {
   }
   return data;
 }
+
+export function buildApiUrl(path) {
+  return `${apiBase()}${path}`;
+}
+
+export function getAuthToken() {
+  return getStoredToken();
+}

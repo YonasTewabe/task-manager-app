@@ -155,6 +155,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   priority TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('lowest', 'low', 'medium', 'high', 'highest')),
   status TEXT NOT NULL DEFAULT 'todo',
   story_points INTEGER,
+  due_date DATE,
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   assignee_id UUID REFERENCES users(id) ON DELETE SET NULL,
   sprint_id UUID REFERENCES sprints(id) ON DELETE SET NULL,
@@ -178,6 +179,31 @@ CREATE TABLE IF NOT EXISTS task_activity (
   action TEXT NOT NULL,
   meta JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL DEFAULT '',
+  entity_type TEXT NOT NULL DEFAULT '',
+  entity_id UUID,
+  metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  dedupe_key TEXT,
+  read_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  user_agent TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_used_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS system_settings (
@@ -261,6 +287,7 @@ BEGIN
 END $$;
 ALTER TABLE tasks ALTER COLUMN story_points DROP NOT NULL;
 ALTER TABLE tasks ALTER COLUMN story_points DROP DEFAULT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS due_date DATE;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS version TEXT;
 UPDATE tasks SET version = '' WHERE version IS NULL;
 ALTER TABLE tasks ALTER COLUMN version SET NOT NULL;
@@ -295,6 +322,13 @@ ON CONFLICT (project_id) DO UPDATE
 SET last_value = GREATEST(project_task_seq.last_value, EXCLUDED.last_value);
 
 CREATE UNIQUE INDEX IF NOT EXISTS tasks_project_id_task_number_key ON tasks (project_id, task_number);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_unread_created
+  ON notifications (user_id, read_at, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_entity
+  ON notifications (entity_type, entity_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_dedupe_key
+  ON notifications (user_id, dedupe_key)
+  WHERE dedupe_key IS NOT NULL;
 
 DO $$
 BEGIN

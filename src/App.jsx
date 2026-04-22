@@ -14,7 +14,7 @@ import TaskDrawer from "./components/TaskDrawer";
 import UserAdminView from "./components/UserAdminView";
 import MainLayout from "./components/Layout/MainLayout";
 import Modal from "./components/ui/Modal";
-import { apiRequest, setStoredToken } from "./api/client";
+import { apiRequest, buildApiUrl, getAuthToken, setStoredToken } from "./api/client";
 import { PRIORITY_OPTIONS } from "./constants/priorities.js";
 import { UNASSIGNED_AVATAR_SRC } from "./constants/unassignedAvatar.js";
 import {
@@ -23,6 +23,7 @@ import {
 } from "./constants/workTypes.js";
 import { DEFAULT_WORKFLOW_STAGES } from "./workflowDefaults.js";
 import { useAppStore } from "./store/appStore";
+import { buildNotificationPath } from "./utils/notificationLinks";
 
 const PROJECT_ROUTE = /^\/project\/([^/]+)\/(board|backlog|settings)$/;
 const ASSIGNEE_VISIBLE_LIMIT = 6;
@@ -117,6 +118,8 @@ function App() {
     setTaskTitle,
     storyPoints,
     setStoryPoints,
+    taskDueDate,
+    setTaskDueDate,
     assigneeId,
     setAssigneeId,
     taskPriority,
@@ -145,6 +148,14 @@ function App() {
     setFilters,
     filterDraft,
     setFilterDraft,
+    notifications,
+    setNotifications,
+    unreadCount,
+    setUnreadCount,
+    notificationCenterOpen,
+    setNotificationCenterOpen,
+    setNotificationStreamConnected,
+    setNotificationStreamError,
   } = useAppStore(
     useShallow((state) => ({
       token: state.token,
@@ -184,6 +195,8 @@ function App() {
       setTaskTitle: state.setTaskTitle,
       storyPoints: state.storyPoints,
       setStoryPoints: state.setStoryPoints,
+      taskDueDate: state.taskDueDate,
+      setTaskDueDate: state.setTaskDueDate,
       assigneeId: state.assigneeId,
       setAssigneeId: state.setAssigneeId,
       taskPriority: state.taskPriority,
@@ -212,6 +225,14 @@ function App() {
       setFilters: state.setFilters,
       filterDraft: state.filterDraft,
       setFilterDraft: state.setFilterDraft,
+      notifications: state.notifications,
+      setNotifications: state.setNotifications,
+      unreadCount: state.unreadCount,
+      setUnreadCount: state.setUnreadCount,
+      notificationCenterOpen: state.notificationCenterOpen,
+      setNotificationCenterOpen: state.setNotificationCenterOpen,
+      setNotificationStreamConnected: state.setNotificationStreamConnected,
+      setNotificationStreamError: state.setNotificationStreamError,
     })),
   );
   const filterPopoverRef = useRef(null);
@@ -220,6 +241,7 @@ function App() {
   const latestSettingsProjectIdRef = useRef("");
   const latestProjectIdRef = useRef("");
   const lastReadinessBlockRef = useRef("");
+  const notificationStreamRef = useRef(null);
   useEffect(() => {
     setActiveView((current) =>
       current === "dashboard" ? initialActiveView(location.pathname) : current,
@@ -248,6 +270,80 @@ function App() {
       confirmResolverRef.current = null;
     }
   };
+
+  const loadNotifications = useCallback(async () => {
+    try {
+      const [list, unread] = await Promise.all([
+        apiRequest("/notifications?limit=40"),
+        apiRequest("/notifications/unread-count"),
+      ]);
+      setNotifications(Array.isArray(list) ? list : []);
+      setUnreadCount(Number(unread?.unreadCount || 0));
+    } catch {
+      // Notification center is optional; avoid blocking app on failures.
+    }
+  }, [setNotifications, setUnreadCount]);
+
+  const registerPushNotifications = useCallback(async () => {
+    if (
+      !("serviceWorker" in navigator) ||
+      !("PushManager" in window) ||
+      typeof Notification === "undefined"
+    ) {
+      return;
+    }
+    const vapidPublicKey = String(import.meta.env.VITE_PUSH_PUBLIC_KEY || "").trim();
+    if (!vapidPublicKey) return;
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") return;
+    const registration = await navigator.serviceWorker.register("/sw.js");
+    const existing = await registration.pushManager.getSubscription();
+    const base64ToUint8Array = (base64String) => {
+      const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+      const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+      const raw = window.atob(base64);
+      return Uint8Array.from([...raw].map((char) => char.charCodeAt(0)));
+    };
+    const subscription =
+      existing ||
+      (await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: base64ToUint8Array(vapidPublicKey),
+      }));
+    await apiRequest("/notifications/push-subscriptions", {
+      method: "POST",
+      body: JSON.stringify({ subscription }),
+    });
+  }, []);
+
+  const unregisterPushNotifications = useCallback(async () => {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    const registration = await navigator.serviceWorker.getRegistration();
+    if (!registration) return;
+    const subscription = await registration.pushManager.getSubscription();
+    if (!subscription) return;
+    const endpoint = String(subscription.endpoint || "");
+    if (endpoint) {
+      await apiRequest("/notifications/push-subscriptions", {
+        method: "DELETE",
+        body: JSON.stringify({ endpoint }),
+      }).catch(() => {});
+    }
+    await subscription.unsubscribe().catch(() => {});
+  }, []);
+
+  const handleToggleNotificationCenter = useCallback(() => {
+    setNotificationCenterOpen((open) => !open);
+    registerPushNotifications().catch(() => {});
+  }, [registerPushNotifications, setNotificationCenterOpen]);
+
+  const openTask = useCallback(
+    async (taskId) => {
+      const bundle = await apiRequest(`/task-management/tasks/${taskId}`);
+      setTaskBundle(bundle);
+    },
+    [setTaskBundle],
+  );
 
   const usersById = useMemo(() => {
     const map = new Map();
@@ -432,6 +528,16 @@ function App() {
       setDashboardAssignedTasks([]);
     }
   };
+
+  const refreshProjectsList = useCallback(async () => {
+    if (!token) return;
+    try {
+      const nextProjects = await apiRequest("/task-management/projects");
+      setProjects(Array.isArray(nextProjects) ? nextProjects : []);
+    } catch {
+      // Keep current projects list when refresh fails.
+    }
+  }, [token, setProjects]);
 
   const fetchBootstrap = async () => {
     setLoading(true);
@@ -679,6 +785,58 @@ function App() {
   }, [token]);
 
   useEffect(() => {
+    if (!token) {
+      setNotifications([]);
+      setUnreadCount(0);
+      setNotificationStreamConnected(false);
+      if (notificationStreamRef.current) {
+        notificationStreamRef.current.close();
+        notificationStreamRef.current = null;
+      }
+      return;
+    }
+    loadNotifications().catch(() => {});
+    const authToken = getAuthToken();
+    const streamUrl = buildApiUrl(
+      `/notifications/stream?token=${encodeURIComponent(authToken)}`,
+    );
+    const stream = new EventSource(streamUrl);
+    notificationStreamRef.current = stream;
+    stream.onopen = () => {
+      setNotificationStreamConnected(true);
+      setNotificationStreamError("");
+    };
+    stream.addEventListener("notification:new", (event) => {
+      const payload = JSON.parse(event.data || "{}");
+      setNotifications((prev) => [payload, ...prev].slice(0, 80));
+      if (payload?.type === "project_membership_added") {
+        refreshProjectsList().catch(() => {});
+      }
+    });
+    stream.addEventListener("notification:unread_count", (event) => {
+      const payload = JSON.parse(event.data || "{}");
+      setUnreadCount(Number(payload?.unreadCount || 0));
+    });
+    stream.onerror = () => {
+      setNotificationStreamConnected(false);
+      setNotificationStreamError("Disconnected");
+    };
+    return () => {
+      stream.close();
+      notificationStreamRef.current = null;
+      setNotificationStreamConnected(false);
+    };
+  }, [
+    token,
+    loadNotifications,
+    setNotifications,
+    setUnreadCount,
+    setNotificationStreamConnected,
+    setNotificationStreamError,
+    refreshProjectsList,
+  ]);
+
+  useEffect(() => {
     if (!token || !currentProjectId) {
       latestSettingsProjectIdRef.current = "";
       setProjectSettings(null);
@@ -789,6 +947,35 @@ function App() {
   }, [token, loading, activeView, currentUser?.id]);
 
   useEffect(() => {
+    if (!token || loading || activeView !== "board" || !currentProjectId) return;
+    const params = new URLSearchParams(location.search || "");
+    const taskId = params.get("taskId");
+    if (!taskId) return;
+    openTask(taskId)
+      .catch(() => {})
+      .finally(() => {
+        params.delete("taskId");
+        params.delete("commentId");
+        navigate(
+          {
+            pathname: location.pathname,
+            search: params.toString() ? `?${params.toString()}` : "",
+          },
+          { replace: true },
+        );
+      });
+  }, [
+    token,
+    loading,
+    activeView,
+    currentProjectId,
+    location.pathname,
+    location.search,
+    navigate,
+    openTask,
+  ]);
+
+  useEffect(() => {
     if (activeView !== "board" && activeView !== "backlog") return;
     setShowAssigneeOverflow(false);
     setSelectedSprintId("");
@@ -870,6 +1057,11 @@ function App() {
       setCurrentProjectId(String(parsed.projectId));
     }
 
+    if (parsed.view === "settings" && parsed.projectId && !canManage) {
+      navigate(`/project/${parsed.projectId}/board`, { replace: true });
+      return;
+    }
+
     let nextActive = "dashboard";
     if (
       parsed.view === "board" ||
@@ -889,6 +1081,7 @@ function App() {
     visibleProjects,
     navigate,
     currentProjectId,
+    canManage,
   ]);
 
   const handleNavigateMain = useCallback((key) => {
@@ -918,7 +1111,23 @@ function App() {
     async (projectId, subview) => {
       const id = String(projectId);
       const targetSubview = String(subview || "board");
+      if (!canManage && targetSubview === "settings") {
+        lastReadinessBlockRef.current = "";
+        setCurrentProjectId(id);
+        setSelectedSprintId("");
+        setActiveView("board");
+        navigate(`/project/${id}/board`);
+        return;
+      }
       if (targetSubview === "board" || targetSubview === "backlog") {
+        if (!canManage) {
+          lastReadinessBlockRef.current = "";
+          setCurrentProjectId(id);
+          setSelectedSprintId("");
+          setActiveView(targetSubview);
+          navigate(`/project/${id}/${targetSubview}`);
+          return;
+        }
         try {
           const readiness = await evaluateProjectReadiness(id);
           if (!readiness.ready) {
@@ -955,6 +1164,7 @@ function App() {
       evaluateProjectReadiness,
       navigate,
       notify,
+      canManage,
       setActiveView,
       setCurrentProjectId,
       setSelectedSprintId,
@@ -964,6 +1174,7 @@ function App() {
   useEffect(() => {
     if (!token || loading || !currentProjectId) return;
     if (activeView !== "board" && activeView !== "backlog") return;
+    if (!canManage) return;
     let cancelled = false;
     (async () => {
       try {
@@ -1001,6 +1212,7 @@ function App() {
     evaluateProjectReadiness,
     navigate,
     notify,
+    canManage,
     setActiveView,
   ]);
 
@@ -1015,6 +1227,8 @@ function App() {
       setStoredToken(data.token);
       setToken(data.token);
       setCurrentUser(data.user);
+      setActiveView("dashboard");
+      navigate("/dashboard", { replace: true });
     } catch (err) {
       setError(err.message || "Login failed");
     } finally {
@@ -1033,6 +1247,8 @@ function App() {
       setStoredToken(data.token);
       setToken(data.token);
       setCurrentUser(data.user);
+      setActiveView("dashboard");
+      navigate("/dashboard", { replace: true });
     } catch (err) {
       setError(err.message || "Registration failed");
     } finally {
@@ -1040,16 +1256,65 @@ function App() {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    await unregisterPushNotifications().catch(() => {});
     setStoredToken("");
     setToken("");
     setCurrentUser(null);
     setUsers([]);
+    setUserGroups([]);
+    setProjects([]);
+    setProjectSettings(null);
     setSprints([]);
+    setSprintTasks([]);
     setColumns([]);
+    setBoardTotalsByStatus({});
     setBacklogTasks([]);
     setAllTasks([]);
+    setDashboardAssignedTasks([]);
+    setSelectedSprintId("");
+    setCurrentProjectId("");
+    setTaskTitle("");
+    setStoryPoints("");
+    setTaskDueDate("");
+    setAssigneeId("");
+    setTaskPriority("medium");
+    setTaskType("task");
+    setTaskLabel("");
+    setTaskVersion("");
+    setShowCreateTaskModal(false);
+    setShowFilterModal(false);
+    setShowAssigneeOverflow(false);
+    setConfirmDialog({
+      open: false,
+      title: "",
+      message: "",
+      confirmLabel: "Confirm",
+    });
+    setFilterDraft({
+      sprintId: "",
+      priority: "",
+      label: "",
+      status: "",
+      type: "",
+    });
+    setFilters({
+      assigneeId: "",
+      priority: "",
+      label: "",
+      status: "",
+      type: "",
+      search: "",
+    });
+    setNotifications([]);
+    setUnreadCount(0);
+    setNotificationCenterOpen(false);
+    setNotificationStreamConnected(false);
+    setNotificationStreamError("");
+    setActiveView("dashboard");
+    setError("");
     setTaskBundle(null);
+    navigate("/dashboard", { replace: true });
   };
 
   const createTask = async (event) => {
@@ -1063,6 +1328,7 @@ function App() {
       body: JSON.stringify({
         title: taskTitle.trim(),
         storyPoints: storyPoints === "" ? null : Number(storyPoints),
+        dueDate: taskDueDate || null,
         status: "todo",
         priority: taskPriority,
         type: taskType,
@@ -1075,6 +1341,7 @@ function App() {
     });
     setTaskTitle("");
     setStoryPoints("");
+    setTaskDueDate("");
     setAssigneeId("");
     setTaskPriority("medium");
     setTaskType("task");
@@ -1106,10 +1373,36 @@ function App() {
     }
   };
 
-  const openTask = useCallback(async (taskId) => {
-    const bundle = await apiRequest(`/task-management/tasks/${taskId}`);
-    setTaskBundle(bundle);
-  }, [setTaskBundle]);
+  const markNotificationRead = useCallback(
+    async (notificationId) => {
+      await apiRequest(`/notifications/${notificationId}/read`, { method: "PATCH" });
+      await loadNotifications();
+    },
+    [loadNotifications],
+  );
+
+  const markAllNotificationsRead = useCallback(async () => {
+    await apiRequest("/notifications/read-all", { method: "PATCH" });
+    await loadNotifications();
+  }, [loadNotifications]);
+
+  const handleNotificationClick = useCallback(
+    async (notification) => {
+      setNotificationCenterOpen(false);
+      await markNotificationRead(notification.id).catch(() => {});
+      if (notification?.type === "project_membership_added") {
+        await refreshProjectsList().catch(() => {});
+      }
+      const targetPath = buildNotificationPath(notification);
+      navigate(targetPath);
+    },
+    [
+      markNotificationRead,
+      navigate,
+      refreshProjectsList,
+      setNotificationCenterOpen,
+    ],
+  );
 
   const openProjectBoard = useCallback(
     (id) => handleNavigateProject(id, "board"),
@@ -1597,6 +1890,14 @@ function App() {
         expandedProjectIds={[]}
         onNavigateMain={handleNavigateMain}
         onNavigateProject={handleNavigateProject}
+        notifications={notifications}
+        unreadCount={unreadCount}
+        notificationCenterOpen={notificationCenterOpen}
+        onToggleNotificationCenter={handleToggleNotificationCenter}
+        onCloseNotificationCenter={() => setNotificationCenterOpen(false)}
+        onNotificationClick={handleNotificationClick}
+        onMarkNotificationRead={markNotificationRead}
+        onMarkAllNotificationsRead={markAllNotificationsRead}
       >
         <div className={activeView === "dashboard" ? undefined : "p-4"}>
           {(activeView === "board" || activeView === "backlog") &&
@@ -1984,6 +2285,14 @@ function App() {
                     placeholder="Enter story points"
                     value={storyPoints}
                     onChange={(event) => setStoryPoints(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Due date
+                  <input
+                    type="date"
+                    value={taskDueDate}
+                    onChange={(event) => setTaskDueDate(event.target.value)}
                   />
                 </label>
                 <label>

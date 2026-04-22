@@ -15,10 +15,14 @@ function RichTextEditor({
   uploading,
   onChange,
   onUploadImage,
+  mentionUsers = [],
   autoFocus = false,
 }) {
   const editorRef = useRef(null);
   const fileRef = useRef(null);
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState("");
+  const [mentionIndex, setMentionIndex] = useState(0);
 
   useEffect(() => {
     if (!editorRef.current) return;
@@ -47,6 +51,108 @@ function RichTextEditor({
     if (!href) return;
     window.open(href, "_blank", "noopener,noreferrer");
   };
+
+  const filteredMentionUsers = useMemo(() => {
+    const query = String(mentionQuery || "")
+      .trim()
+      .toLowerCase();
+    const list = Array.isArray(mentionUsers) ? mentionUsers : [];
+    return list
+      .filter((user) => {
+        const name = String(user?.name || "")
+          .trim()
+          .toLowerCase();
+        const emailLocal = String(user?.email || "")
+          .split("@")[0]
+          .trim()
+          .toLowerCase();
+        if (!name) return false;
+        if (!query) return true;
+        return name.includes(query) || emailLocal.includes(query);
+      })
+      .slice(0, 8);
+  }, [mentionQuery, mentionUsers]);
+
+  const updateMentionState = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      setMentionOpen(false);
+      setMentionQuery("");
+      return;
+    }
+    const range = selection.getRangeAt(0);
+    if (!editor.contains(range.startContainer)) {
+      setMentionOpen(false);
+      setMentionQuery("");
+      return;
+    }
+    const textRange = range.cloneRange();
+    textRange.selectNodeContents(editor);
+    textRange.setEnd(range.startContainer, range.startOffset);
+    const beforeText = textRange.toString();
+    const atMatch = beforeText.match(/(?:^|\s)@([a-zA-Z0-9._-]{0,64})$/);
+    if (!atMatch) {
+      setMentionOpen(false);
+      setMentionQuery("");
+      return;
+    }
+    const nextQuery = String(atMatch[1] || "");
+    setMentionQuery((prev) => {
+      if (prev !== nextQuery) {
+        setMentionIndex(0);
+      }
+      return nextQuery;
+    });
+    setMentionOpen((prev) => {
+      if (!prev) setMentionIndex(0);
+      return true;
+    });
+  }, []);
+
+  const insertMention = useCallback(
+    (user) => {
+      const editor = editorRef.current;
+      if (!editor) return;
+      editor.focus();
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return;
+      const range = selection.getRangeAt(0);
+      if (!editor.contains(range.startContainer)) return;
+      const safeName = String(user?.name || "").trim();
+      if (!safeName) return;
+      const mentionText = `@${safeName}`;
+      const tokenLength = mentionQuery.length + 1;
+      const startOffset = Math.max(0, range.startOffset - tokenLength);
+      try {
+        if (
+          range.startContainer.nodeType === Node.TEXT_NODE &&
+          range.startOffset >= tokenLength
+        ) {
+          const replaceRange = document.createRange();
+          replaceRange.setStart(range.startContainer, startOffset);
+          replaceRange.setEnd(range.startContainer, range.startOffset);
+          replaceRange.deleteContents();
+          const node = document.createTextNode(`${mentionText} `);
+          replaceRange.insertNode(node);
+          const after = document.createRange();
+          after.setStartAfter(node);
+          after.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(after);
+        } else {
+          document.execCommand("insertText", false, `${mentionText} `);
+        }
+      } catch {
+        document.execCommand("insertText", false, `${mentionText} `);
+      }
+      setMentionOpen(false);
+      setMentionQuery("");
+      onChange(editor.innerHTML || "");
+    },
+    [mentionQuery, onChange],
+  );
 
   return (
     <div className="overflow-hidden rounded-lg border border-[#dfe1e6] bg-white">
@@ -134,13 +240,72 @@ function RichTextEditor({
         contentEditable
         data-placeholder={placeholder}
         onClick={handleEditorClick}
-        onInput={(event) => onChange(event.currentTarget.innerHTML)}
+        onInput={(event) => {
+          onChange(event.currentTarget.innerHTML);
+          updateMentionState();
+        }}
+        onKeyUp={() => updateMentionState()}
+        onKeyDown={(event) => {
+          if (!mentionOpen || !filteredMentionUsers.length) return;
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            setMentionIndex((prev) =>
+              prev + 1 >= filteredMentionUsers.length ? 0 : prev + 1,
+            );
+          } else if (event.key === "ArrowUp") {
+            event.preventDefault();
+            setMentionIndex((prev) =>
+              prev - 1 < 0 ? filteredMentionUsers.length - 1 : prev - 1,
+            );
+          } else if (event.key === "Enter" || event.key === "Tab") {
+            event.preventDefault();
+            const selected =
+              filteredMentionUsers[mentionIndex] || filteredMentionUsers[0];
+            if (selected) insertMention(selected);
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            setMentionOpen(false);
+            setMentionQuery("");
+          }
+        }}
+        onBlur={() => {
+          window.setTimeout(() => {
+            setMentionOpen(false);
+            setMentionQuery("");
+          }, 80);
+        }}
       />
+      {mentionOpen && filteredMentionUsers.length ? (
+        <div className="max-h-[180px] overflow-auto border-t border-[#dfe1e6] bg-white p-1">
+          {filteredMentionUsers.map((user, index) => (
+            <button
+              key={user.id}
+              type="button"
+              className={`w-full rounded-[8px] px-2 py-1.5 text-left text-[0.86rem] ${index === mentionIndex ? "bg-[#edf3ff] text-[#0c66e4]" : "text-[#253858] hover:bg-[#f4f6fa]"}`}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                insertMention(user);
+              }}
+            >
+              <div className="font-medium">{user.name}</div>
+              <div className="text-[0.76rem] text-[#6b778c]">{user.email}</div>
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
 
 const MemoRichTextEditor = memo(RichTextEditor);
+
+function normalizeDateForInput(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const isoLike = raw.includes("T") ? raw.split("T")[0] : raw;
+  const match = isoLike.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : "";
+}
 
 export default function TaskDrawer({
   taskBundle,
@@ -284,6 +449,7 @@ export default function TaskDrawer({
       task
         ? {
             ...task,
+            dueDate: normalizeDateForInput(task.dueDate),
             description: toEditorRichText(task.description),
             acceptanceCriteria: normalizeAcceptanceCriteria(
               task.acceptanceCriteria,
@@ -368,6 +534,7 @@ export default function TaskDrawer({
         source.storyPoints === "" || source.storyPoints == null
           ? null
           : Number(source.storyPoints),
+      dueDate: source.dueDate || null,
       assigneeId: source.assigneeId ? String(source.assigneeId) : null,
       priority: source.priority,
       type: source.type,
@@ -478,6 +645,7 @@ export default function TaskDrawer({
       description: "Description",
       status: "Status",
       storyPoints: "Story point",
+      dueDate: "Due date",
       priority: "Priority",
       type: "Type",
       version: "Version",
@@ -684,6 +852,7 @@ export default function TaskDrawer({
                   value={draft.description || ""}
                   placeholder="Add task details, context, and expected outcome."
                   uploading={isUploadingDescription}
+                  mentionUsers={assigneeUsers}
                   onChange={(nextValue) =>
                     setDraft((prev) => {
                       if (prev.description === nextValue) return prev;
@@ -823,6 +992,7 @@ export default function TaskDrawer({
                           value={commentBody}
                           placeholder="Add a comment..."
                           uploading={isUploadingComment}
+                          mentionUsers={assigneeUsers}
                           onChange={setCommentBody}
                           onUploadImage={(file) => uploadImage(file, "comment")}
                           autoFocus
@@ -944,6 +1114,7 @@ export default function TaskDrawer({
                               value={editingCommentBody}
                               placeholder="Edit comment..."
                               uploading={isUploadingComment}
+                              mentionUsers={assigneeUsers}
                               onChange={setEditingCommentBody}
                               onUploadImage={(file) =>
                                 uploadImage(file, "comment")
@@ -1158,6 +1329,20 @@ export default function TaskDrawer({
                       setDraft((prev) => ({
                         ...prev,
                         storyPoints: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="grid gap-[0.35rem] text-[0.9rem] text-[#253858]">
+                  Due date
+                  <input
+                    className="w-full rounded-[8px] border border-[#c9d2e3] bg-white px-[0.55rem] py-[0.45rem] text-[0.9rem] text-[#172b4d]"
+                    type="date"
+                    value={draft.dueDate || ""}
+                    onChange={(event) =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        dueDate: event.target.value || null,
                       }))
                     }
                   />

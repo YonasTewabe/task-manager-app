@@ -1,6 +1,7 @@
 import { DEFAULT_WORK_TYPE_VALUES } from "../../src/constants/workTypes.js";
 import { dbQuery } from "../db/pool.js";
 import { asInt } from "../utils/validation.js";
+import { createAndDispatchNotifications } from "./notificationService.js";
 
 export const DEFAULT_WORKFLOW_STAGES = [
   {
@@ -1008,6 +1009,7 @@ function mapTaskRow(row) {
     priority: row.priority,
     status: row.status,
     storyPoints: row.storyPoints,
+    dueDate: row.dueDate,
     assigneeId: row.assigneeId,
     sprintId: row.sprintId,
     projectId: row.projectId,
@@ -1115,7 +1117,7 @@ export async function getTasks(filters = {}) {
 
   const query = `
     SELECT t.id, t.title, t.description, t.acceptance_criteria AS "acceptanceCriteria", t.label, t.version, t.type, t.priority, t.status,
-           t.story_points AS "storyPoints", t.assignee_id AS "assigneeId",
+           t.story_points AS "storyPoints", t.due_date AS "dueDate", t.assignee_id AS "assigneeId",
            t.sprint_id AS "sprintId", t.project_id AS "projectId", t.task_number AS "taskNumber",
            p.project_key AS "projectKey",
            t.created_by AS "createdBy",
@@ -1132,7 +1134,7 @@ export async function getTasks(filters = {}) {
 export async function getTaskById(id) {
   const result = await dbQuery(
     `SELECT t.id, t.title, t.description, t.acceptance_criteria AS "acceptanceCriteria", t.label, t.version, t.type, t.priority, t.status,
-            t.story_points AS "storyPoints", t.assignee_id AS "assigneeId",
+            t.story_points AS "storyPoints", t.due_date AS "dueDate", t.assignee_id AS "assigneeId",
             t.sprint_id AS "sprintId", t.project_id AS "projectId", t.task_number AS "taskNumber",
             p.project_key AS "projectKey",
             t.created_by AS "createdBy",
@@ -1143,38 +1145,6 @@ export async function getTaskById(id) {
     [asUuid(id)],
   );
   return result.rows[0] ? mapTaskRow(result.rows[0]) : null;
-}
-
-export const TASK_TITLE_CONFLICT_MESSAGE =
-  "A task with this title already exists in this project.";
-
-async function assertUniqueTaskTitleInProject(
-  projectId,
-  title,
-  excludeTaskId = null,
-) {
-  const pid = asUuid(projectId, null);
-  if (!pid) return;
-  const normalized = String(title ?? "").trim();
-  if (!normalized) return;
-
-  if (excludeTaskId) {
-    const result = await dbQuery(
-      `SELECT 1 FROM tasks
-       WHERE project_id = $1 AND LOWER(TRIM(title)) = LOWER($2) AND id <> $3
-       LIMIT 1`,
-      [pid, normalized, asUuid(excludeTaskId)],
-    );
-    if (result.rows.length > 0) throw new Error(TASK_TITLE_CONFLICT_MESSAGE);
-    return;
-  }
-  const result = await dbQuery(
-    `SELECT 1 FROM tasks
-     WHERE project_id = $1 AND LOWER(TRIM(title)) = LOWER($2)
-     LIMIT 1`,
-    [pid, normalized],
-  );
-  if (result.rows.length > 0) throw new Error(TASK_TITLE_CONFLICT_MESSAGE);
 }
 
 async function allocateNextTaskNumber(projectId) {
@@ -1192,14 +1162,13 @@ async function allocateNextTaskNumber(projectId) {
 }
 
 export async function createTask(payload, createdBy) {
-  await assertUniqueTaskTitleInProject(payload.projectId, payload.title, null);
   const taskNumber = await allocateNextTaskNumber(payload.projectId);
   const result = await dbQuery(
     `INSERT INTO tasks (
-        title, description, acceptance_criteria, label, version, type, priority, status, story_points, assignee_id, sprint_id, project_id, created_by, task_number
-     ) VALUES ($1,$2,$3::jsonb,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        title, description, acceptance_criteria, label, version, type, priority, status, story_points, due_date, assignee_id, sprint_id, project_id, created_by, task_number
+     ) VALUES ($1,$2,$3::jsonb,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
      RETURNING id, title, description, acceptance_criteria AS "acceptanceCriteria", label, version, type, priority, status,
-               story_points AS "storyPoints", assignee_id AS "assigneeId",
+               story_points AS "storyPoints", due_date AS "dueDate", assignee_id AS "assigneeId",
                sprint_id AS "sprintId", project_id AS "projectId", task_number AS "taskNumber",
                created_by AS "createdBy",
                created_at AS "createdAt", updated_at AS "updatedAt"`,
@@ -1213,6 +1182,7 @@ export async function createTask(payload, createdBy) {
       normalizeTaskPriority(payload.priority),
       normalizeTaskStatus(payload.status),
       asInt(payload.storyPoints, null),
+      payload.dueDate ? String(payload.dueDate) : null,
       asUuid(payload.assigneeId),
       asUuid(payload.sprintId),
       asUuid(payload.projectId),
@@ -1246,13 +1216,8 @@ export async function updateTask(taskId, patch) {
   }
 
   let allocatedTaskNumber = null;
-  if (patch.title !== undefined || patch.projectId !== undefined) {
-    const nextTitle = patch.title !== undefined ? patch.title : existing.title;
-    const nextProjectId =
-      patch.projectId !== undefined ? patch.projectId : existing.projectId;
-    await assertUniqueTaskTitleInProject(nextProjectId, nextTitle, taskId);
+  if (patch.projectId !== undefined) {
     if (
-      patch.projectId !== undefined &&
       String(asUuid(patch.projectId)) !== String(asUuid(existing.projectId))
     ) {
       allocatedTaskNumber = await allocateNextTaskNumber(patch.projectId);
@@ -1269,6 +1234,7 @@ export async function updateTask(taskId, patch) {
     priority: "priority",
     status: "status",
     storyPoints: "story_points",
+    dueDate: "due_date",
     assigneeId: "assignee_id",
     sprintId: "sprint_id",
     projectId: "project_id",
@@ -1290,6 +1256,8 @@ export async function updateTask(taskId, patch) {
       params.push(normalizeTaskType(patch[key]));
     } else if (key === "status") {
       params.push(normalizeTaskStatus(patch[key]));
+    } else if (key === "dueDate") {
+      params.push(patch[key] ? String(patch[key]) : null);
     } else if (
       key === "assigneeId" ||
       key === "sprintId" ||
@@ -1316,7 +1284,7 @@ export async function updateTask(taskId, patch) {
      FROM projects p
      WHERE t.id = $${idx} AND p.id = t.project_id
      RETURNING t.id, t.title, t.description, t.acceptance_criteria AS "acceptanceCriteria", t.label, t.version, t.type, t.priority, t.status,
-               t.story_points AS "storyPoints", t.assignee_id AS "assigneeId",
+               t.story_points AS "storyPoints", t.due_date AS "dueDate", t.assignee_id AS "assigneeId",
                t.sprint_id AS "sprintId", t.project_id AS "projectId", t.created_by AS "createdBy",
                t.created_at AS "createdAt", t.updated_at AS "updatedAt",
                t.task_number AS "taskNumber", p.project_key AS "projectKey"`,
@@ -1462,6 +1430,26 @@ export async function moveTaskStatusForAutomation(taskId, nextStatus, sourceMeta
     performedBy: "Automation rule",
     ...sourceMeta,
   });
+  if (updated.assigneeId) {
+    await createAndDispatchNotifications({
+      actorUserId: null,
+      recipientUserIds: [updated.assigneeId],
+      type: "automation_task_transition",
+      title: `Automation updated ${updated.title}`,
+      body: `Task moved from ${current.status} to ${updated.status}.`,
+      entityType: "task",
+      entityId: updated.id,
+      metadata: {
+        project_id: updated.projectId,
+        task_id: updated.id,
+        target_view: "board",
+        source: "github_automation",
+        from: current.status,
+        to: updated.status,
+      },
+      dedupeKey: `automation-move:${updated.id}:${updated.updatedAt}`,
+    });
+  }
   return updated;
 }
 
@@ -1536,7 +1524,7 @@ export async function assignTaskToSprint(taskId, sprintId) {
      FROM projects p
      WHERE t.id = $2 AND p.id = t.project_id
      RETURNING t.id, t.title, t.description, t.acceptance_criteria AS "acceptanceCriteria", t.label, t.version, t.type, t.priority, t.status,
-               t.story_points AS "storyPoints", t.assignee_id AS "assigneeId",
+               t.story_points AS "storyPoints", t.due_date AS "dueDate", t.assignee_id AS "assigneeId",
                t.sprint_id AS "sprintId", t.project_id AS "projectId", t.created_by AS "createdBy",
                t.created_at AS "createdAt", t.updated_at AS "updatedAt",
                t.task_number AS "taskNumber", p.project_key AS "projectKey"`,
@@ -1552,7 +1540,7 @@ export async function removeTaskFromSprint(taskId, sprintId) {
      FROM projects p
      WHERE t.id = $1 AND t.sprint_id = $2 AND p.id = t.project_id
      RETURNING t.id, t.title, t.description, t.acceptance_criteria AS "acceptanceCriteria", t.label, t.version, t.type, t.priority, t.status,
-               t.story_points AS "storyPoints", t.assignee_id AS "assigneeId",
+               t.story_points AS "storyPoints", t.due_date AS "dueDate", t.assignee_id AS "assigneeId",
                t.sprint_id AS "sprintId", t.project_id AS "projectId", t.created_by AS "createdBy",
                t.created_at AS "createdAt", t.updated_at AS "updatedAt",
                t.task_number AS "taskNumber", p.project_key AS "projectKey"`,
