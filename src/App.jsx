@@ -6,6 +6,7 @@ import "react-toastify/dist/ReactToastify.css";
 import AuthView from "./components/AuthView";
 import BacklogView from "./components/BacklogView";
 import BoardView from "./components/BoardView";
+import SummaryView from "./components/SummaryView";
 import DashboardView from "./components/DashboardView";
 import ProjectManagementView from "./components/ProjectManagementView";
 import AppSettingsView from "./components/AppSettingsView";
@@ -26,7 +27,7 @@ import { DEFAULT_WORKFLOW_STAGES } from "./workflowDefaults.js";
 import { useAppStore } from "./store/appStore";
 import { buildNotificationPath } from "./utils/notificationLinks";
 
-const PROJECT_ROUTE = /^\/project\/([^/]+)\/(board|backlog|settings)$/;
+const PROJECT_ROUTE = /^\/project\/([^/]+)\/(board|backlog|summary|settings)$/;
 const ASSIGNEE_VISIBLE_LIMIT = 6;
 const USER_AVATAR_COLORS = [
   "#0B6BCB",
@@ -88,7 +89,12 @@ function parseRoute(pathname) {
 function initialActiveView(pathname) {
   const p = parseRoute(pathname);
   if (p.view === "_legacy" || p.unknown) return "dashboard";
-  if (p.view === "board" || p.view === "backlog" || p.view === "settings")
+  if (
+    p.view === "board" ||
+    p.view === "backlog" ||
+    p.view === "summary" ||
+    p.view === "settings"
+  )
     return p.view;
   return p.view;
 }
@@ -770,6 +776,89 @@ function App() {
     setSprintTasks(data || []);
   };
 
+  const fetchSummaryOverview = useCallback(
+    async (projectId, fromDate, toDate) => {
+      const params = new URLSearchParams();
+      params.set("projectId", String(projectId));
+      if (fromDate) params.set("from", String(fromDate));
+      if (toDate) params.set("to", String(toDate));
+      return apiRequest(`/task-management/analytics/overview?${params.toString()}`);
+    },
+    [],
+  );
+
+  const fetchSummarySprint = useCallback(
+    async (projectId, fromDate, toDate) => {
+      const params = new URLSearchParams();
+      params.set("projectId", String(projectId));
+      if (fromDate) params.set("from", String(fromDate));
+      if (toDate) params.set("to", String(toDate));
+      return apiRequest(`/task-management/analytics/sprint?${params.toString()}`);
+    },
+    [],
+  );
+
+  const fetchSummaryFlow = useCallback(
+    async (projectId, fromDate, toDate, interval = "week") => {
+      const params = new URLSearchParams();
+      params.set("projectId", String(projectId));
+      params.set("interval", interval);
+      if (fromDate) params.set("from", String(fromDate));
+      if (toDate) params.set("to", String(toDate));
+      return apiRequest(`/task-management/analytics/flow?${params.toString()}`);
+    },
+    [],
+  );
+
+  const fetchSummaryWorkload = useCallback(
+    async (projectId, fromDate, toDate) => {
+      const params = new URLSearchParams();
+      params.set("projectId", String(projectId));
+      if (fromDate) params.set("from", String(fromDate));
+      if (toDate) params.set("to", String(toDate));
+      return apiRequest(`/task-management/analytics/workload?${params.toString()}`);
+    },
+    [],
+  );
+
+  const exportSummaryReport = useCallback(
+    async (type, format, projectId, fromDate, toDate) => {
+      const params = new URLSearchParams();
+      params.set("projectId", String(projectId));
+      params.set("type", String(type || "overview"));
+      params.set("format", String(format || "csv"));
+      if (fromDate) params.set("from", String(fromDate));
+      if (toDate) params.set("to", String(toDate));
+      const response = await fetch(
+        buildApiUrl(`/task-management/reports/export?${params.toString()}`),
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.error || "Failed to export report.");
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const contentDisposition = response.headers.get("content-disposition") || "";
+      const fallbackName = `summary-${type}.${format}`;
+      const matched =
+        contentDisposition.match(/filename\*=UTF-8''([^;]+)/i) ||
+        contentDisposition.match(/filename="?([^"]+)"?/i);
+      const filename = matched?.[1] ? decodeURIComponent(matched[1]) : fallbackName;
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+      notify(`Report exported (${String(format).toUpperCase()}).`);
+    },
+    [notify, token],
+  );
+
   const refreshViews = async (
     sprintId = selectedSprintId,
     projectId = currentProjectId,
@@ -1056,7 +1145,12 @@ function App() {
   ]);
 
   useEffect(() => {
-    if (activeView !== "board" && activeView !== "backlog") return;
+    if (
+      activeView !== "board" &&
+      activeView !== "backlog" &&
+      activeView !== "summary"
+    )
+      return;
     setShowAssigneeOverflow(false);
     setSelectedSprintId("");
     setFilters((prev) => {
@@ -1146,6 +1240,7 @@ function App() {
     if (
       parsed.view === "board" ||
       parsed.view === "backlog" ||
+      parsed.view === "summary" ||
       parsed.view === "settings"
     ) {
       nextActive = parsed.view;
@@ -2103,7 +2198,6 @@ function App() {
         activeView={activeView}
         currentProjectId={currentProjectId}
         projects={sidebarProjects}
-        expandedProjectIds={[]}
         onNavigateMain={handleNavigateMain}
         onOpenProfileSecurity={() => handleNavigateMain("profile")}
         onNavigateProject={handleNavigateProject}
@@ -2636,6 +2730,18 @@ function App() {
               assigneeFilterActive={Boolean(filters.assigneeId)}
               onMove={moveTask}
               onOpenTask={openTask}
+            />
+          ) : null}
+
+          {activeView === "summary" && currentProjectId ? (
+            <SummaryView
+              projectId={currentProjectId}
+              sprints={sprints}
+              onFetchOverview={fetchSummaryOverview}
+              onFetchSprint={fetchSummarySprint}
+              onFetchFlow={fetchSummaryFlow}
+              onFetchWorkload={fetchSummaryWorkload}
+              onExportReport={exportSummaryReport}
             />
           ) : null}
 

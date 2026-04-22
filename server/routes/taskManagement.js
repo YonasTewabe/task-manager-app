@@ -19,6 +19,7 @@ import {
   createSprint,
   createTask,
   createUser,
+  buildSummaryReportExport,
   disableUser,
   enableUser,
   deleteSprint,
@@ -34,6 +35,10 @@ import {
   getTaskById,
   getTaskComments,
   getTaskLinkedDev,
+  getSummaryFlowAnalytics,
+  getSummaryOverviewAnalytics,
+  getSummarySprintAnalytics,
+  getSummaryWorkloadAnalytics,
   getTasks,
   getUsers,
   getUserGroups,
@@ -177,6 +182,17 @@ function withUserProjectScope(req, filters = {}) {
     ...filters,
     limitProjectsToMemberUserId: req.user.id,
   };
+}
+
+function summaryFiltersFromQuery(req) {
+  return withUserProjectScope(req, {
+    projectId: req.query.projectId ? String(req.query.projectId) : "",
+    from: req.query.from ? String(req.query.from) : "",
+    to: req.query.to ? String(req.query.to) : "",
+    interval: req.query.interval ? String(req.query.interval) : "week",
+    type: req.query.type ? String(req.query.type) : "overview",
+    format: req.query.format ? String(req.query.format) : "csv",
+  });
 }
 
 router.get("/bootstrap", async (req, res) => {
@@ -446,6 +462,76 @@ router.get("/board", async (req, res) => {
     withUserProjectScope(req, filters),
   );
   return res.json({ columns });
+});
+
+router.get("/analytics/overview", async (req, res) => {
+  try {
+    const filters = summaryFiltersFromQuery(req);
+    if (!filters.projectId) {
+      return res.status(400).json({ error: "projectId is required" });
+    }
+    const payload = await getSummaryOverviewAnalytics(filters);
+    return res.json(payload);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Failed to load analytics" });
+  }
+});
+
+router.get("/analytics/sprint", async (req, res) => {
+  try {
+    const filters = summaryFiltersFromQuery(req);
+    if (!filters.projectId) {
+      return res.status(400).json({ error: "projectId is required" });
+    }
+    const payload = await getSummarySprintAnalytics(filters);
+    return res.json(payload);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Failed to load analytics" });
+  }
+});
+
+router.get("/analytics/flow", async (req, res) => {
+  try {
+    const filters = summaryFiltersFromQuery(req);
+    if (!filters.projectId) {
+      return res.status(400).json({ error: "projectId is required" });
+    }
+    const payload = await getSummaryFlowAnalytics(filters);
+    return res.json(payload);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Failed to load analytics" });
+  }
+});
+
+router.get("/analytics/workload", async (req, res) => {
+  try {
+    const filters = summaryFiltersFromQuery(req);
+    if (!filters.projectId) {
+      return res.status(400).json({ error: "projectId is required" });
+    }
+    const payload = await getSummaryWorkloadAnalytics(filters);
+    return res.json(payload);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Failed to load analytics" });
+  }
+});
+
+router.get("/reports/export", async (req, res) => {
+  try {
+    const filters = summaryFiltersFromQuery(req);
+    if (!filters.projectId) {
+      return res.status(400).json({ error: "projectId is required" });
+    }
+    const exported = await buildSummaryReportExport(filters);
+    const stamp = new Date().toISOString().slice(0, 10);
+    const type = String(filters.type || "overview").toLowerCase();
+    const filename = `summary-${type}-${stamp}.${exported.extension}`;
+    res.setHeader("Content-Type", exported.contentType);
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    return res.send(exported.buffer);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Failed to export report" });
+  }
 });
 
 router.get("/users", async (_req, res) => {
@@ -853,27 +939,23 @@ router.post("/tasks", async (req, res) => {
     return res.status(400).json({ error: "Invalid status" });
   }
 
-  try {
-    const created = await createTask(req.body, req.user.id);
-    await addTaskActivity(created.id, req.user.id, "task_created", {
-      title: created.title,
+  const created = await createTask(req.body, req.user.id);
+  await addTaskActivity(created.id, req.user.id, "task_created", {
+    title: created.title,
+  });
+  if (created.assigneeId) {
+    await createAndDispatchNotifications({
+      actorUserId: req.user.id,
+      recipientUserIds: [created.assigneeId],
+      type: "task_assigned",
+      title: `Assigned: ${created.title}`,
+      body: `${req.user.name} assigned you a task.`,
+      entityType: "task",
+      entityId: created.id,
+      metadata: taskNotificationMeta(created),
     });
-    if (created.assigneeId) {
-      await createAndDispatchNotifications({
-        actorUserId: req.user.id,
-        recipientUserIds: [created.assigneeId],
-        type: "task_assigned",
-        title: `Assigned: ${created.title}`,
-        body: `${req.user.name} assigned you a task.`,
-        entityType: "task",
-        entityId: created.id,
-        metadata: taskNotificationMeta(created),
-      });
-    }
-    return res.status(201).json(created);
-  } catch (err) {
-    throw err;
   }
+  return res.status(201).json(created);
 });
 
 router.get("/tasks/:taskId", async (req, res) => {
@@ -901,74 +983,70 @@ router.patch("/tasks/:taskId", async (req, res) => {
     }
   }
 
-  try {
-    const updated = await updateTask(req.params.taskId, req.body || {});
-    if (!updated) {
-      return res.status(400).json({ error: "No valid fields provided" });
-    }
-    const changes = buildTaskChanges(current, updated);
-    if (changes.length) {
-      await addTaskActivity(updated.id, req.user.id, "task_updated", {
-        changes,
-      });
-      const assigneeChange = changes.find(
-        (change) => change.field === "assigneeId",
-      );
-      // Emit task_updated for any task change.
-      if (updated.assigneeId) {
-        await createAndDispatchNotifications({
-          actorUserId: req.user.id,
-          recipientUserIds: [updated.assigneeId],
-          type: "task_updated",
-          title: `Task updated: ${updated.title}`,
-          body: `${req.user.name} updated a task assigned to you.`,
-          entityType: "task",
-          entityId: updated.id,
-          metadata: taskNotificationMeta(updated, { changes }),
-          dedupeKey: `task-update:${updated.id}:${updated.updatedAt}`,
-        });
-      }
-      // If assignment changed, also emit a dedicated task_assigned notification.
-      if (assigneeChange?.to) {
-        await createAndDispatchNotifications({
-          actorUserId: req.user.id,
-          recipientUserIds: [assigneeChange.to],
-          type: "task_assigned",
-          title: `Assigned: ${updated.title}`,
-          body: `${req.user.name} assigned you this task.`,
-          entityType: "task",
-          entityId: updated.id,
-          metadata: taskNotificationMeta(updated),
-          dedupeKey: `task-assigned:${updated.id}:${assigneeChange.to}:${updated.updatedAt}`,
-        });
-      }
-      if (req.body?.description !== undefined) {
-        const mentionedUserIds = await resolveMentionedUserIds(
-          req.body.description,
-          {
-            excludeUserId: req.user.id,
-            projectId: updated.projectId,
-          },
-        );
-        if (mentionedUserIds.length) {
-          await createAndDispatchNotifications({
-            actorUserId: req.user.id,
-            recipientUserIds: mentionedUserIds,
-            type: "mention_description",
-            title: `Mentioned in ${updated.title}`,
-            body: `${req.user.name} mentioned you in a task description.`,
-            entityType: "task",
-            entityId: updated.id,
-            metadata: taskNotificationMeta(updated, { source: "description" }),
-            dedupeKey: `mention-description:${updated.id}:${updated.updatedAt}`,
-          });
-        }
-      }
-    }
-    return res.json(updated);
-  } catch (err) {
-    throw err;
+  const updated = await updateTask(req.params.taskId, req.body || {});
+  if (!updated) {
+    return res.status(400).json({ error: "No valid fields provided" });
   }
+  const changes = buildTaskChanges(current, updated);
+  if (changes.length) {
+    await addTaskActivity(updated.id, req.user.id, "task_updated", {
+      changes,
+    });
+    const assigneeChange = changes.find(
+      (change) => change.field === "assigneeId",
+    );
+    // Emit task_updated for any task change.
+    if (updated.assigneeId) {
+      await createAndDispatchNotifications({
+        actorUserId: req.user.id,
+        recipientUserIds: [updated.assigneeId],
+        type: "task_updated",
+        title: `Task updated: ${updated.title}`,
+        body: `${req.user.name} updated a task assigned to you.`,
+        entityType: "task",
+        entityId: updated.id,
+        metadata: taskNotificationMeta(updated, { changes }),
+        dedupeKey: `task-update:${updated.id}:${updated.updatedAt}`,
+      });
+    }
+    // If assignment changed, also emit a dedicated task_assigned notification.
+    if (assigneeChange?.to) {
+      await createAndDispatchNotifications({
+        actorUserId: req.user.id,
+        recipientUserIds: [assigneeChange.to],
+        type: "task_assigned",
+        title: `Assigned: ${updated.title}`,
+        body: `${req.user.name} assigned you this task.`,
+        entityType: "task",
+        entityId: updated.id,
+        metadata: taskNotificationMeta(updated),
+        dedupeKey: `task-assigned:${updated.id}:${assigneeChange.to}:${updated.updatedAt}`,
+      });
+    }
+    if (req.body?.description !== undefined) {
+      const mentionedUserIds = await resolveMentionedUserIds(
+        req.body.description,
+        {
+          excludeUserId: req.user.id,
+          projectId: updated.projectId,
+        },
+      );
+      if (mentionedUserIds.length) {
+        await createAndDispatchNotifications({
+          actorUserId: req.user.id,
+          recipientUserIds: mentionedUserIds,
+          type: "mention_description",
+          title: `Mentioned in ${updated.title}`,
+          body: `${req.user.name} mentioned you in a task description.`,
+          entityType: "task",
+          entityId: updated.id,
+          metadata: taskNotificationMeta(updated, { source: "description" }),
+          dedupeKey: `mention-description:${updated.id}:${updated.updatedAt}`,
+        });
+      }
+    }
+  }
+  return res.json(updated);
 });
 
 router.patch("/tasks/:taskId/move", async (req, res) => {

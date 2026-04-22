@@ -1,4 +1,6 @@
 import { DEFAULT_WORK_TYPE_VALUES } from "../../src/constants/workTypes.js";
+import { PRIORITY_OPTIONS } from "../../src/constants/priorities.js";
+import XLSX from "xlsx";
 import { dbQuery } from "../db/pool.js";
 import { asInt } from "../utils/validation.js";
 import { createAndDispatchNotifications } from "./notificationService.js";
@@ -1650,6 +1652,494 @@ export async function moveTaskStatusForAutomation(taskId, nextStatus, sourceMeta
     });
   }
   return updated;
+}
+
+function parseIsoDate(value, fallback = null) {
+  const text = String(value || "").trim();
+  if (!text) return fallback;
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? fallback : date;
+}
+
+function startOfDay(value) {
+  const date = parseIsoDate(value);
+  if (!date) return null;
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function endOfDay(value) {
+  const date = parseIsoDate(value);
+  if (!date) return null;
+  date.setHours(23, 59, 59, 999);
+  return date;
+}
+
+function daysBetween(older, newer) {
+  const start = parseIsoDate(older);
+  const end = parseIsoDate(newer);
+  if (!start || !end) return null;
+  return Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function bucketDate(dateValue, interval = "week") {
+  const date = parseIsoDate(dateValue);
+  if (!date) return "";
+  const year = date.getUTCFullYear();
+  if (interval === "month") {
+    return `${year}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+  }
+  const firstJan = Date.UTC(year, 0, 1);
+  const dayOfYear = Math.floor((date.getTime() - firstJan) / 86400000) + 1;
+  const week = Math.ceil(dayOfYear / 7);
+  return `${year}-W${String(week).padStart(2, "0")}`;
+}
+
+function filterByDateRange(tasks, fromDate, toDate, field = "createdAt") {
+  return tasks.filter((task) => {
+    const at = parseIsoDate(task?.[field]);
+    if (!at) return false;
+    if (fromDate && at < fromDate) return false;
+    if (toDate && at > toDate) return false;
+    return true;
+  });
+}
+
+function formatMetricRows(metrics = []) {
+  return metrics.map((metric) => ({
+    metric: metric.label,
+    value: metric.value,
+    notes: metric.sublabel || "",
+  }));
+}
+
+export async function getSummaryOverviewAnalytics(filters = {}) {
+  const projectId = asUuid(filters.projectId, null);
+  if (!projectId) throw new Error("projectId is required");
+  const settings = await getProjectSettings(projectId);
+  const doneStatuses = new Set(
+    normalizeWorkflowStages(settings?.boardCardFields?.workflowStages)
+      .filter((stage) => stage.counterGroup === "done")
+      .map((stage) => stage.key),
+  );
+  const statusLabels = new Map(
+    normalizeWorkflowStages(settings?.boardCardFields?.workflowStages).map((stage) => [
+      stage.key,
+      stage.name,
+    ]),
+  );
+  const fromDate = startOfDay(filters.from);
+  const toDate = endOfDay(filters.to);
+  const tasks = await getTasks({
+    projectId,
+    limitProjectsToMemberUserId: filters.limitProjectsToMemberUserId,
+  });
+  const rangeTasks = fromDate || toDate ? filterByDateRange(tasks, fromDate, toDate) : tasks;
+  const doneTasks = rangeTasks.filter((task) => doneStatuses.has(task.status));
+  const openTasks = rangeTasks.filter((task) => !doneStatuses.has(task.status));
+  const overdueTasks = openTasks.filter((task) => {
+    const due = parseIsoDate(task.dueDate);
+    return due && due < new Date();
+  });
+  const totalStoryPoints = rangeTasks.reduce(
+    (sum, task) => sum + Number(task.storyPoints || 0),
+    0,
+  );
+  const completedStoryPoints = doneTasks.reduce(
+    (sum, task) => sum + Number(task.storyPoints || 0),
+    0,
+  );
+  const avgOpenAgeDays =
+    openTasks.length > 0
+      ? openTasks.reduce(
+          (sum, task) => sum + (daysBetween(task.createdAt, new Date()) || 0),
+          0,
+        ) / openTasks.length
+      : 0;
+  const statusCounts = new Map();
+  const priorityCounts = new Map(
+    PRIORITY_OPTIONS.map((option) => [String(option.value).toLowerCase(), 0]),
+  );
+  const configuredTypes =
+    Array.isArray(settings?.generalRules?.types) &&
+    settings.generalRules.types.length > 0
+      ? settings.generalRules.types
+      : DEFAULT_WORK_TYPE_VALUES;
+  const typeCounts = new Map(
+    configuredTypes.map((type) => [String(type || "").toLowerCase(), 0]),
+  );
+  rangeTasks.forEach((task) => {
+    const key = String(task.status || "");
+    statusCounts.set(key, (statusCounts.get(key) || 0) + 1);
+    const priorityKey = String(task.priority || "unknown").toLowerCase();
+    priorityCounts.set(priorityKey, (priorityCounts.get(priorityKey) || 0) + 1);
+    const typeKey = String(task.type || "unknown").toLowerCase();
+    typeCounts.set(typeKey, (typeCounts.get(typeKey) || 0) + 1);
+  });
+  const statusDistribution = [...statusCounts.entries()]
+    .map(([status, count]) => ({
+      label: statusLabels.get(status) || status,
+      value: count,
+      status,
+    }))
+    .sort((a, b) => b.value - a.value);
+  const priorityDistribution = [...priorityCounts.entries()]
+    .map(([priority, count]) => ({
+      label: priority.replace(/_/g, " "),
+      value: count,
+      priority,
+    }))
+    .sort((a, b) => b.value - a.value);
+  const typeDistribution = [...typeCounts.entries()]
+    .map(([type, count]) => ({
+      label: type.replace(/_/g, " "),
+      value: count,
+      type,
+    }))
+    .sort((a, b) => b.value - a.value);
+
+  const linkedCoverage = await dbQuery(
+    `SELECT COUNT(DISTINCT t.id)::int AS "totalTasks",
+            COUNT(DISTINCT l.task_id)::int AS "linkedTasks"
+     FROM tasks t
+     LEFT JOIN task_dev_links l ON l.task_id = t.id
+     WHERE t.project_id = $1`,
+    [projectId],
+  );
+  const linkedTasks = Number(linkedCoverage.rows[0]?.linkedTasks || 0);
+  const totalTasks = Number(linkedCoverage.rows[0]?.totalTasks || 0);
+
+  return {
+    kpis: {
+      totalTasks: rangeTasks.length,
+      completedTasks: doneTasks.length,
+      overdueTasks: overdueTasks.length,
+      completionRate: rangeTasks.length ? (doneTasks.length / rangeTasks.length) * 100 : 0,
+      avgOpenAgeDays,
+      totalStoryPoints,
+      completedStoryPoints,
+      linkedCoverageRate: totalTasks ? (linkedTasks / totalTasks) * 100 : 0,
+    },
+    statusDistribution,
+    priorityDistribution,
+    typeDistribution,
+  };
+}
+
+export async function getSummarySprintAnalytics(filters = {}) {
+  const projectId = asUuid(filters.projectId, null);
+  if (!projectId) throw new Error("projectId is required");
+  const fromDate = startOfDay(filters.from);
+  const toDate = endOfDay(filters.to);
+  const settings = await getProjectSettings(projectId);
+  const doneStatuses = new Set(
+    normalizeWorkflowStages(settings?.boardCardFields?.workflowStages)
+      .filter((stage) => stage.counterGroup === "done")
+      .map((stage) => stage.key),
+  );
+  const [sprints, tasks] = await Promise.all([
+    getSprints({ projectId }),
+    getTasks({
+      projectId,
+      limitProjectsToMemberUserId: filters.limitProjectsToMemberUserId,
+    }),
+  ]);
+  const rangeTasks = fromDate || toDate ? filterByDateRange(tasks, fromDate, toDate) : tasks;
+  const bySprint = new Map();
+  rangeTasks.forEach((task) => {
+    const sprintId = task.sprintId ? String(task.sprintId) : "";
+    if (!sprintId) return;
+    const current = bySprint.get(sprintId) || {
+      plannedPoints: 0,
+      completedPoints: 0,
+      totalTasks: 0,
+      completedTasks: 0,
+    };
+    const points = Number(task.storyPoints || 0);
+    current.plannedPoints += points;
+    current.totalTasks += 1;
+    if (doneStatuses.has(task.status)) {
+      current.completedPoints += points;
+      current.completedTasks += 1;
+    }
+    bySprint.set(sprintId, current);
+  });
+  const velocityTrend = sprints.map((sprint) => {
+    const stats = bySprint.get(String(sprint.id)) || {
+      plannedPoints: 0,
+      completedPoints: 0,
+      totalTasks: 0,
+      completedTasks: 0,
+    };
+    return {
+      sprintId: sprint.id,
+      label: sprint.name,
+      value: stats.completedPoints,
+      plannedPoints: stats.plannedPoints,
+      completedPoints: stats.completedPoints,
+      completionRate: stats.totalTasks
+        ? (stats.completedTasks / stats.totalTasks) * 100
+        : 0,
+      carryOverPoints: Math.max(stats.plannedPoints - stats.completedPoints, 0),
+    };
+  });
+
+  return { velocityTrend };
+}
+
+export async function getSummaryFlowAnalytics(filters = {}) {
+  const projectId = asUuid(filters.projectId, null);
+  if (!projectId) throw new Error("projectId is required");
+  const interval = filters.interval === "month" ? "month" : "week";
+  const fromDate = startOfDay(filters.from);
+  const toDate = endOfDay(filters.to);
+  const settings = await getProjectSettings(projectId);
+  const doneStatuses = new Set(
+    normalizeWorkflowStages(settings?.boardCardFields?.workflowStages)
+      .filter((stage) => stage.counterGroup === "done")
+      .map((stage) => stage.key),
+  );
+  const tasks = await getTasks({
+    projectId,
+    limitProjectsToMemberUserId: filters.limitProjectsToMemberUserId,
+  });
+  const doneTasks = tasks.filter((task) => doneStatuses.has(task.status));
+  const doneInRange = fromDate || toDate ? filterByDateRange(doneTasks, fromDate, toDate, "updatedAt") : doneTasks;
+  const throughputMap = new Map();
+  doneInRange.forEach((task) => {
+    const key = bucketDate(task.updatedAt, interval);
+    throughputMap.set(key, (throughputMap.get(key) || 0) + 1);
+  });
+  const throughput = [...throughputMap.entries()]
+    .map(([label, value]) => ({ label, value }))
+    .sort((a, b) => String(a.label).localeCompare(String(b.label)));
+  const wipByStatusMap = new Map();
+  tasks
+    .filter((task) => !doneStatuses.has(task.status))
+    .forEach((task) => {
+      wipByStatusMap.set(task.status, (wipByStatusMap.get(task.status) || 0) + 1);
+    });
+
+  const doneTaskIds = doneInRange.map((task) => task.id);
+  let cycleStartByTask = new Map();
+  if (doneTaskIds.length) {
+    const result = await dbQuery(
+      `SELECT task_id AS "taskId", MIN(created_at) AS "enteredAt"
+       FROM task_activity
+       WHERE task_id = ANY($1::uuid[])
+         AND action = 'task_moved'
+         AND meta->>'to' = 'in_progress'
+       GROUP BY task_id`,
+      [doneTaskIds],
+    );
+    cycleStartByTask = new Map(
+      result.rows.map((row) => [String(row.taskId), row.enteredAt]),
+    );
+  }
+
+  const leadTimes = doneInRange
+    .map((task) => daysBetween(task.createdAt, task.updatedAt))
+    .filter((value) => value != null);
+  const cycleTimes = doneInRange
+    .map((task) =>
+      daysBetween(cycleStartByTask.get(String(task.id)) || task.createdAt, task.updatedAt),
+    )
+    .filter((value) => value != null);
+
+  return {
+    throughput,
+    wipByStatus: [...wipByStatusMap.entries()].map(([label, value]) => ({
+      label,
+      value,
+    })),
+    cycleLead: {
+      avgLeadTimeDays: leadTimes.length
+        ? leadTimes.reduce((sum, value) => sum + value, 0) / leadTimes.length
+        : 0,
+      avgCycleTimeDays: cycleTimes.length
+        ? cycleTimes.reduce((sum, value) => sum + value, 0) / cycleTimes.length
+        : 0,
+    },
+  };
+}
+
+export async function getSummaryWorkloadAnalytics(filters = {}) {
+  const projectId = asUuid(filters.projectId, null);
+  if (!projectId) throw new Error("projectId is required");
+  const fromDate = startOfDay(filters.from);
+  const toDate = endOfDay(filters.to);
+  const settings = await getProjectSettings(projectId);
+  const doneStatuses = new Set(
+    normalizeWorkflowStages(settings?.boardCardFields?.workflowStages)
+      .filter((stage) => stage.counterGroup === "done")
+      .map((stage) => stage.key),
+  );
+  const [tasks, users] = await Promise.all([
+    getTasks({
+      projectId,
+      limitProjectsToMemberUserId: filters.limitProjectsToMemberUserId,
+    }),
+    getUsers(),
+  ]);
+  const usersById = new Map(users.map((user) => [String(user.id), user]));
+  const projects = await getProjects();
+  const project = projects.find((item) => String(item.id) === String(projectId));
+  const projectMemberIds = new Set(
+    (project?.members || []).map((member) => String(member.id)),
+  );
+  const rangeTasks = fromDate || toDate ? filterByDateRange(tasks, fromDate, toDate) : tasks;
+  const byAssignee = new Map();
+  projectMemberIds.forEach((memberId) => {
+    const assigneeUser = usersById.get(memberId);
+    byAssignee.set(memberId, {
+      label: assigneeUser
+        ? `${assigneeUser.name}${assigneeUser.isActive === false ? " (Disabled)" : ""}`
+        : "Unknown",
+      value: 0,
+      storyPoints: 0,
+      overdue: 0,
+    });
+  });
+  if (!byAssignee.has("unassigned")) {
+    byAssignee.set("unassigned", {
+      label: "Unassigned",
+      value: 0,
+      storyPoints: 0,
+      overdue: 0,
+    });
+  }
+  const now = new Date();
+  rangeTasks.forEach((task) => {
+    const assigneeKey = task.assigneeId ? String(task.assigneeId) : "unassigned";
+    const assigneeUser = usersById.get(assigneeKey);
+    const assigneeLabel =
+      assigneeKey === "unassigned"
+        ? "Unassigned"
+        : assigneeUser
+          ? `${assigneeUser.name}${assigneeUser.isActive === false ? " (Disabled)" : ""}`
+          : "Unknown";
+    const row = byAssignee.get(assigneeKey) || {
+      label: assigneeLabel,
+      value: 0,
+      storyPoints: 0,
+      overdue: 0,
+    };
+    row.value += 1;
+    row.storyPoints += Number(task.storyPoints || 0);
+    const due = parseIsoDate(task.dueDate);
+    if (due && due < now && !doneStatuses.has(task.status)) {
+      row.overdue += 1;
+    }
+    byAssignee.set(assigneeKey, row);
+  });
+  const agingBuckets = {
+    "0-7 days": 0,
+    "8-14 days": 0,
+    "15-30 days": 0,
+    "30+ days": 0,
+  };
+  rangeTasks
+    .filter((task) => !doneStatuses.has(task.status))
+    .forEach((task) => {
+      const age = daysBetween(task.createdAt, now) || 0;
+      if (age <= 7) agingBuckets["0-7 days"] += 1;
+      else if (age <= 14) agingBuckets["8-14 days"] += 1;
+      else if (age <= 30) agingBuckets["15-30 days"] += 1;
+      else agingBuckets["30+ days"] += 1;
+    });
+
+  return {
+    assigneeLoad: [...byAssignee.values()].sort((a, b) => b.value - a.value),
+    agingBuckets: Object.entries(agingBuckets).map(([label, value]) => ({ label, value })),
+  };
+}
+
+function csvEscape(value) {
+  const text = String(value ?? "");
+  if (/[",\n]/.test(text)) {
+    return `"${text.replace(/"/g, "\"\"")}"`;
+  }
+  return text;
+}
+
+function rowsToCsv(rows = []) {
+  if (!rows.length) return "No data\n";
+  const headers = Object.keys(rows[0]);
+  const lines = [headers.join(",")];
+  rows.forEach((row) => {
+    lines.push(headers.map((header) => csvEscape(row[header])).join(","));
+  });
+  return `${lines.join("\n")}\n`;
+}
+
+function buildXlsxBuffer(rows = [], sheetName = "Summary") {
+  const workbook = XLSX.utils.book_new();
+  const worksheet = XLSX.utils.json_to_sheet(rows.length ? rows : [{ note: "No data" }]);
+  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+  return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+}
+
+export async function buildSummaryReportExport(filters = {}) {
+  const type = String(filters.type || "overview").trim().toLowerCase();
+  const format = String(filters.format || "csv").trim().toLowerCase();
+  if (format !== "csv" && format !== "xlsx") {
+    throw new Error("Unsupported report format. Use csv or xlsx.");
+  }
+  let rows = [];
+  if (type === "sprint") {
+    const sprint = await getSummarySprintAnalytics(filters);
+    rows = (sprint.velocityTrend || []).map((row) => ({
+      sprint: row.label,
+      completedPoints: row.completedPoints,
+      plannedPoints: row.plannedPoints,
+      carryOverPoints: row.carryOverPoints,
+      completionRate: Number(row.completionRate || 0).toFixed(2),
+    }));
+  } else if (type === "workload") {
+    const workload = await getSummaryWorkloadAnalytics(filters);
+    rows = (workload.assigneeLoad || []).map((row) => ({
+      assignee: row.label,
+      taskCount: row.value,
+      storyPoints: row.storyPoints,
+      overdueTasks: row.overdue,
+    }));
+  } else {
+    const [overview, flow] = await Promise.all([
+      getSummaryOverviewAnalytics(filters),
+      getSummaryFlowAnalytics(filters),
+    ]);
+    rows = formatMetricRows([
+      { label: "Total tasks", value: overview.kpis.totalTasks },
+      { label: "Completed tasks", value: overview.kpis.completedTasks },
+      { label: "Overdue tasks", value: overview.kpis.overdueTasks },
+      {
+        label: "Completion rate (%)",
+        value: Number(overview.kpis.completionRate || 0).toFixed(2),
+      },
+      {
+        label: "Avg lead time (days)",
+        value: Number(flow.cycleLead.avgLeadTimeDays || 0).toFixed(2),
+      },
+      {
+        label: "Avg cycle time (days)",
+        value: Number(flow.cycleLead.avgCycleTimeDays || 0).toFixed(2),
+      },
+    ]);
+  }
+
+  if (format === "xlsx") {
+    return {
+      contentType:
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      extension: "xlsx",
+      buffer: buildXlsxBuffer(rows, "Summary"),
+    };
+  }
+  return {
+    contentType: "text/csv; charset=utf-8",
+    extension: "csv",
+    buffer: Buffer.from(rowsToCsv(rows), "utf8"),
+  };
 }
 
 export async function buildBoard(sprintId, projectId, filters = {}) {

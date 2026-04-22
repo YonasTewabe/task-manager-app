@@ -573,29 +573,49 @@ export default function BacklogView({
             ) : null}
             <div className="flex flex-wrap gap-2">
               <label>
-                Start date
+                <span className="inline-flex items-center">
+                  Start date <span className="ml-1 text-red-600">*</span>
+                </span>
                 <input
                   type="date"
                   value={createDraft.startDate}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const nextStartDate = event.target.value;
                     setCreateDraft((prev) => ({
                       ...prev,
-                      startDate: event.target.value,
-                    }))
-                  }
+                      startDate: nextStartDate,
+                    }));
+                    if (
+                      nextStartDate &&
+                      String(createDraft.endDate || "").trim() &&
+                      String(createDraft.name || "").trim()
+                    ) {
+                      setCreateNameError("");
+                    }
+                  }}
                 />
               </label>
               <label>
-                End date
+                <span className="inline-flex items-center">
+                  End date <span className="ml-1 text-red-600">*</span>
+                </span>
                 <input
                   type="date"
                   value={createDraft.endDate}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const nextEndDate = event.target.value;
                     setCreateDraft((prev) => ({
                       ...prev,
-                      endDate: event.target.value,
-                    }))
-                  }
+                      endDate: nextEndDate,
+                    }));
+                    if (
+                      String(createDraft.startDate || "").trim() &&
+                      nextEndDate &&
+                      String(createDraft.name || "").trim()
+                    ) {
+                      setCreateNameError("");
+                    }
+                  }}
                 />
               </label>
             </div>
@@ -613,6 +633,13 @@ export default function BacklogView({
                   const normalizedName = String(createDraft.name || "").trim();
                   if (!normalizedName) {
                     setCreateNameError("Sprint name is required.");
+                    return;
+                  }
+                  if (
+                    !String(createDraft.startDate || "").trim() ||
+                    !String(createDraft.endDate || "").trim()
+                  ) {
+                    setCreateNameError("Start date and end date are required.");
                     return;
                   }
                   const exists = sprints.some(

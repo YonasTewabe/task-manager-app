@@ -9,7 +9,6 @@ function MainLayout({
   activeView,
   currentProjectId,
   projects,
-  expandedProjectIds,
   onNavigateMain,
   onOpenProfileSecurity,
   onNavigateProject,
@@ -38,6 +37,17 @@ function MainLayout({
     .split(/\s+/)
     .filter(Boolean);
   const initials = (nameParts[0]?.[0] || "") + (nameParts[1]?.[0] || "");
+  const currentProject = projects.find(
+    (project) => String(project.id) === String(currentProjectId),
+  );
+  const showProjectSubNav =
+    Boolean(currentProjectId) &&
+    (activeView === "summary" || activeView === "board" || activeView === "backlog");
+  const projectSubOptions = [
+    { key: "summary", label: "Summary" },
+    { key: "board", label: "Board" },
+    { key: "backlog", label: "Backlog" },
+  ];
 
   useEffect(() => {
     if (!notificationCenterOpen) return undefined;
@@ -128,7 +138,6 @@ function MainLayout({
         activeView={activeView}
         currentProjectId={currentProjectId}
         projects={projects}
-        expandedProjectIds={expandedProjectIds}
         canManage={canManage}
         onNavigateMain={onNavigateMain}
         onNavigateProject={onNavigateProject}
@@ -257,6 +266,32 @@ function MainLayout({
             </div>
           </div>
         </header>
+        {showProjectSubNav ? (
+          <div className="border-b border-[#dfe1e6] bg-white px-4 pt-[0.6rem]">
+            <div className="pb-[0.35rem] text-[1.15rem] font-bold text-[#172b4d]">
+              {currentProject?.name || "Project"}
+            </div>
+            <div className="flex flex-wrap items-center gap-[0.4rem]">
+              {projectSubOptions.map((item) => {
+                const isActive = activeView === item.key;
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    className={`relative rounded-t-[8px] border-b-2 px-[0.75rem] py-[0.45rem] text-[0.9rem] font-semibold transition-colors ${
+                      isActive
+                        ? "border-[#0b6bcb] text-[#0b6bcb]"
+                        : "border-transparent text-[#52627b] hover:text-[#1d4ed8]"
+                    }`}
+                    onClick={() => onNavigateProject(currentProjectId, item.key)}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
 
         <main className={activeView === "dashboard" ? undefined : "p-4"}>
           {children}
