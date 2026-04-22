@@ -9,7 +9,14 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'member')),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  disabled_at TIMESTAMPTZ,
+  disabled_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  disable_reason TEXT NOT NULL DEFAULT '',
+  must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
+  password_changed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS user_groups (
@@ -206,6 +213,25 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   last_used_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ,
+  created_by_ip TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS user_audit_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  target_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS system_settings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   board_card_fields JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -329,6 +355,18 @@ CREATE INDEX IF NOT EXISTS idx_notifications_entity
 CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_dedupe_key
   ON notifications (user_id, dedupe_key)
   WHERE dedupe_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id
+  ON password_reset_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expires_at
+  ON password_reset_tokens(expires_at);
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled_by UUID REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS disable_reason TEXT NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 DO $$
 BEGIN

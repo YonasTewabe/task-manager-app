@@ -31,12 +31,19 @@ export async function requireAuth(req, res, next) {
       algorithms: ["HS256"],
     });
     const userResult = await dbQuery(
-      "SELECT id, name, email, role FROM users WHERE id = $1",
+      `SELECT id, name, email, role,
+              is_active AS "isActive",
+              must_change_password AS "mustChangePassword"
+       FROM users
+       WHERE id = $1`,
       [payload.userId],
     );
     const user = userResult.rows[0];
     if (!user) {
       return res.status(401).json({ error: "Invalid token user" });
+    }
+    if (!user.isActive) {
+      return res.status(403).json({ error: "This account is disabled." });
     }
 
     req.user = user;

@@ -725,7 +725,9 @@ export default function SystemSettingsView({
         (stage) => stage.counterGroup === newStageDraft.counterGroup,
       )
     : [];
-  const sortedUsers = [...users].sort((a, b) => a.name.localeCompare(b.name));
+  const sortedUsers = users
+    .filter((user) => user.isActive !== false)
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const stageNameByKey = new Map(
     stages.map((stage) => [stage.key, stage.name]),

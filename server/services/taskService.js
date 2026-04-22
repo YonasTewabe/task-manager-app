@@ -206,6 +206,10 @@ function asUuid(value, fallback = null) {
   return trimmed;
 }
 
+function normalizeEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 /** Formerly stored under workflow_rules; now general_rules (workflow_rules reserved for future workflow config). */
 const LEGACY_WORKFLOW_RULE_KEYS = [
   "allowBackMoveFromDone",
@@ -462,7 +466,12 @@ export async function getUsers() {
        u.name,
        u.email,
        u.role,
+       u.is_active AS "isActive",
+       u.disabled_at AS "disabledAt",
+       u.disable_reason AS "disableReason",
+       u.must_change_password AS "mustChangePassword",
        u.created_at AS "createdAt",
+       u.updated_at AS "updatedAt",
        COALESCE(
          JSON_AGG(JSON_BUILD_OBJECT('id', g.id, 'name', g.name))
          FILTER (WHERE g.id IS NOT NULL),
@@ -490,7 +499,7 @@ export async function getUserGroups() {
        ) AS members
      FROM user_groups g
      LEFT JOIN user_group_members ugm ON ugm.group_id = g.id
-     LEFT JOIN users u ON u.id = ugm.user_id
+     LEFT JOIN users u ON u.id = ugm.user_id AND u.is_active = TRUE
      GROUP BY g.id
      ORDER BY g.name ASC`,
   );
@@ -507,12 +516,21 @@ async function setGroupMembers(groupId, userIds) {
     ),
   ];
   if (!normalized.length) return;
-  const valuesSql = normalized
+  const activeUsersResult = await dbQuery(
+    `SELECT id
+     FROM users
+     WHERE is_active = TRUE
+       AND id = ANY($1::uuid[])`,
+    [normalized],
+  );
+  const activeUserIds = activeUsersResult.rows.map((row) => String(row.id));
+  if (!activeUserIds.length) return;
+  const valuesSql = activeUserIds
     .map((_, index) => `($1, $${index + 2})`)
     .join(", ");
   await dbQuery(
     `INSERT INTO user_group_members (group_id, user_id) VALUES ${valuesSql} ON CONFLICT DO NOTHING`,
-    [asUuid(groupId), ...normalized],
+    [asUuid(groupId), ...activeUserIds],
   );
 }
 
@@ -543,18 +561,61 @@ export async function updateUserGroup(groupId, patch = {}) {
 }
 
 export async function deleteUserGroup(groupId) {
+  const normalizedGroupId = asUuid(groupId);
+  const settingsRows = await dbQuery(
+    `SELECT project_id AS "projectId", workflow_rules AS "workflowRules"
+     FROM project_settings`,
+  );
+  for (const row of settingsRows.rows) {
+    const transitions = Array.isArray(row.workflowRules?.transitions)
+      ? row.workflowRules.transitions
+      : [];
+    let changed = false;
+    const nextTransitions = transitions.map((transition) => {
+      const existing = Array.isArray(transition?.allowedGroupIds)
+        ? transition.allowedGroupIds.map((id) => String(id))
+        : [];
+      const filtered = existing.filter(
+        (id) => String(id) !== String(normalizedGroupId),
+      );
+      if (filtered.length !== existing.length) {
+        changed = true;
+      }
+      return {
+        ...transition,
+        allowedGroupIds: filtered,
+      };
+    });
+    if (changed) {
+      await dbQuery(
+        `UPDATE project_settings
+         SET workflow_rules = $1::jsonb, updated_at = NOW()
+         WHERE project_id = $2`,
+        [JSON.stringify({ transitions: nextTransitions }), asUuid(row.projectId)],
+      );
+    }
+  }
   const result = await dbQuery("DELETE FROM user_groups WHERE id = $1", [
-    asUuid(groupId),
+    normalizedGroupId,
   ]);
   return result.rowCount > 0;
 }
 
-export async function createUser({ name, email, passwordHash, role }) {
+export async function createUser({
+  name,
+  email,
+  passwordHash,
+  role,
+  mustChangePassword = false,
+}) {
   const result = await dbQuery(
-    `INSERT INTO users (name, email, password_hash, role)
-     VALUES ($1, $2, $3, $4)
-     RETURNING id, name, email, role, created_at AS "createdAt"`,
-    [name, email, passwordHash, role || "member"],
+    `INSERT INTO users (name, email, password_hash, role, must_change_password, password_changed_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, CASE WHEN $5 THEN NULL ELSE NOW() END, NOW())
+     RETURNING id, name, email, role, is_active AS "isActive",
+               disabled_at AS "disabledAt", disable_reason AS "disableReason",
+               must_change_password AS "mustChangePassword",
+               created_at AS "createdAt", updated_at AS "updatedAt"`,
+    [name, normalizeEmail(email), passwordHash, role || "member", mustChangePassword === true],
   );
   return result.rows[0];
 }
@@ -565,6 +626,8 @@ export async function updateUser(userId, patch) {
     email: "email",
     role: "role",
     passwordHash: "password_hash",
+    mustChangePassword: "must_change_password",
+    passwordChangedAt: "password_changed_at",
   };
 
   const fields = [];
@@ -573,24 +636,151 @@ export async function updateUser(userId, patch) {
   for (const [key, dbKey] of Object.entries(allowedMap)) {
     if (patch[key] === undefined) continue;
     fields.push(`${dbKey} = $${idx}`);
-    params.push(patch[key]);
+    if (key === "email") {
+      params.push(normalizeEmail(patch[key]));
+    } else {
+      params.push(patch[key]);
+    }
     idx += 1;
   }
   if (fields.length === 0) return null;
+  fields.push(`updated_at = NOW()`);
   params.push(userId);
 
   const result = await dbQuery(
     `UPDATE users SET ${fields.join(", ")}
      WHERE id = $${idx}
-     RETURNING id, name, email, role, created_at AS "createdAt"`,
+     RETURNING id, name, email, role, is_active AS "isActive",
+               disabled_at AS "disabledAt", disable_reason AS "disableReason",
+               must_change_password AS "mustChangePassword",
+               created_at AS "createdAt", updated_at AS "updatedAt"`,
     params,
   );
   return result.rows[0] || null;
 }
 
+export async function disableUser(userId, actorUserId, reason = "") {
+  await dbQuery(`DELETE FROM user_group_members WHERE user_id = $1`, [asUuid(userId)]);
+  const result = await dbQuery(
+    `UPDATE users
+     SET is_active = FALSE,
+         disabled_at = NOW(),
+         disabled_by = $2,
+         disable_reason = $3,
+         updated_at = NOW()
+     WHERE id = $1
+     RETURNING id, name, email, role, is_active AS "isActive",
+               disabled_at AS "disabledAt", disable_reason AS "disableReason",
+               must_change_password AS "mustChangePassword",
+               created_at AS "createdAt", updated_at AS "updatedAt"`,
+    [asUuid(userId), asUuid(actorUserId, null), String(reason || "").trim()],
+  );
+  return result.rows[0] || null;
+}
+
+export async function enableUser(userId) {
+  const result = await dbQuery(
+    `UPDATE users
+     SET is_active = TRUE,
+         disabled_at = NULL,
+         disabled_by = NULL,
+         disable_reason = '',
+         updated_at = NOW()
+     WHERE id = $1
+     RETURNING id, name, email, role, is_active AS "isActive",
+               disabled_at AS "disabledAt", disable_reason AS "disableReason",
+               must_change_password AS "mustChangePassword",
+               created_at AS "createdAt", updated_at AS "updatedAt"`,
+    [asUuid(userId)],
+  );
+  return result.rows[0] || null;
+}
+
 export async function deleteUser(userId) {
-  const result = await dbQuery("DELETE FROM users WHERE id = $1", [userId]);
+  const result = await dbQuery("DELETE FROM users WHERE id = $1", [asUuid(userId)]);
   return result.rowCount > 0;
+}
+
+export async function findUserAuthByEmail(email) {
+  const result = await dbQuery(
+    `SELECT id, name, email, role, password_hash, is_active AS "isActive",
+            must_change_password AS "mustChangePassword"
+     FROM users
+     WHERE email = $1`,
+    [normalizeEmail(email)],
+  );
+  return result.rows[0] || null;
+}
+
+export async function getUserAuthById(userId) {
+  const result = await dbQuery(
+    `SELECT id, name, email, role, password_hash, is_active AS "isActive",
+            must_change_password AS "mustChangePassword"
+     FROM users
+     WHERE id = $1`,
+    [asUuid(userId)],
+  );
+  return result.rows[0] || null;
+}
+
+export async function createPasswordResetToken({ userId, tokenHash, expiresAt, ipAddress = "" }) {
+  const result = await dbQuery(
+    `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at, created_by_ip)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id, user_id AS "userId", token_hash AS "tokenHash",
+               expires_at AS "expiresAt", used_at AS "usedAt", created_at AS "createdAt"`,
+    [asUuid(userId), tokenHash, expiresAt, String(ipAddress || "").slice(0, 120)],
+  );
+  return result.rows[0] || null;
+}
+
+export async function getPasswordResetToken(tokenHash) {
+  const result = await dbQuery(
+    `SELECT id, user_id AS "userId", token_hash AS "tokenHash",
+            expires_at AS "expiresAt", used_at AS "usedAt", created_at AS "createdAt"
+     FROM password_reset_tokens
+     WHERE token_hash = $1`,
+    [tokenHash],
+  );
+  return result.rows[0] || null;
+}
+
+export async function consumePasswordResetToken(tokenId) {
+  const result = await dbQuery(
+    `UPDATE password_reset_tokens
+     SET used_at = NOW()
+     WHERE id = $1 AND used_at IS NULL
+     RETURNING id`,
+    [asUuid(tokenId)],
+  );
+  return Boolean(result.rows[0]);
+}
+
+export async function invalidatePasswordResetTokensForUser(userId) {
+  await dbQuery(
+    `UPDATE password_reset_tokens
+     SET used_at = NOW()
+     WHERE user_id = $1 AND used_at IS NULL`,
+    [asUuid(userId)],
+  );
+}
+
+export async function logUserAudit({
+  actorUserId = null,
+  targetUserId = null,
+  action,
+  metadata = {},
+}) {
+  await dbQuery(
+    `INSERT INTO user_audit_log (actor_user_id, target_user_id, action, metadata_json)
+     VALUES ($1, $2, $3, $4::jsonb)`,
+    [
+      asUuid(actorUserId, null),
+      asUuid(targetUserId, null),
+      String(action || "").trim(),
+      JSON.stringify(metadata || {}),
+    ],
+  );
 }
 
 export async function getSprints(filters = {}) {
@@ -627,13 +817,22 @@ async function setProjectMembers(projectId, memberIds) {
   ]);
   const normalized = normalizeMemberIds(memberIds);
   if (!normalized.length) return;
+  const activeUsersResult = await dbQuery(
+    `SELECT id
+     FROM users
+     WHERE is_active = TRUE
+       AND id = ANY($1::uuid[])`,
+    [normalized],
+  );
+  const activeUserIds = activeUsersResult.rows.map((row) => String(row.id));
+  if (!activeUserIds.length) return;
 
-  const valuesSql = normalized
+  const valuesSql = activeUserIds
     .map((_, index) => `($1, $${index + 2})`)
     .join(", ");
   await dbQuery(
     `INSERT INTO project_members (project_id, user_id) VALUES ${valuesSql} ON CONFLICT DO NOTHING`,
-    [projectId, ...normalized],
+    [projectId, ...activeUserIds],
   );
 }
 
@@ -689,7 +888,7 @@ export async function getProjects() {
        ) AS members
      FROM projects p
      LEFT JOIN project_members pm ON pm.project_id = p.id
-     LEFT JOIN users u ON u.id = pm.user_id
+     LEFT JOIN users u ON u.id = pm.user_id AND u.is_active = TRUE
      GROUP BY p.id
      ORDER BY p.id DESC`,
   );

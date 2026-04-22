@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ToastContainer, toast } from "react-toastify";
 import { useShallow } from "zustand/react/shallow";
@@ -12,6 +12,7 @@ import AppSettingsView from "./components/AppSettingsView";
 import SystemSettingsView from "./components/SystemSettingsView";
 import TaskDrawer from "./components/TaskDrawer";
 import UserAdminView from "./components/UserAdminView";
+import ProfileView from "./components/ProfileView";
 import MainLayout from "./components/Layout/MainLayout";
 import Modal from "./components/ui/Modal";
 import { apiRequest, buildApiUrl, getAuthToken, setStoredToken } from "./api/client";
@@ -47,6 +48,15 @@ function getUserAvatarColor(userId) {
   return USER_AVATAR_COLORS[Math.abs(hash) % USER_AVATAR_COLORS.length];
 }
 
+function toMentionToken(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 function parseRoute(pathname) {
   const normalized = (pathname || "").replace(/\/+$/, "");
   const path = normalized || "/";
@@ -55,6 +65,12 @@ function parseRoute(pathname) {
     return { view: "dashboard", projectId: null };
   }
   if (path === "/users") return { view: "users", projectId: null };
+  if (path === "/profile" || path === "/account-security") {
+    return { view: "profile", projectId: null };
+  }
+  if (path === "/reset-password") {
+    return { view: "reset-password", projectId: null };
+  }
   if (path === "/settings") return { view: "app-settings", projectId: null };
   if (path === "/projects") return { view: "projects", projectId: null };
 
@@ -78,6 +94,7 @@ function initialActiveView(pathname) {
 }
 
 function App() {
+  const [mustChangePassword, setMustChangePassword] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const {
@@ -156,6 +173,9 @@ function App() {
     setNotificationCenterOpen,
     setNotificationStreamConnected,
     setNotificationStreamError,
+    authMode,
+    setAuthMode,
+    setResetPasswordForm,
   } = useAppStore(
     useShallow((state) => ({
       token: state.token,
@@ -233,6 +253,9 @@ function App() {
       setNotificationCenterOpen: state.setNotificationCenterOpen,
       setNotificationStreamConnected: state.setNotificationStreamConnected,
       setNotificationStreamError: state.setNotificationStreamError,
+      authMode: state.authMode,
+      setAuthMode: state.setAuthMode,
+      setResetPasswordForm: state.setResetPasswordForm,
     })),
   );
   const filterPopoverRef = useRef(null);
@@ -463,6 +486,36 @@ function App() {
       .filter((user) => memberIds.has(String(user.id)))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [currentProjectId, projectById, users]);
+  const projectMentionCandidates = useMemo(() => {
+    const projectMemberIds = new Set(projectUsers.map((user) => String(user.id)));
+    const userCandidates = projectUsers.map((user) => ({
+      id: `user-${user.id}`,
+      type: "user",
+      name: user.name,
+      email: user.email || "",
+      mentionToken: toMentionToken(user.name || user.email || ""),
+      sortLabel: String(user.name || "").toLowerCase(),
+    }));
+    const groupCandidates = (userGroups || [])
+      .filter((group) => {
+        const members = Array.isArray(group?.members) ? group.members : [];
+        if (!members.length) return false;
+        return members.every((member) =>
+          projectMemberIds.has(String(member.id)),
+        );
+      })
+      .map((group) => ({
+        id: `group-${group.id}`,
+        type: "group",
+        name: group.name,
+        email: "",
+        mentionToken: toMentionToken(group.name),
+        sortLabel: String(group.name || "").toLowerCase(),
+      }));
+    return [...userCandidates, ...groupCandidates].sort((a, b) =>
+      a.sortLabel.localeCompare(b.sortLabel),
+    );
+  }, [projectUsers, userGroups]);
   const assigneeFilterItems = useMemo(() => {
     const sortedUsers = [...projectUsers];
     const me = currentUser
@@ -947,6 +1000,33 @@ function App() {
   }, [token, loading, activeView, currentUser?.id]);
 
   useEffect(() => {
+    setMustChangePassword(currentUser?.mustChangePassword === true);
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (token || mustChangePassword) return;
+    const path = String(location.pathname || "").replace(/\/+$/, "") || "/";
+    const query = new URLSearchParams(location.search || "");
+    if (path === "/reset-password") {
+      const tokenFromUrl = String(query.get("token") || "").trim();
+      setAuthMode("reset-password");
+      if (tokenFromUrl) {
+        setResetPasswordForm((prev) => ({ ...prev, token: tokenFromUrl }));
+      }
+    } else if (authMode === "reset-password") {
+      setAuthMode("login");
+    }
+  }, [
+    token,
+    mustChangePassword,
+    location.pathname,
+    location.search,
+    authMode,
+    setAuthMode,
+    setResetPasswordForm,
+  ]);
+
+  useEffect(() => {
     if (!token || loading || activeView !== "board" || !currentProjectId) return;
     const params = new URLSearchParams(location.search || "");
     const taskId = params.get("taskId");
@@ -1057,7 +1137,7 @@ function App() {
       setCurrentProjectId(String(parsed.projectId));
     }
 
-    if (parsed.view === "settings" && parsed.projectId && !canManage) {
+    if (parsed.view === "settings" && parsed.projectId && currentUser && !canManage) {
       navigate(`/project/${parsed.projectId}/board`, { replace: true });
       return;
     }
@@ -1070,6 +1150,7 @@ function App() {
     ) {
       nextActive = parsed.view;
     } else if (parsed.view === "users") nextActive = "users";
+    else if (parsed.view === "profile") nextActive = "profile";
     else if (parsed.view === "projects") nextActive = "projects";
     else if (parsed.view === "app-settings") nextActive = "app-settings";
 
@@ -1081,6 +1162,7 @@ function App() {
     visibleProjects,
     navigate,
     currentProjectId,
+    currentUser,
     canManage,
   ]);
 
@@ -1098,6 +1180,11 @@ function App() {
     if (key === "users") {
       setActiveView("users");
       navigate("/users");
+      return;
+    }
+    if (key === "profile") {
+      setActiveView("profile");
+      navigate("/profile");
       return;
     }
     if (key === "app-settings") {
@@ -1227,8 +1314,12 @@ function App() {
       setStoredToken(data.token);
       setToken(data.token);
       setCurrentUser(data.user);
-      setActiveView("dashboard");
-      navigate("/dashboard", { replace: true });
+      const requiresChange = data.mustChangePassword === true;
+      setMustChangePassword(requiresChange);
+      if (!requiresChange) {
+        setActiveView("dashboard");
+        navigate("/dashboard", { replace: true });
+      }
     } catch (err) {
       setError(err.message || "Login failed");
     } finally {
@@ -1247,6 +1338,7 @@ function App() {
       setStoredToken(data.token);
       setToken(data.token);
       setCurrentUser(data.user);
+      setMustChangePassword(false);
       setActiveView("dashboard");
       navigate("/dashboard", { replace: true });
     } catch (err) {
@@ -1254,6 +1346,81 @@ function App() {
     } finally {
       setAuthLoading(false);
     }
+  };
+
+  const forgotPassword = async ({ email }) => {
+    setAuthLoading(true);
+    setError("");
+    try {
+      const data = await apiRequest("/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      });
+      notify(data.message || "If the account exists, a reset email has been sent.");
+    } catch (err) {
+      setError(err.message || "Failed to request password reset");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const resetPassword = async ({ token: resetToken, password }) => {
+    setAuthLoading(true);
+    setError("");
+    try {
+      const data = await apiRequest("/auth/reset-password", {
+        method: "POST",
+        body: JSON.stringify({ token: resetToken, password }),
+      });
+      notify(data.message || "Password reset successful.");
+    } catch (err) {
+      setError(err.message || "Failed to reset password");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const changePassword = async ({ name, currentPassword, newPassword }) => {
+    setAuthLoading(true);
+    setError("");
+    try {
+      const data = await apiRequest("/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({ name, currentPassword, newPassword }),
+      });
+      notify(data.message || "Password updated.");
+      setMustChangePassword(false);
+      setActiveView("dashboard");
+      navigate("/dashboard", { replace: true });
+    } catch (err) {
+      setError(err.message || "Failed to change password");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const changePasswordFromProfile = async ({ currentPassword, newPassword }) => {
+    try {
+      const data = await apiRequest("/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      notify(data.message || "Password updated.");
+    } catch (error) {
+      notify(error.message || "Failed to update password.", "error");
+      throw error;
+    }
+  };
+
+  const updateProfileInfo = async ({ name, email }) => {
+    const data = await apiRequest("/auth/profile", {
+      method: "PATCH",
+      body: JSON.stringify({ name, email }),
+    });
+    if (data?.user) {
+      setCurrentUser(data.user);
+    }
+    notify("Profile updated.");
   };
 
   const logout = async () => {
@@ -1314,6 +1481,7 @@ function App() {
     setActiveView("dashboard");
     setError("");
     setTaskBundle(null);
+    setMustChangePassword(false);
     navigate("/dashboard", { replace: true });
   };
 
@@ -1468,7 +1636,10 @@ function App() {
     try {
       await apiRequest("/task-management/users", {
         method: "POST",
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          email: payload.email,
+          role: payload.role,
+        }),
       });
       await refetchAfterCrud({
         includeBootstrap: true,
@@ -1488,9 +1659,6 @@ function App() {
       email: draft.email,
       role: draft.role,
     };
-    if (draft.password?.trim()) {
-      payload.password = draft.password.trim();
-    }
 
     try {
       await apiRequest(`/task-management/users/${userId}`, {
@@ -1509,27 +1677,46 @@ function App() {
     }
   };
 
-  const deleteUser = async (userId) => {
+  const disableUser = async (userId) => {
     const confirmed = await requestConfirmation({
       title: "Delete user",
-      message: "Delete this user? ",
-      confirmLabel: "Delete user",
+      message: "Disable this user? Their account will remain for history and they will be removed from groups.",
+      confirmLabel: "Disable user",
     });
     if (!confirmed) {
       return;
     }
     try {
-      await apiRequest(`/task-management/users/${userId}`, {
-        method: "DELETE",
+      await apiRequest(`/task-management/users/${userId}/disable`, {
+        method: "PATCH",
+        body: JSON.stringify({}),
       });
       await refetchAfterCrud({
         includeBootstrap: true,
         includeProject: true,
         includeDashboard: true,
       });
-      notify("User deleted.");
+      notify("User disabled.");
     } catch (error) {
-      notify(error.message || "Failed to delete user.", "error");
+      notify(error.message || "Failed to disable user.", "error");
+      throw error;
+    }
+  };
+
+  const enableUser = async (userId) => {
+    try {
+      await apiRequest(`/task-management/users/${userId}/enable`, {
+        method: "PATCH",
+        body: JSON.stringify({}),
+      });
+      await refetchAfterCrud({
+        includeBootstrap: true,
+        includeProject: true,
+        includeDashboard: true,
+      });
+      notify("User reactivated.");
+    } catch (error) {
+      notify(error.message || "Failed to reactivate user.", "error");
       throw error;
     }
   };
@@ -1847,14 +2034,24 @@ function App() {
     ]);
   };
 
-  if (!token) {
+  if (!token || mustChangePassword) {
     return (
       <div className="min-h-screen bg-[#f7f8fa] text-[#172b4d]">
         <AuthView
           onLogin={login}
           onRegister={register}
+          onForgotPassword={forgotPassword}
+          onResetPassword={resetPassword}
+          onChangePassword={changePassword}
+          mustChangePassword={mustChangePassword}
           loading={authLoading}
           error={error}
+        />
+        <ToastContainer
+          position="top-right"
+          autoClose={1800}
+          hideProgressBar
+          theme="colored"
         />
       </div>
     );
@@ -1889,6 +2086,7 @@ function App() {
         projects={sidebarProjects}
         expandedProjectIds={[]}
         onNavigateMain={handleNavigateMain}
+        onOpenProfileSecurity={() => handleNavigateMain("profile")}
         onNavigateProject={handleNavigateProject}
         notifications={notifications}
         unreadCount={unreadCount}
@@ -2439,7 +2637,8 @@ function App() {
               currentUserId={currentUser?.id}
               onCreateUser={createUser}
               onUpdateUser={updateUser}
-              onDeleteUser={deleteUser}
+              onDisableUser={disableUser}
+              onEnableUser={enableUser}
               onCreateUserGroup={createUserGroup}
               onUpdateUserGroup={updateUserGroup}
               onDeleteUserGroup={deleteUserGroup}
@@ -2448,6 +2647,14 @@ function App() {
 
           {activeView === "app-settings" ? (
             <AppSettingsView canManage={canManage} onNotify={notify} />
+          ) : null}
+
+          {activeView === "profile" ? (
+            <ProfileView
+              currentUser={currentUser}
+              onUpdateProfile={updateProfileInfo}
+              onChangePassword={changePasswordFromProfile}
+            />
           ) : null}
 
           {activeView === "settings" && currentProjectId ? (
@@ -2472,6 +2679,7 @@ function App() {
           currentUserId={currentUser?.id}
             users={users}
             assigneeUsers={projectUsers}
+            mentionUsers={projectMentionCandidates}
             workflowStages={workflowStages}
             workflowTransitions={workflowTransitions}
             labels={projectLabels}

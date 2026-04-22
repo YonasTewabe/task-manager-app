@@ -1,5 +1,6 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/roles.js";
 import { isNonEmptyString } from "../utils/validation.js";
@@ -18,6 +19,8 @@ import {
   createSprint,
   createTask,
   createUser,
+  disableUser,
+  enableUser,
   deleteSprint,
   deleteProject,
   deleteUser,
@@ -36,6 +39,7 @@ import {
   getUserGroups,
   getWorkflowStageKeys,
   isValidWorkflowStatus,
+  logUserAudit,
   projectExists,
   removeTaskFromSprint,
   ACTIVE_SPRINT_CONFLICT_MESSAGE,
@@ -81,6 +85,10 @@ const TRACKED_TASK_FIELDS = [
   "assigneeId",
   "label",
 ];
+
+function generateTemporaryPassword() {
+  return `${crypto.randomBytes(6).toString("base64url")}!aA1`;
+}
 
 function normalizeAcceptanceCriteria(value) {
   const list = Array.isArray(value) ? value : [];
@@ -489,21 +497,37 @@ router.delete(
 );
 
 router.post("/users", requireRole("admin"), async (req, res) => {
-  const { name, email } = req.body;
-  if (!name || !email) {
-    return res.status(400).json({ error: "name and email are required" });
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: "email is required" });
   }
-  const passwordHash = await bcrypt.hash(
-    req.body.password || "ChangeMe123!",
-    10,
-  );
+  const temporaryPassword = isNonEmptyString(req.body.password)
+    ? String(req.body.password)
+    : generateTemporaryPassword();
+  const passwordHash = await bcrypt.hash(temporaryPassword, 12);
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  const generatedName = `New User (${normalizedEmail.split("@")[0] || "member"})`;
   try {
     const created = await createUser({
-      name: name.trim(),
-      email: email.trim().toLowerCase(),
+      name: generatedName,
+      email: normalizedEmail,
       passwordHash,
       role: req.body.role || "member",
+      mustChangePassword: true,
     });
+    const appUrl = String(process.env.APP_URL || "").trim().replace(/\/+$/, "");
+    const loginUrl = appUrl ? `${appUrl}/` : "the application login page";
+    await sendEmail({
+      to: created.email,
+      subject: "Your account has been created",
+      text: `Hi,\n\nYour account is ready.\nTemporary password: ${temporaryPassword}\nLogin: ${loginUrl}\n\nYou will be asked to set your name and change your password when you sign in for the first time.`,
+    });
+    await logUserAudit({
+      actorUserId: req.user.id,
+      targetUserId: created.id,
+      action: "user_created",
+      metadata: { role: created.role },
+    }).catch(() => {});
     return res.status(201).json(created);
   } catch (error) {
     if (error.code === "23505") {
@@ -520,7 +544,9 @@ router.patch("/users/:userId", requireRole("admin"), async (req, res) => {
     payload.email = req.body.email.trim().toLowerCase();
   if (isNonEmptyString(req.body?.role)) payload.role = req.body.role;
   if (isNonEmptyString(req.body?.password)) {
-    payload.passwordHash = await bcrypt.hash(req.body.password, 10);
+    payload.passwordHash = await bcrypt.hash(req.body.password, 12);
+    payload.mustChangePassword = true;
+    payload.passwordChangedAt = null;
   }
 
   const updated = await updateUser(req.params.userId, payload);
@@ -529,7 +555,46 @@ router.patch("/users/:userId", requireRole("admin"), async (req, res) => {
       .status(404)
       .json({ error: "User not found or no valid fields to update" });
   }
+  await logUserAudit({
+    actorUserId: req.user.id,
+    targetUserId: updated.id,
+    action: "user_updated",
+    metadata: { updatedFields: Object.keys(payload) },
+  }).catch(() => {});
   return res.json(updated);
+});
+
+router.patch("/users/:userId/disable", requireRole("admin"), async (req, res) => {
+  const targetUserId = String(req.params.userId);
+  if (targetUserId === String(req.user.id)) {
+    return res
+      .status(400)
+      .json({ error: "You cannot disable your own account" });
+  }
+  const disabled = await disableUser(targetUserId, req.user.id, req.body?.reason || "");
+  if (!disabled) {
+    return res.status(404).json({ error: "User not found" });
+  }
+  await logUserAudit({
+    actorUserId: req.user.id,
+    targetUserId: disabled.id,
+    action: "user_disabled",
+    metadata: { reason: String(req.body?.reason || "").trim() },
+  }).catch(() => {});
+  return res.json(disabled);
+});
+
+router.patch("/users/:userId/enable", requireRole("admin"), async (req, res) => {
+  const enabled = await enableUser(String(req.params.userId));
+  if (!enabled) {
+    return res.status(404).json({ error: "User not found" });
+  }
+  await logUserAudit({
+    actorUserId: req.user.id,
+    targetUserId: enabled.id,
+    action: "user_enabled",
+  }).catch(() => {});
+  return res.json(enabled);
 });
 
 router.delete("/users/:userId", requireRole("admin"), async (req, res) => {
@@ -822,6 +887,7 @@ router.patch("/tasks/:taskId", async (req, res) => {
       if (req.body?.description !== undefined) {
         const mentionedUserIds = await resolveMentionedUserIds(req.body.description, {
           excludeUserId: req.user.id,
+          projectId: updated.projectId,
         });
         if (mentionedUserIds.length) {
           await createAndDispatchNotifications({
@@ -923,6 +989,7 @@ router.post("/tasks/:taskId/comments", async (req, res) => {
   }
   const mentionedUserIds = await resolveMentionedUserIds(req.body.body.trim(), {
     excludeUserId: req.user.id,
+    projectId: task.projectId,
   });
   if (mentionedUserIds.length) {
     await createAndDispatchNotifications({
@@ -965,6 +1032,7 @@ router.patch("/tasks/:taskId/comments/:commentId", async (req, res) => {
   await addTaskActivity(req.params.taskId, req.user.id, "comment_updated", {});
   const mentionedUserIds = await resolveMentionedUserIds(req.body.body.trim(), {
     excludeUserId: req.user.id,
+    projectId: task.projectId,
   });
   if (mentionedUserIds.length) {
     await createAndDispatchNotifications({

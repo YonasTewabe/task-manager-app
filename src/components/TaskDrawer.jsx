@@ -58,17 +58,25 @@ function RichTextEditor({
       .toLowerCase();
     const list = Array.isArray(mentionUsers) ? mentionUsers : [];
     return list
-      .filter((user) => {
-        const name = String(user?.name || "")
+      .filter((entry) => {
+        const name = String(entry?.name || "")
           .trim()
           .toLowerCase();
-        const emailLocal = String(user?.email || "")
+        const emailLocal = String(entry?.email || "")
+          .split("@")[0]
+          .trim()
+          .toLowerCase();
+        const mentionToken = String(entry?.mentionToken || "")
           .split("@")[0]
           .trim()
           .toLowerCase();
         if (!name) return false;
         if (!query) return true;
-        return name.includes(query) || emailLocal.includes(query);
+        return (
+          name.includes(query) ||
+          emailLocal.includes(query) ||
+          mentionToken.includes(query)
+        );
       })
       .slice(0, 8);
   }, [mentionQuery, mentionUsers]);
@@ -112,7 +120,7 @@ function RichTextEditor({
   }, []);
 
   const insertMention = useCallback(
-    (user) => {
+    (entry) => {
       const editor = editorRef.current;
       if (!editor) return;
       editor.focus();
@@ -120,9 +128,11 @@ function RichTextEditor({
       if (!selection || selection.rangeCount === 0) return;
       const range = selection.getRangeAt(0);
       if (!editor.contains(range.startContainer)) return;
-      const safeName = String(user?.name || "").trim();
-      if (!safeName) return;
-      const mentionText = `@${safeName}`;
+      const mentionToken = String(
+        entry?.mentionToken || entry?.name || "",
+      ).trim();
+      if (!mentionToken) return;
+      const mentionText = `@${mentionToken}`;
       const tokenLength = mentionQuery.length + 1;
       const startOffset = Math.max(0, range.startOffset - tokenLength);
       try {
@@ -277,18 +287,24 @@ function RichTextEditor({
       />
       {mentionOpen && filteredMentionUsers.length ? (
         <div className="max-h-[180px] overflow-auto border-t border-[#dfe1e6] bg-white p-1">
-          {filteredMentionUsers.map((user, index) => (
+          {filteredMentionUsers.map((entry, index) => (
             <button
-              key={user.id}
+              key={entry.id}
               type="button"
               className={`w-full rounded-[8px] px-2 py-1.5 text-left text-[0.86rem] ${index === mentionIndex ? "bg-[#edf3ff] text-[#0c66e4]" : "text-[#253858] hover:bg-[#f4f6fa]"}`}
               onMouseDown={(event) => {
                 event.preventDefault();
-                insertMention(user);
+                insertMention(entry);
               }}
             >
-              <div className="font-medium">{user.name}</div>
-              <div className="text-[0.76rem] text-[#6b778c]">{user.email}</div>
+              <div className="font-medium">
+                {entry.type === "group" ? `Group: ${entry.name}` : entry.name}
+              </div>
+              <div className="text-[0.76rem] text-[#6b778c]">
+                {entry.type === "group"
+                  ? `@${entry.mentionToken}`
+                  : entry.email}
+              </div>
             </button>
           ))}
         </div>
@@ -312,6 +328,7 @@ export default function TaskDrawer({
   currentUserId,
   users,
   assigneeUsers = [],
+  mentionUsers = [],
   workflowStages,
   workflowTransitions = [],
   labels = [],
@@ -852,7 +869,7 @@ export default function TaskDrawer({
                   value={draft.description || ""}
                   placeholder="Add task details, context, and expected outcome."
                   uploading={isUploadingDescription}
-                  mentionUsers={assigneeUsers}
+                  mentionUsers={mentionUsers}
                   onChange={(nextValue) =>
                     setDraft((prev) => {
                       if (prev.description === nextValue) return prev;
@@ -992,7 +1009,7 @@ export default function TaskDrawer({
                           value={commentBody}
                           placeholder="Add a comment..."
                           uploading={isUploadingComment}
-                          mentionUsers={assigneeUsers}
+                          mentionUsers={mentionUsers}
                           onChange={setCommentBody}
                           onUploadImage={(file) => uploadImage(file, "comment")}
                           autoFocus
@@ -1114,7 +1131,7 @@ export default function TaskDrawer({
                               value={editingCommentBody}
                               placeholder="Edit comment..."
                               uploading={isUploadingComment}
-                              mentionUsers={assigneeUsers}
+                              mentionUsers={mentionUsers}
                               onChange={setEditingCommentBody}
                               onUploadImage={(file) =>
                                 uploadImage(file, "comment")

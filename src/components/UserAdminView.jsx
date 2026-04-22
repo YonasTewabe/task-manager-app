@@ -9,18 +9,15 @@ export default function UserAdminView({
   currentUserId,
   onCreateUser,
   onUpdateUser,
-  onDeleteUser,
+  onDisableUser,
+  onEnableUser,
   onCreateUserGroup,
   onUpdateUserGroup,
   onDeleteUserGroup,
 }) {
   const {
-    userAdminName: name,
-    setUserAdminName: setName,
     userAdminEmail: email,
     setUserAdminEmail: setEmail,
-    userAdminPassword: password,
-    setUserAdminPassword: setPassword,
     userAdminRole: role,
     setUserAdminRole: setRole,
     userAdminShowCreateModal: showCreateModal,
@@ -47,12 +44,8 @@ export default function UserAdminView({
     setUserAdminEditGroupMemberIds: setEditGroupMemberIds,
   } = useAppStore(
     useShallow((state) => ({
-      userAdminName: state.userAdminName,
-      setUserAdminName: state.setUserAdminName,
       userAdminEmail: state.userAdminEmail,
       setUserAdminEmail: state.setUserAdminEmail,
-      userAdminPassword: state.userAdminPassword,
-      setUserAdminPassword: state.setUserAdminPassword,
       userAdminRole: state.userAdminRole,
       setUserAdminRole: state.setUserAdminRole,
       userAdminShowCreateModal: state.userAdminShowCreateModal,
@@ -90,7 +83,6 @@ export default function UserAdminView({
     setEditDraft({
       name: user.name,
       email: user.email,
-      password: "",
       role: user.role,
     });
     setShowEditModal(true);
@@ -113,6 +105,7 @@ export default function UserAdminView({
     setShowEditGroupModal(false);
     setEditingGroupId(null);
   };
+  const activeUsers = users.filter((user) => user.isActive !== false);
 
   return (
     <section className="grid gap-[1.1rem]">
@@ -131,8 +124,13 @@ export default function UserAdminView({
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <strong>{user.name}</strong>
-                  <div className="text-[#5e6c84]">
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-[#5e6c84]">
                     {user.email} · {user.role}
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[0.8rem] ${user.isActive === false ? "bg-[#fde8e8] text-[#b42318]" : "bg-[#e8f7ee] text-[#067647]"}`}
+                    >
+                      {user.isActive === false ? "Disabled" : "Active"}
+                    </span>
                   </div>
                 </div>
                 {canManage ? (
@@ -140,14 +138,20 @@ export default function UserAdminView({
                     <button type="button" onClick={() => startEdit(user)}>
                       Edit
                     </button>
-                    <button
-                      type="button"
-                      className="border border-[#dc2626] bg-[#dc2626] text-white hover:border-[#b91c1c] hover:bg-[#b91c1c]"
-                      onClick={() => onDeleteUser(user.id)}
-                      disabled={String(currentUserId) === String(user.id)}
-                    >
-                      Delete
-                    </button>
+                    {user.isActive === false ? (
+                      <button type="button" onClick={() => onEnableUser(user.id)}>
+                        Reactivate
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="border border-[#dc2626] bg-[#dc2626] text-white hover:border-[#b91c1c] hover:bg-[#b91c1c]"
+                        onClick={() => onDisableUser(user.id)}
+                        disabled={String(currentUserId) === String(user.id)}
+                      >
+                        Disable
+                      </button>
+                    )}
                   </div>
                 ) : null}
               </div>
@@ -207,31 +211,12 @@ export default function UserAdminView({
             <div className="grid gap-[0.5rem]">
               <label>
                 <span className="inline-flex items-center">
-                  Name <span className="ml-1 text-red-600">*</span>
-                </span>
-                <input
-                  value={name}
-                  placeholder="Enter full name"
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </label>
-              <label>
-                <span className="inline-flex items-center">
                   Email <span className="ml-1 text-red-600">*</span>
                 </span>
                 <input
                   value={email}
                   placeholder="Enter email"
                   onChange={(e) => setEmail(e.target.value)}
-                />
-              </label>
-              <label>
-                Password
-                <input
-                  type="password"
-                  value={password}
-                  placeholder="Enter password"
-                  onChange={(e) => setPassword(e.target.value)}
                 />
               </label>
               <label>
@@ -254,11 +239,9 @@ export default function UserAdminView({
                 <button
                   type="button"
                   onClick={() => {
-                    if (!name.trim() || !email.trim() || !role) return;
-                    onCreateUser({ name: name.trim(), email: email.trim(), password, role });
-                    setName("");
+                    if (!email.trim() || !role) return;
+                    onCreateUser({ email: email.trim(), role });
                     setEmail("");
-                    setPassword("");
                     setRole("member");
                     setShowCreateModal(false);
                   }}
@@ -291,7 +274,7 @@ export default function UserAdminView({
               <div>
                 <p className="text-[#5e6c84]">Members</p>
                 <div className="grid grid-cols-3 gap-[0.4rem]">
-                  {users.map((user) => (
+                  {activeUsers.map((user) => (
                     <label
                       key={user.id}
                       className="!flex !grid-cols-none items-center gap-[0.35rem] text-[0.85rem] leading-[1.2]"
@@ -366,15 +349,6 @@ export default function UserAdminView({
                 />
               </label>
               <label>
-                New password
-                <input
-                  type="password"
-                  value={editDraft.password}
-                  placeholder="Optional"
-                  onChange={(e) => setEditDraft((prev) => ({ ...prev, password: e.target.value }))}
-                />
-              </label>
-              <label>
                 Role
                 <select
                   value={editDraft.role}
@@ -428,7 +402,7 @@ export default function UserAdminView({
               <div>
                 <p className="text-[#5e6c84]">Members</p>
                 <div className="grid grid-cols-3 gap-[0.4rem]">
-                  {users.map((user) => (
+                  {activeUsers.map((user) => (
                     <label
                       key={user.id}
                       className="!flex !grid-cols-none items-center gap-[0.35rem] text-[0.85rem] leading-[1.2]"

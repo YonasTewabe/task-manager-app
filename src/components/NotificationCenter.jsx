@@ -6,6 +6,11 @@ function NotificationCenter({
   onMarkAllRead,
   onClickNotification,
 }) {
+  const sortedNotifications = [
+    ...notifications.filter((item) => !item.readAt),
+    ...notifications.filter((item) => item.readAt),
+  ];
+
   return (
     <div className="absolute right-0 top-[calc(100%+8px)] z-30 w-[360px] rounded-[12px] border border-[#dfe1e6] bg-white p-2 shadow-lg">
       <div className="mb-2 flex items-center justify-between px-1">
@@ -15,8 +20,8 @@ function NotificationCenter({
         </button>
       </div>
       <div className="grid max-h-[420px] gap-1 overflow-auto">
-        {notifications.length ? (
-          notifications.map((item) => {
+        {sortedNotifications.length ? (
+          sortedNotifications.map((item) => {
             const unread = !item.readAt;
             return (
               <button
