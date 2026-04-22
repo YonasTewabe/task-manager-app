@@ -15,6 +15,7 @@ function Sidebar({
   currentProjectId,
   projects,
   expandedProjectIds,
+  canManage = false,
   onNavigateMain,
   onNavigateProject,
 }) {
@@ -63,7 +64,13 @@ function Sidebar({
           Navigate
         </div>
         <nav className="grid flex-shrink-0 gap-[0.3rem] px-[0.6rem] py-[0.45rem]">
-          {mainNavItems.map((item) => (
+          {mainNavItems
+            .filter((item) =>
+              item.key === "app-settings" || item.key === "users"
+                ? canManage
+                : true,
+            )
+            .map((item) => (
             <button
               key={item.key}
               type="button"
@@ -78,7 +85,7 @@ function Sidebar({
                 <span className="max-[1100px]:hidden">{item.label}</span>
               </span>
             </button>
-          ))}
+            ))}
         </nav>
 
         <div

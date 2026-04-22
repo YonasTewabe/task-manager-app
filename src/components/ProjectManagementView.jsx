@@ -60,20 +60,13 @@ export default function ProjectManagementView({
   return (
     <section className="grid gap-[0.9rem] rounded-lg border border-[#dfe1e6] bg-white p-[0.8rem]">
       <div className="flex items-center justify-between gap-3">
-        <h2>Projects</h2>
+        <h2 className="font-bold">Projects</h2>
         {canManage ? (
           <button type="button" onClick={() => setShowCreateModal(true)}>
             Add Project
           </button>
         ) : null}
       </div>
-
-      {!canManage ? (
-        <p className="mb-3 text-[#5e6c84]">
-          You can view projects you belong to. Only administrators can create or
-          edit projects.
-        </p>
-      ) : null}
 
       <div className="grid gap-[0.7rem]">
         {!projects.length ? (
@@ -86,10 +79,21 @@ export default function ProjectManagementView({
         {projects.map((project) => (
           <article key={project.id} className="rounded-lg border border-[#dfe1e6] bg-white p-[0.8rem]">
             <div className="flex items-start justify-between gap-3">
-              <button
-                type="button"
-                className="m-[-0.15rem_-0.35rem] min-w-0 flex-1 rounded-md border-none bg-transparent px-[0.35rem] py-[0.15rem] text-left text-inherit hover:bg-[#f4f5f7]"
-                onClick={() => onConfigureProject(project.id)}
+              <div
+                className={`m-[-0.15rem_-0.35rem] min-w-0 flex-1 rounded-md px-[0.35rem] py-[0.15rem] text-left text-inherit ${canManage ? "hover:bg-[#f4f5f7]" : ""}`}
+                role={canManage ? "button" : undefined}
+                tabIndex={canManage ? 0 : undefined}
+                onClick={canManage ? () => onConfigureProject(project.id) : undefined}
+                onKeyDown={
+                  canManage
+                    ? (event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onConfigureProject(project.id);
+                        }
+                      }
+                    : undefined
+                }
               >
                 <strong>
                   {project.name} ({project.projectKey})
@@ -104,7 +108,7 @@ export default function ProjectManagementView({
                     </span>
                   ))}
                 </div>
-              </button>
+              </div>
               {canManage ? (
                 <div className="flex flex-wrap gap-2">
                   <button

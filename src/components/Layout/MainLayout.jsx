@@ -4,6 +4,7 @@ import Sidebar from "./Sidebar";
 function MainLayout({
   currentUser,
   onLogout,
+  canManage = false,
   activeView,
   currentProjectId,
   projects,
@@ -19,6 +20,7 @@ function MainLayout({
         currentProjectId={currentProjectId}
         projects={projects}
         expandedProjectIds={expandedProjectIds}
+        canManage={canManage}
         onNavigateMain={onNavigateMain}
         onNavigateProject={onNavigateProject}
       />

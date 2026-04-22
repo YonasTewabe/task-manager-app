@@ -24,6 +24,12 @@ const DEFAULT_FORM = {
 };
 const STAGE_PLACEMENT_START = "__start_of_group__";
 const STAGE_PLACEMENT_END = "__end_of_group__";
+const EMPTY_AUTOMATION_RULE_DRAFT = {
+  eventType: "",
+  targetStatus: "",
+  branchScope: "any",
+  baseBranch: "",
+};
 
 function toForm(settings) {
   const wf =
@@ -293,49 +299,68 @@ export default function SystemSettingsView({
     githubInstallationId: "",
   });
   const [appGithubOrg, setAppGithubOrg] = useState("");
-  const [ruleDraft, setRuleDraft] = useState({
-    eventType: "pr_merged",
-    targetStatus: "done",
-    branchScope: "any",
-    baseBranch: "",
-  });
+  const [ruleDraft, setRuleDraft] = useState(EMPTY_AUTOMATION_RULE_DRAFT);
   const [showAddRepoModal, setShowAddRepoModal] = useState(false);
   const [showAddAutomationModal, setShowAddAutomationModal] = useState(false);
   const dragFromRef = useRef(null);
   const blockedDropTimeoutRef = useRef(null);
   const lastSavedSettingsRef = useRef("");
   const lastSavedMembersRef = useRef("");
+  const hydratedProjectIdRef = useRef("");
+  const hydratedSettingsSignatureRef = useRef("");
 
   useEffect(() => {
+    const nextProjectId = String(projectId || "");
     const nextForm = toForm(settings);
+    const incomingSignature = JSON.stringify(payloadFromForm(nextForm, {}));
+    const currentFormSignature = settingsForm
+      ? JSON.stringify(payloadFromForm(settingsForm, {}))
+      : "";
+    const projectChanged = hydratedProjectIdRef.current !== nextProjectId;
+    const incomingChanged =
+      hydratedSettingsSignatureRef.current !== incomingSignature;
+    const matchesCurrentForm = currentFormSignature === incomingSignature;
+
+    if (!projectChanged && (!incomingChanged || matchesCurrentForm)) {
+      hydratedSettingsSignatureRef.current = incomingSignature;
+      return;
+    }
+
     setForm(nextForm);
-    setStageMigrations({});
-    setStageDeleteDialog(null);
-    setShowAddStageModal(false);
-    setNewStageDraft({
-      name: "",
-      counterGroup: "",
-      afterKey: STAGE_PLACEMENT_START,
-    });
-    setShowAddLabelModal(false);
-    setShowAddTypeModal(false);
-    setShowAddVersionModal(false);
-    setNewLabel("");
-    setNewType("");
-    setNewVersion("");
-    setStageDragState({
-      fromIndex: -1,
-      fromKey: "",
-      fromGroup: "",
-      overIndex: -1,
-    });
-    setAllowedDropIndexes(new Set());
-    setBlockedDropIndexes(new Set());
-    setBlockedDropReason("");
-    lastSavedSettingsRef.current = JSON.stringify(
-      payloadFromForm(nextForm, {}),
-    );
-  }, [settings]);
+
+    if (projectChanged) {
+      setActiveTab("users");
+      setWorkflowFromKey("");
+      setWorkflowToKey("");
+      setStageMigrations({});
+      setStageDeleteDialog(null);
+      setShowAddStageModal(false);
+      setNewStageDraft({
+        name: "",
+        counterGroup: "",
+        afterKey: STAGE_PLACEMENT_START,
+      });
+      setShowAddLabelModal(false);
+      setShowAddTypeModal(false);
+      setShowAddVersionModal(false);
+      setNewLabel("");
+      setNewType("");
+      setNewVersion("");
+      setStageDragState({
+        fromIndex: -1,
+        fromKey: "",
+        fromGroup: "",
+        overIndex: -1,
+      });
+      setAllowedDropIndexes(new Set());
+      setBlockedDropIndexes(new Set());
+      setBlockedDropReason("");
+    }
+
+    lastSavedSettingsRef.current = incomingSignature;
+    hydratedProjectIdRef.current = nextProjectId;
+    hydratedSettingsSignatureRef.current = incomingSignature;
+  }, [projectId, settings, settingsForm]);
 
   useEffect(() => {
     return () => {
@@ -351,7 +376,14 @@ export default function SystemSettingsView({
   }, [projectMembers]);
 
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId) {
+      setGithubRepos([]);
+      setAutomationRules([]);
+      setAppGithubOrg("");
+      return;
+    }
+    setGithubRepos([]);
+    setAutomationRules([]);
     let cancelled = false;
     const load = async () => {
       try {
@@ -922,12 +954,7 @@ export default function SystemSettingsView({
     }
     const nextRules = [...automationRules, newRule];
     await saveAutomationRules(nextRules);
-    setRuleDraft({
-      eventType: "pr_merged",
-      targetStatus: "done",
-      branchScope: "any",
-      baseBranch: "",
-    });
+    setRuleDraft(EMPTY_AUTOMATION_RULE_DRAFT);
     setShowAddAutomationModal(false);
   };
 
@@ -1678,7 +1705,10 @@ export default function SystemSettingsView({
                     type="button"
                     className="border border-[#0b63c5] bg-[#0b6bcb] text-white hover:border-[#0957a3] hover:bg-[#095db2]"
                     disabled={!canManage}
-                    onClick={() => setShowAddAutomationModal(true)}
+                    onClick={() => {
+                      setRuleDraft(EMPTY_AUTOMATION_RULE_DRAFT);
+                      setShowAddAutomationModal(true);
+                    }}
                   >
                     Add automation rule
                   </button>
@@ -2088,6 +2118,7 @@ export default function SystemSettingsView({
                   }))
                 }
               >
+                <option value="">Select event trigger</option>
                 <option value="branch_created">Branch created</option>
                 <option value="commit_pushed">Commit pushed</option>
                 <option value="pr_opened">PR opened</option>
@@ -2109,6 +2140,7 @@ export default function SystemSettingsView({
                   }))
                 }
               >
+                <option value="">Select target status</option>
                 {stages.map((stage) => (
                   <option key={`rule-stage-${stage.key}`} value={stage.key}>
                     {stage.name}
@@ -2168,11 +2200,21 @@ export default function SystemSettingsView({
               <button
                 type="button"
                 className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
-                onClick={() => setShowAddAutomationModal(false)}
+                onClick={() => {
+                  setRuleDraft(EMPTY_AUTOMATION_RULE_DRAFT);
+                  setShowAddAutomationModal(false);
+                }}
               >
                 Cancel
               </button>
-              <button type="button" onClick={addAutomationRule}>
+              <button
+                type="button"
+                onClick={addAutomationRule}
+                disabled={
+                  !String(ruleDraft.eventType || "").trim() ||
+                  !String(ruleDraft.targetStatus || "").trim()
+                }
+              >
                 Add automation rule
               </button>
             </div>

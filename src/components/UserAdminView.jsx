@@ -118,7 +118,7 @@ export default function UserAdminView({
     <section className="grid gap-[1.1rem]">
       <div className="grid gap-[0.5rem] rounded-[10px] border border-[#dfe1e6] bg-white p-[0.85rem] shadow-[0_1px_2px_rgba(9,30,66,0.08)]">
         <div className="flex items-center justify-between gap-3">
-          <h2>Users</h2>
+          <h2 className="font-bold">Users</h2>
           {canManage ? (
             <button type="button" onClick={() => setShowCreateModal(true)}>
               Add User
@@ -157,7 +157,7 @@ export default function UserAdminView({
       </div>
       <div className="grid gap-[0.5rem] rounded-[10px] border border-[#dfe1e6] bg-white p-[0.85rem] shadow-[0_1px_2px_rgba(9,30,66,0.08)]">
         <div className="flex items-center justify-between gap-3">
-          <h2>User groups</h2>
+          <h2 className="font-bold">User groups</h2>
           {canManage ? (
             <button type="button" onClick={() => setShowCreateGroupModal(true)}>
               Add Group

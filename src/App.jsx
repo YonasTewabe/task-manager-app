@@ -219,6 +219,7 @@ function App() {
   const confirmResolverRef = useRef(null);
   const latestSettingsProjectIdRef = useRef("");
   const latestProjectIdRef = useRef("");
+  const lastReadinessBlockRef = useRef("");
   useEffect(() => {
     setActiveView((current) =>
       current === "dashboard" ? initialActiveView(location.pathname) : current,
@@ -294,6 +295,67 @@ function App() {
     projects.forEach((p) => map.set(String(p.id), p));
     return map;
   }, [projects]);
+  const evaluateProjectReadiness = useCallback(
+    async (projectId) => {
+      const id = String(projectId || "").trim();
+      if (!id) {
+        return {
+          ready: false,
+          missing: ["users", "board", "workflow", "integration"],
+        };
+      }
+      const missing = [];
+      const project = projectById.get(id);
+      const memberCount = Array.isArray(project?.members)
+        ? project.members.length
+        : 0;
+      if (memberCount < 1) {
+        missing.push("users");
+      }
+
+      const settings =
+        id === String(currentProjectId || "") && projectSettings
+          ? projectSettings
+          : await apiRequest(
+              `/task-management/projects/${encodeURIComponent(id)}/settings`,
+            );
+      const stages = settings?.boardCardFields?.workflowStages;
+      if (!Array.isArray(stages) || stages.length < 1) {
+        missing.push("board");
+      }
+      const transitions = settings?.workflowRules?.transitions;
+      if (!Array.isArray(transitions) || transitions.length < 1) {
+        missing.push("workflow");
+      }
+
+      let integrationReady = false;
+      try {
+        const repos = await apiRequest(
+          `/github/projects/${encodeURIComponent(id)}/repos`,
+        );
+        const hasRepo = Array.isArray(repos) && repos.length > 0;
+        if (currentUser?.role === "admin") {
+          const appGitHub = await apiRequest("/task-management/app-settings/github");
+          const hasOrg = Boolean(String(appGitHub?.githubOrg || "").trim());
+          const hasToken = Boolean(appGitHub?.hasGithubToken);
+          integrationReady = hasRepo && hasOrg && hasToken;
+        } else {
+          integrationReady = hasRepo;
+        }
+      } catch {
+        integrationReady = false;
+      }
+      if (!integrationReady) {
+        missing.push("integration");
+      }
+
+      return {
+        ready: missing.length === 0,
+        missing,
+      };
+    },
+    [projectById, currentProjectId, projectSettings, currentUser?.role],
+  );
   const projectUsers = useMemo(() => {
     if (!currentProjectId) return [];
     const memberIds = new Set(
@@ -852,13 +914,95 @@ function App() {
     }
   }, [navigate, setActiveView]);
 
-  const handleNavigateProject = useCallback((projectId, subview) => {
-    const id = String(projectId);
-    setCurrentProjectId(id);
-    setSelectedSprintId("");
-    setActiveView(subview);
-    navigate(`/project/${id}/${subview}`);
-  }, [navigate, setActiveView, setCurrentProjectId, setSelectedSprintId]);
+  const handleNavigateProject = useCallback(
+    async (projectId, subview) => {
+      const id = String(projectId);
+      const targetSubview = String(subview || "board");
+      if (targetSubview === "board" || targetSubview === "backlog") {
+        try {
+          const readiness = await evaluateProjectReadiness(id);
+          if (!readiness.ready) {
+            const key = `${id}:${readiness.missing.sort().join(",")}`;
+            if (lastReadinessBlockRef.current !== key) {
+              notify(
+                `Complete required project settings before use: ${readiness.missing.join(", ")}.`,
+                "error",
+              );
+              lastReadinessBlockRef.current = key;
+            }
+            setCurrentProjectId(id);
+            setSelectedSprintId("");
+            setActiveView("settings");
+            navigate(`/project/${id}/settings`);
+            return;
+          }
+        } catch {
+          notify("Failed to verify project setup. Open project settings.", "error");
+          setCurrentProjectId(id);
+          setSelectedSprintId("");
+          setActiveView("settings");
+          navigate(`/project/${id}/settings`);
+          return;
+        }
+      }
+      lastReadinessBlockRef.current = "";
+      setCurrentProjectId(id);
+      setSelectedSprintId("");
+      setActiveView(targetSubview);
+      navigate(`/project/${id}/${targetSubview}`);
+    },
+    [
+      evaluateProjectReadiness,
+      navigate,
+      notify,
+      setActiveView,
+      setCurrentProjectId,
+      setSelectedSprintId,
+    ],
+  );
+
+  useEffect(() => {
+    if (!token || loading || !currentProjectId) return;
+    if (activeView !== "board" && activeView !== "backlog") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const readiness = await evaluateProjectReadiness(currentProjectId);
+        if (cancelled || readiness.ready) return;
+        const key = `${currentProjectId}:${readiness.missing.sort().join(",")}`;
+        if (lastReadinessBlockRef.current !== key) {
+          notify(
+            `Complete required project settings before use: ${readiness.missing.join(", ")}.`,
+            "error",
+          );
+          lastReadinessBlockRef.current = key;
+        }
+        setActiveView("settings");
+        navigate(`/project/${encodeURIComponent(currentProjectId)}/settings`, {
+          replace: true,
+        });
+      } catch {
+        if (cancelled) return;
+        notify("Failed to verify project setup. Open project settings.", "error");
+        setActiveView("settings");
+        navigate(`/project/${encodeURIComponent(currentProjectId)}/settings`, {
+          replace: true,
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    token,
+    loading,
+    currentProjectId,
+    activeView,
+    evaluateProjectReadiness,
+    navigate,
+    notify,
+    setActiveView,
+  ]);
 
   const login = async ({ email, password }) => {
     setAuthLoading(true);
@@ -1446,6 +1590,7 @@ function App() {
       <MainLayout
         currentUser={currentUser}
         onLogout={logout}
+        canManage={canManage}
         activeView={activeView}
         currentProjectId={currentProjectId}
         projects={sidebarProjects}

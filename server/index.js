@@ -15,10 +15,34 @@ dotenv.config();
 
 export function createApp() {
   const app = express();
+  const allowedOrigins = String(process.env.CORS_ORIGIN || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  app.disable("x-powered-by");
+  app.set("trust proxy", 1);
+
+  app.use((req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    res.setHeader(
+      "Strict-Transport-Security",
+      "max-age=31536000; includeSubDomains; preload",
+    );
+    next();
+  });
 
   app.use(
     cors({
-      origin: true,
+      origin(origin, callback) {
+        if (!origin) return callback(null, true);
+        if (!allowedOrigins.length || allowedOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+        return callback(new Error("CORS origin denied"));
+      },
       credentials: true,
       methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization"],
@@ -41,7 +65,14 @@ export function createApp() {
 
   app.use((err, req, res, _next) => {
     console.error(err.stack);
-    res.status(500).json({ error: "Something went wrong!" });
+    if (String(err.message || "").includes("CORS origin denied")) {
+      return res.status(403).json({ error: "Origin not allowed." });
+    }
+    const isProd = String(process.env.NODE_ENV || "").toLowerCase() === "production";
+    return res.status(500).json({
+      error: "Something went wrong!",
+      ...(isProd ? {} : { details: err.message }),
+    });
   });
 
   return app;
