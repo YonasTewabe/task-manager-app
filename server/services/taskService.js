@@ -1308,7 +1308,7 @@ export async function getTasks(filters = {}) {
   }
   if (filters.search) {
     where.push(
-      `(t.title ILIKE $${idx} OR t.description ILIKE $${idx} OR t.label ILIKE $${idx})`,
+      `(t.title ILIKE $${idx} OR CONCAT(p.project_key, '-', t.task_number) ILIKE $${idx})`,
     );
     params.push(`%${String(filters.search).trim()}%`);
     idx += 1;

@@ -1572,6 +1572,25 @@ function App() {
     ],
   );
 
+  const searchGlobalTasks = useCallback(async (query) => {
+    const term = String(query || "").trim();
+    if (!term) return [];
+    const params = new URLSearchParams();
+    params.set("search", term);
+    const data = await apiRequest(`/task-management/tasks?${params.toString()}`);
+    return (Array.isArray(data) ? data : []).slice(0, 12);
+  }, []);
+
+  const openTaskFromGlobalSearch = useCallback(
+    (task) => {
+      const taskId = String(task?.id || "").trim();
+      const projectId = String(task?.projectId || "").trim();
+      if (!taskId || !projectId) return;
+      navigate(`/project/${encodeURIComponent(projectId)}/board?taskId=${encodeURIComponent(taskId)}`);
+    },
+    [navigate],
+  );
+
   const openProjectBoard = useCallback(
     (id) => handleNavigateProject(id, "board"),
     [handleNavigateProject],
@@ -2096,6 +2115,8 @@ function App() {
         onNotificationClick={handleNotificationClick}
         onMarkNotificationRead={markNotificationRead}
         onMarkAllNotificationsRead={markAllNotificationsRead}
+        onGlobalTaskSearch={searchGlobalTasks}
+        onOpenGlobalTask={openTaskFromGlobalSearch}
       >
         <div className={activeView === "dashboard" ? undefined : "p-4"}>
           {(activeView === "board" || activeView === "backlog") &&
@@ -2105,9 +2126,10 @@ function App() {
             >
               <div className="grid gap-[0.6rem]">
                 <div className="flex flex-wrap items-center gap-[0.6rem] max-[1100px]:flex-col max-[1100px]:items-stretch">
-                  <div className="flex min-w-[250px] flex-1 basis-[320px] items-center gap-[0.4rem] rounded border border-[#d6dce8] bg-[#f7f8fa] px-2 py-[0.3rem]">
+                  <div className="flex min-w-[640px] flex-1 basis-[800px] items-center gap-[0.4rem] rounded border border-[#d6dce8] bg-[#f7f8fa] px-2 py-[0.3rem] max-[1100px]:min-w-[250px] max-[1100px]:basis-[320px]">
                     <span className="text-[0.95rem] text-[#6b778c]">⌕</span>
                     <input
+                      className="w-full border-none bg-transparent p-0 shadow-none focus:outline-none focus-visible:outline-none"
                       placeholder="Search board"
                       value={filters.search}
                       onChange={(event) =>

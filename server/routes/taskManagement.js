@@ -171,6 +171,14 @@ function taskNotificationMeta(task, extra = {}) {
   };
 }
 
+function withUserProjectScope(req, filters = {}) {
+  if (req.user?.role === "admin") return filters;
+  return {
+    ...filters,
+    limitProjectsToMemberUserId: req.user.id,
+  };
+}
+
 router.get("/bootstrap", async (req, res) => {
   const projectId = req.query.projectId ? String(req.query.projectId) : "";
   const [users, sprints, tasks, projects] = await Promise.all([
@@ -219,7 +227,9 @@ router.get("/app-settings/github", requireRole("admin"), async (_req, res) => {
       updatedAt: settings.updatedAt,
     });
   } catch {
-    return res.status(500).json({ error: "Failed to load app GitHub settings" });
+    return res
+      .status(500)
+      .json({ error: "Failed to load app GitHub settings" });
   }
 });
 
@@ -235,7 +245,9 @@ router.patch("/app-settings/github", requireRole("admin"), async (req, res) => {
       updatedAt: updated.updatedAt,
     });
   } catch {
-    return res.status(500).json({ error: "Failed to save app GitHub settings" });
+    return res
+      .status(500)
+      .json({ error: "Failed to save app GitHub settings" });
   }
 });
 
@@ -431,7 +443,7 @@ router.get("/board", async (req, res) => {
   const columns = await buildBoard(
     sprintId || null,
     projectId || null,
-    filters,
+    withUserProjectScope(req, filters),
   );
   return res.json({ columns });
 });
@@ -505,7 +517,9 @@ router.post("/users", requireRole("admin"), async (req, res) => {
     ? String(req.body.password)
     : generateTemporaryPassword();
   const passwordHash = await bcrypt.hash(temporaryPassword, 12);
-  const normalizedEmail = String(email || "").trim().toLowerCase();
+  const normalizedEmail = String(email || "")
+    .trim()
+    .toLowerCase();
   const generatedName = `New User (${normalizedEmail.split("@")[0] || "member"})`;
   try {
     const created = await createUser({
@@ -515,12 +529,40 @@ router.post("/users", requireRole("admin"), async (req, res) => {
       role: req.body.role || "member",
       mustChangePassword: true,
     });
-    const appUrl = String(process.env.APP_URL || "").trim().replace(/\/+$/, "");
-    const loginUrl = appUrl ? `${appUrl}/` : "the application login page";
+    const frontendUrl = String(process.env.FRONTEND_URL)
+      .trim()
+      .replace(/\/+$/, "");
+    const requestBaseUrl = `${req.protocol}://${req.get("host")}`.replace(
+      /\/+$/,
+      "",
+    );
+    const loginUrl = `${(frontendUrl || requestBaseUrl).replace(/\/+$/, "")}/`;
     await sendEmail({
       to: created.email,
-      subject: "Your account has been created",
-      text: `Hi,\n\nYour account is ready.\nTemporary password: ${temporaryPassword}\nLogin: ${loginUrl}\n\nYou will be asked to set your name and change your password when you sign in for the first time.`,
+      subject: "Welcome to Task Manager - Account Access Details",
+      text:
+        `Hello,\n\n` +
+        `This email was sent from the Task Manager app.\n\n` +
+        `Your Task Manager account has been successfully created.\n\n` +
+        `Account details:\n` +
+        `- Email: ${created.email}\n` +
+        `- Temporary password: ${temporaryPassword}\n` +
+        `- Login URL: ${loginUrl}\n\n` +
+        `For security, you will be prompted to set your display name and change your password on first sign-in.\n\n` +
+        `If you did not expect this email, please contact your administrator.\n\n` +
+        `Regards,\n` +
+        `Task Manager Team`,
+      html:
+        `<p>Hello,</p>` +
+        `<p>This email was sent from the <strong>Task Manager</strong> app.</p>` +
+        `<p>Your <strong>Task Manager</strong> account has been successfully created.</p>` +
+        `<p><strong>Account details</strong><br/>` +
+        `Email: ${created.email}<br/>` +
+        `Temporary password: ${temporaryPassword}<br/>` +
+        `Login URL: <a href="${loginUrl}">${loginUrl}</a></p>` +
+        `<p>For security, you will be prompted to set your display name and change your password on first sign-in.</p>` +
+        `<p>If you did not expect this email, please contact your administrator.</p>` +
+        `<p>Regards,<br/>Task Manager Team</p>`,
     });
     await logUserAudit({
       actorUserId: req.user.id,
@@ -564,38 +606,50 @@ router.patch("/users/:userId", requireRole("admin"), async (req, res) => {
   return res.json(updated);
 });
 
-router.patch("/users/:userId/disable", requireRole("admin"), async (req, res) => {
-  const targetUserId = String(req.params.userId);
-  if (targetUserId === String(req.user.id)) {
-    return res
-      .status(400)
-      .json({ error: "You cannot disable your own account" });
-  }
-  const disabled = await disableUser(targetUserId, req.user.id, req.body?.reason || "");
-  if (!disabled) {
-    return res.status(404).json({ error: "User not found" });
-  }
-  await logUserAudit({
-    actorUserId: req.user.id,
-    targetUserId: disabled.id,
-    action: "user_disabled",
-    metadata: { reason: String(req.body?.reason || "").trim() },
-  }).catch(() => {});
-  return res.json(disabled);
-});
+router.patch(
+  "/users/:userId/disable",
+  requireRole("admin"),
+  async (req, res) => {
+    const targetUserId = String(req.params.userId);
+    if (targetUserId === String(req.user.id)) {
+      return res
+        .status(400)
+        .json({ error: "You cannot disable your own account" });
+    }
+    const disabled = await disableUser(
+      targetUserId,
+      req.user.id,
+      req.body?.reason || "",
+    );
+    if (!disabled) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    await logUserAudit({
+      actorUserId: req.user.id,
+      targetUserId: disabled.id,
+      action: "user_disabled",
+      metadata: { reason: String(req.body?.reason || "").trim() },
+    }).catch(() => {});
+    return res.json(disabled);
+  },
+);
 
-router.patch("/users/:userId/enable", requireRole("admin"), async (req, res) => {
-  const enabled = await enableUser(String(req.params.userId));
-  if (!enabled) {
-    return res.status(404).json({ error: "User not found" });
-  }
-  await logUserAudit({
-    actorUserId: req.user.id,
-    targetUserId: enabled.id,
-    action: "user_enabled",
-  }).catch(() => {});
-  return res.json(enabled);
-});
+router.patch(
+  "/users/:userId/enable",
+  requireRole("admin"),
+  async (req, res) => {
+    const enabled = await enableUser(String(req.params.userId));
+    if (!enabled) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    await logUserAudit({
+      actorUserId: req.user.id,
+      targetUserId: enabled.id,
+      action: "user_enabled",
+    }).catch(() => {});
+    return res.json(enabled);
+  },
+);
 
 router.delete("/users/:userId", requireRole("admin"), async (req, res) => {
   const targetUserId = String(req.params.userId);
@@ -756,30 +810,34 @@ router.delete("/sprints/:sprintId", requireRole("admin"), async (req, res) => {
 });
 
 router.get("/tasks", async (req, res) => {
-  const tasks = await getTasks({
-    sprintId: req.query.sprintId,
-    projectId: req.query.projectId,
-    assigneeId: req.query.assigneeId,
-    status: req.query.status,
-    priority: req.query.priority,
-    type: req.query.type,
-    label: req.query.label,
-    search: req.query.search,
-  });
+  const tasks = await getTasks(
+    withUserProjectScope(req, {
+      sprintId: req.query.sprintId,
+      projectId: req.query.projectId,
+      assigneeId: req.query.assigneeId,
+      status: req.query.status,
+      priority: req.query.priority,
+      type: req.query.type,
+      label: req.query.label,
+      search: req.query.search,
+    }),
+  );
   return res.json(tasks);
 });
 
 router.get("/backlog", async (req, res) => {
-  const tasks = await getTasks({
-    sprintId: "backlog",
-    projectId: req.query.projectId,
-    assigneeId: req.query.assigneeId,
-    status: req.query.status,
-    priority: req.query.priority,
-    type: req.query.type,
-    label: req.query.label,
-    search: req.query.search,
-  });
+  const tasks = await getTasks(
+    withUserProjectScope(req, {
+      sprintId: "backlog",
+      projectId: req.query.projectId,
+      assigneeId: req.query.assigneeId,
+      status: req.query.status,
+      priority: req.query.priority,
+      type: req.query.type,
+      label: req.query.label,
+      search: req.query.search,
+    }),
+  );
   return res.json(tasks);
 });
 
@@ -885,10 +943,13 @@ router.patch("/tasks/:taskId", async (req, res) => {
         });
       }
       if (req.body?.description !== undefined) {
-        const mentionedUserIds = await resolveMentionedUserIds(req.body.description, {
-          excludeUserId: req.user.id,
-          projectId: updated.projectId,
-        });
+        const mentionedUserIds = await resolveMentionedUserIds(
+          req.body.description,
+          {
+            excludeUserId: req.user.id,
+            projectId: updated.projectId,
+          },
+        );
         if (mentionedUserIds.length) {
           await createAndDispatchNotifications({
             actorUserId: req.user.id,
@@ -941,7 +1002,9 @@ router.patch("/tasks/:taskId/move", async (req, res) => {
       entityType: "task",
       entityId: updated.id,
       metadata: taskNotificationMeta(updated, {
-        changes: [{ field: "status", from: current.status, to: updated.status }],
+        changes: [
+          { field: "status", from: current.status, to: updated.status },
+        ],
       }),
       dedupeKey: `task-move:${updated.id}:${updated.updatedAt}`,
     });

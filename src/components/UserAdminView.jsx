@@ -1,3 +1,4 @@
+import { useState } from "react";
 import Modal from "./ui/Modal";
 import { useAppStore } from "../store/appStore";
 import { useShallow } from "zustand/react/shallow";
@@ -72,6 +73,7 @@ export default function UserAdminView({
       setUserAdminEditGroupMemberIds: state.setUserAdminEditGroupMemberIds,
     })),
   );
+  const [isCreatingUser, setIsCreatingUser] = useState(false);
 
   const closeEditModal = () => {
     setShowEditModal(false);
@@ -238,15 +240,21 @@ export default function UserAdminView({
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
+                  disabled={isCreatingUser}
+                  onClick={async () => {
                     if (!email.trim() || !role) return;
-                    onCreateUser({ email: email.trim(), role });
-                    setEmail("");
-                    setRole("member");
-                    setShowCreateModal(false);
+                    try {
+                      setIsCreatingUser(true);
+                      await onCreateUser({ email: email.trim(), role });
+                      setEmail("");
+                      setRole("member");
+                      setShowCreateModal(false);
+                    } finally {
+                      setIsCreatingUser(false);
+                    }
                   }}
                 >
-                  Create User
+                  {isCreatingUser ? "Creating..." : "Create User"}
                 </button>
               </div>
             </div>
