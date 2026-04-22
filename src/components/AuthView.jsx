@@ -1,12 +1,20 @@
-import { useState } from "react";
+import { useAppStore } from "../store/appStore";
+import { useShallow } from "zustand/react/shallow";
 
 function EMPTY_FORM() {
   return { name: "", email: "", password: "" };
 }
 
 export default function AuthView({ onLogin, onRegister, loading, error }) {
-  const [mode, setMode] = useState("login");
-  const [form, setForm] = useState(EMPTY_FORM());
+  const { authMode: mode, setAuthMode: setMode, authForm: form, setAuthForm: setForm } =
+    useAppStore(
+      useShallow((state) => ({
+        authMode: state.authMode,
+        setAuthMode: state.setAuthMode,
+        authForm: state.authForm,
+        setAuthForm: state.setAuthForm,
+      })),
+    );
 
   const submit = (event) => {
     event.preventDefault();

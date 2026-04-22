@@ -1,5 +1,6 @@
-import { useState } from "react";
 import Modal from "./ui/Modal";
+import { useAppStore } from "../store/appStore";
+import { useShallow } from "zustand/react/shallow";
 
 export default function UserAdminView({
   users,
@@ -13,26 +14,71 @@ export default function UserAdminView({
   onUpdateUserGroup,
   onDeleteUserGroup,
 }) {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [role, setRole] = useState("member");
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
-  const [showEditGroupModal, setShowEditGroupModal] = useState(false);
-  const [editingUserId, setEditingUserId] = useState(null);
-  const [editingGroupId, setEditingGroupId] = useState(null);
-  const [editDraft, setEditDraft] = useState({
-    name: "",
-    email: "",
-    password: "",
-    role: "member",
-  });
-  const [groupName, setGroupName] = useState("");
-  const [groupMemberIds, setGroupMemberIds] = useState([]);
-  const [editGroupName, setEditGroupName] = useState("");
-  const [editGroupMemberIds, setEditGroupMemberIds] = useState([]);
+  const {
+    userAdminName: name,
+    setUserAdminName: setName,
+    userAdminEmail: email,
+    setUserAdminEmail: setEmail,
+    userAdminPassword: password,
+    setUserAdminPassword: setPassword,
+    userAdminRole: role,
+    setUserAdminRole: setRole,
+    userAdminShowCreateModal: showCreateModal,
+    setUserAdminShowCreateModal: setShowCreateModal,
+    userAdminShowEditModal: showEditModal,
+    setUserAdminShowEditModal: setShowEditModal,
+    userAdminShowCreateGroupModal: showCreateGroupModal,
+    setUserAdminShowCreateGroupModal: setShowCreateGroupModal,
+    userAdminShowEditGroupModal: showEditGroupModal,
+    setUserAdminShowEditGroupModal: setShowEditGroupModal,
+    userAdminEditingUserId: editingUserId,
+    setUserAdminEditingUserId: setEditingUserId,
+    userAdminEditingGroupId: editingGroupId,
+    setUserAdminEditingGroupId: setEditingGroupId,
+    userAdminEditDraft: editDraft,
+    setUserAdminEditDraft: setEditDraft,
+    userAdminGroupName: groupName,
+    setUserAdminGroupName: setGroupName,
+    userAdminGroupMemberIds: groupMemberIds,
+    setUserAdminGroupMemberIds: setGroupMemberIds,
+    userAdminEditGroupName: editGroupName,
+    setUserAdminEditGroupName: setEditGroupName,
+    userAdminEditGroupMemberIds: editGroupMemberIds,
+    setUserAdminEditGroupMemberIds: setEditGroupMemberIds,
+  } = useAppStore(
+    useShallow((state) => ({
+      userAdminName: state.userAdminName,
+      setUserAdminName: state.setUserAdminName,
+      userAdminEmail: state.userAdminEmail,
+      setUserAdminEmail: state.setUserAdminEmail,
+      userAdminPassword: state.userAdminPassword,
+      setUserAdminPassword: state.setUserAdminPassword,
+      userAdminRole: state.userAdminRole,
+      setUserAdminRole: state.setUserAdminRole,
+      userAdminShowCreateModal: state.userAdminShowCreateModal,
+      setUserAdminShowCreateModal: state.setUserAdminShowCreateModal,
+      userAdminShowEditModal: state.userAdminShowEditModal,
+      setUserAdminShowEditModal: state.setUserAdminShowEditModal,
+      userAdminShowCreateGroupModal: state.userAdminShowCreateGroupModal,
+      setUserAdminShowCreateGroupModal: state.setUserAdminShowCreateGroupModal,
+      userAdminShowEditGroupModal: state.userAdminShowEditGroupModal,
+      setUserAdminShowEditGroupModal: state.setUserAdminShowEditGroupModal,
+      userAdminEditingUserId: state.userAdminEditingUserId,
+      setUserAdminEditingUserId: state.setUserAdminEditingUserId,
+      userAdminEditingGroupId: state.userAdminEditingGroupId,
+      setUserAdminEditingGroupId: state.setUserAdminEditingGroupId,
+      userAdminEditDraft: state.userAdminEditDraft,
+      setUserAdminEditDraft: state.setUserAdminEditDraft,
+      userAdminGroupName: state.userAdminGroupName,
+      setUserAdminGroupName: state.setUserAdminGroupName,
+      userAdminGroupMemberIds: state.userAdminGroupMemberIds,
+      setUserAdminGroupMemberIds: state.setUserAdminGroupMemberIds,
+      userAdminEditGroupName: state.userAdminEditGroupName,
+      setUserAdminEditGroupName: state.setUserAdminEditGroupName,
+      userAdminEditGroupMemberIds: state.userAdminEditGroupMemberIds,
+      setUserAdminEditGroupMemberIds: state.setUserAdminEditGroupMemberIds,
+    })),
+  );
 
   const closeEditModal = () => {
     setShowEditModal(false);

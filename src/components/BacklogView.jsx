@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { DEFAULT_WORKFLOW_STAGES } from "../workflowDefaults.js";
 import { displayTaskRef } from "../utils/taskDisplay.js";
 import Modal from "./ui/Modal";
+import { useAppStore } from "../store/appStore";
+import { useShallow } from "zustand/react/shallow";
 
 function sumStoryPoints(tasks, statuses) {
   const allowed = new Set(Array.isArray(statuses) ? statuses : [statuses]);
@@ -68,26 +70,53 @@ export default function BacklogView({
     task.assigneeId
       ? usersById?.get(task.assigneeId) || "Unknown"
       : "Unassigned";
-  const [showCreateSprintModal, setShowCreateSprintModal] = useState(false);
-  const [expandedKeys, setExpandedKeys] = useState(() => new Set(["backlog"]));
-  const [createDraft, setCreateDraft] = useState({
-    name: "",
-    startDate: "",
-    endDate: "",
-  });
-  const [createNameError, setCreateNameError] = useState("");
-  const [sprintCompleteDialog, setSprintCompleteDialog] = useState(null);
-  const [sprintDeleteDialog, setSprintDeleteDialog] = useState(null);
-  const [sprintDeleteError, setSprintDeleteError] = useState("");
+  const {
+    backlogShowCreateSprintModal: showCreateSprintModal,
+    setBacklogShowCreateSprintModal: setShowCreateSprintModal,
+    backlogExpandedKeys: expandedKeys,
+    setBacklogExpandedKeys: setExpandedKeys,
+    backlogCreateDraft: createDraft,
+    setBacklogCreateDraft: setCreateDraft,
+    backlogCreateNameError: createNameError,
+    setBacklogCreateNameError: setCreateNameError,
+    backlogSprintCompleteDialog: sprintCompleteDialog,
+    setBacklogSprintCompleteDialog: setSprintCompleteDialog,
+    backlogSprintDeleteDialog: sprintDeleteDialog,
+    setBacklogSprintDeleteDialog: setSprintDeleteDialog,
+    backlogSprintDeleteError: sprintDeleteError,
+    setBacklogSprintDeleteError: setSprintDeleteError,
+    backlogDragState: dragState,
+    setBacklogDragState: setDragState,
+    backlogRecentlyMovedTaskId: recentlyMovedTaskId,
+    setBacklogRecentlyMovedTaskId: setRecentlyMovedTaskId,
+    backlogBlockedDropKey: blockedDropKey,
+    setBacklogBlockedDropKey: setBlockedDropKey,
+  } = useAppStore(
+    useShallow((state) => ({
+      backlogShowCreateSprintModal: state.backlogShowCreateSprintModal,
+      setBacklogShowCreateSprintModal: state.setBacklogShowCreateSprintModal,
+      backlogExpandedKeys: state.backlogExpandedKeys,
+      setBacklogExpandedKeys: state.setBacklogExpandedKeys,
+      backlogCreateDraft: state.backlogCreateDraft,
+      setBacklogCreateDraft: state.setBacklogCreateDraft,
+      backlogCreateNameError: state.backlogCreateNameError,
+      setBacklogCreateNameError: state.setBacklogCreateNameError,
+      backlogSprintCompleteDialog: state.backlogSprintCompleteDialog,
+      setBacklogSprintCompleteDialog: state.setBacklogSprintCompleteDialog,
+      backlogSprintDeleteDialog: state.backlogSprintDeleteDialog,
+      setBacklogSprintDeleteDialog: state.setBacklogSprintDeleteDialog,
+      backlogSprintDeleteError: state.backlogSprintDeleteError,
+      setBacklogSprintDeleteError: state.setBacklogSprintDeleteError,
+      backlogDragState: state.backlogDragState,
+      setBacklogDragState: state.setBacklogDragState,
+      backlogRecentlyMovedTaskId: state.backlogRecentlyMovedTaskId,
+      setBacklogRecentlyMovedTaskId: state.setBacklogRecentlyMovedTaskId,
+      backlogBlockedDropKey: state.backlogBlockedDropKey,
+      setBacklogBlockedDropKey: state.setBacklogBlockedDropKey,
+    })),
+  );
   const movedTaskTimeoutRef = useRef(null);
   const blockedDropTimeoutRef = useRef(null);
-  const [dragState, setDragState] = useState({
-    taskId: "",
-    sourceKey: "",
-    overKey: "",
-  });
-  const [recentlyMovedTaskId, setRecentlyMovedTaskId] = useState("");
-  const [blockedDropKey, setBlockedDropKey] = useState("");
   const stageList = workflowStages?.length
     ? workflowStages
     : DEFAULT_WORKFLOW_STAGES;
@@ -96,32 +125,39 @@ export default function BacklogView({
     [stageList],
   );
 
-  const tasksBySprint = new Map();
-  allTasks.forEach((task) => {
-    const key = task.sprintId == null ? "backlog" : String(task.sprintId);
-    const list = tasksBySprint.get(key) || [];
-    list.push(task);
-    tasksBySprint.set(key, list);
-  });
-
-  const sprintRows = [...sprints]
-    .filter(
-      (sprint) =>
-        sprint.status === "active" ||
-        sprint.status === "planned" ||
-        String(sprint.id) === String(selectedSprintId || ""),
-    )
-    .map((sprint) => {
-      const sprintTaskList = tasksBySprint.get(String(sprint.id)) || [];
-      return {
-        key: String(sprint.id),
-        name: sprint.name,
-        status: sprint.status,
-        startDate: sprint.startDate || "",
-        endDate: sprint.endDate || "",
-        tasks: sprintTaskList,
-      };
+  const tasksBySprint = useMemo(() => {
+    const grouped = new Map();
+    allTasks.forEach((task) => {
+      const key = task.sprintId == null ? "backlog" : String(task.sprintId);
+      const list = grouped.get(key) || [];
+      list.push(task);
+      grouped.set(key, list);
     });
+    return grouped;
+  }, [allTasks]);
+
+  const sprintRows = useMemo(
+    () =>
+      [...sprints]
+        .filter(
+          (sprint) =>
+            sprint.status === "active" ||
+            sprint.status === "planned" ||
+            String(sprint.id) === String(selectedSprintId || ""),
+        )
+        .map((sprint) => {
+          const sprintTaskList = tasksBySprint.get(String(sprint.id)) || [];
+          return {
+            key: String(sprint.id),
+            name: sprint.name,
+            status: sprint.status,
+            startDate: sprint.startDate || "",
+            endDate: sprint.endDate || "",
+            tasks: sprintTaskList,
+          };
+        }),
+    [sprints, selectedSprintId, tasksBySprint],
+  );
 
   const sortByDateThenName = (a, b) => {
     const aDate =
@@ -132,31 +168,40 @@ export default function BacklogView({
     return String(a.name || "").localeCompare(String(b.name || ""));
   };
 
-  const activeSprintRows = sprintRows
-    .filter((row) => row.status === "active")
-    .sort(sortByDateThenName);
-  const plannedSprintRows = sprintRows
-    .filter((row) => row.status === "planned")
-    .sort(sortByDateThenName);
-  const otherSprintRows = sprintRows
-    .filter((row) => row.status !== "active" && row.status !== "planned")
-    .sort(sortByDateThenName);
+  const activeSprintRows = useMemo(
+    () => sprintRows.filter((row) => row.status === "active").sort(sortByDateThenName),
+    [sprintRows],
+  );
+  const plannedSprintRows = useMemo(
+    () =>
+      sprintRows.filter((row) => row.status === "planned").sort(sortByDateThenName),
+    [sprintRows],
+  );
+  const otherSprintRows = useMemo(
+    () =>
+      sprintRows
+        .filter((row) => row.status !== "active" && row.status !== "planned")
+        .sort(sortByDateThenName),
+    [sprintRows],
+  );
 
-  const backlogRow = {
-    key: "backlog",
-    name: "Backlog",
-    status: "backlog",
-    tasks,
-  };
+  const backlogRow = useMemo(
+    () => ({
+      key: "backlog",
+      name: "Backlog",
+      status: "backlog",
+      tasks,
+    }),
+    [tasks],
+  );
 
-  const rows = selectedSprintId
-    ? sprintRows.filter((row) => String(row.key) === String(selectedSprintId))
-    : [
-        backlogRow,
-        ...activeSprintRows,
-        ...plannedSprintRows,
-        ...otherSprintRows,
-      ];
+  const rows = useMemo(
+    () =>
+      selectedSprintId
+        ? sprintRows.filter((row) => String(row.key) === String(selectedSprintId))
+        : [backlogRow, ...activeSprintRows, ...plannedSprintRows, ...otherSprintRows],
+    [selectedSprintId, sprintRows, backlogRow, activeSprintRows, plannedSprintRows, otherSprintRows],
+  );
 
   const toggleExpanded = (key) => {
     setExpandedKeys((prev) => {

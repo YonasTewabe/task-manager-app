@@ -1,6 +1,7 @@
+import { memo } from "react";
 import Sidebar from "./Sidebar";
 
-export default function MainLayout({
+function MainLayout({
   currentUser,
   onLogout,
   activeView,
@@ -45,3 +46,5 @@ export default function MainLayout({
     </div>
   );
 }
+
+export default memo(MainLayout);

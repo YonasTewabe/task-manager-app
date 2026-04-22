@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import { DEFAULT_WORKFLOW_STAGES } from "../workflowDefaults.js";
 import { displayTaskRef } from "../utils/taskDisplay.js";
+import { useAppStore } from "../store/appStore";
+import { useShallow } from "zustand/react/shallow";
 import {
   isRichTextEmpty,
   toDisplayRichText,
@@ -138,6 +140,8 @@ function RichTextEditor({
   );
 }
 
+const MemoRichTextEditor = memo(RichTextEditor);
+
 export default function TaskDrawer({
   taskBundle,
   currentUserId,
@@ -172,27 +176,59 @@ export default function TaskDrawer({
       .filter(Boolean);
   }, []);
   const task = taskBundle?.task;
-  const [draft, setDraft] = useState(
-    task
-      ? {
-          ...task,
-          acceptanceCriteria: normalizeAcceptanceCriteria(
-            task.acceptanceCriteria,
-          ),
-        }
-      : null,
+  const {
+    drawerDraft: draft,
+    setDrawerDraft: setDraft,
+    drawerCommentBody: commentBody,
+    setDrawerCommentBody: setCommentBody,
+    drawerActivityTab: activityTab,
+    setDrawerActivityTab: setActivityTab,
+    drawerCommentComposerOpen: commentComposerOpen,
+    setDrawerCommentComposerOpen: setCommentComposerOpen,
+    drawerDevPanel: devPanel,
+    setDrawerDevPanel: setDevPanel,
+    drawerIsUploadingDescription: isUploadingDescription,
+    setDrawerIsUploadingDescription: setIsUploadingDescription,
+    drawerIsUploadingComment: isUploadingComment,
+    setDrawerIsUploadingComment: setIsUploadingComment,
+    drawerIsEditingTitle: isEditingTitle,
+    setDrawerIsEditingTitle: setIsEditingTitle,
+    drawerDescriptionDirty: descriptionDirty,
+    setDrawerDescriptionDirty: setDescriptionDirty,
+    drawerIsAutoSaving: isAutoSaving,
+    setDrawerIsAutoSaving: setIsAutoSaving,
+    drawerEditingCommentId: editingCommentId,
+    setDrawerEditingCommentId: setEditingCommentId,
+    drawerEditingCommentBody: editingCommentBody,
+    setDrawerEditingCommentBody: setEditingCommentBody,
+  } = useAppStore(
+    useShallow((state) => ({
+      drawerDraft: state.drawerDraft,
+      setDrawerDraft: state.setDrawerDraft,
+      drawerCommentBody: state.drawerCommentBody,
+      setDrawerCommentBody: state.setDrawerCommentBody,
+      drawerActivityTab: state.drawerActivityTab,
+      setDrawerActivityTab: state.setDrawerActivityTab,
+      drawerCommentComposerOpen: state.drawerCommentComposerOpen,
+      setDrawerCommentComposerOpen: state.setDrawerCommentComposerOpen,
+      drawerDevPanel: state.drawerDevPanel,
+      setDrawerDevPanel: state.setDrawerDevPanel,
+      drawerIsUploadingDescription: state.drawerIsUploadingDescription,
+      setDrawerIsUploadingDescription: state.setDrawerIsUploadingDescription,
+      drawerIsUploadingComment: state.drawerIsUploadingComment,
+      setDrawerIsUploadingComment: state.setDrawerIsUploadingComment,
+      drawerIsEditingTitle: state.drawerIsEditingTitle,
+      setDrawerIsEditingTitle: state.setDrawerIsEditingTitle,
+      drawerDescriptionDirty: state.drawerDescriptionDirty,
+      setDrawerDescriptionDirty: state.setDrawerDescriptionDirty,
+      drawerIsAutoSaving: state.drawerIsAutoSaving,
+      setDrawerIsAutoSaving: state.setDrawerIsAutoSaving,
+      drawerEditingCommentId: state.drawerEditingCommentId,
+      setDrawerEditingCommentId: state.setDrawerEditingCommentId,
+      drawerEditingCommentBody: state.drawerEditingCommentBody,
+      setDrawerEditingCommentBody: state.setDrawerEditingCommentBody,
+    })),
   );
-  const [commentBody, setCommentBody] = useState("");
-  const [activityTab, setActivityTab] = useState("comments");
-  const [commentComposerOpen, setCommentComposerOpen] = useState(false);
-  const [devPanel, setDevPanel] = useState(null);
-  const [isUploadingDescription, setIsUploadingDescription] = useState(false);
-  const [isUploadingComment, setIsUploadingComment] = useState(false);
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [descriptionDirty, setDescriptionDirty] = useState(false);
-  const [isAutoSaving, setIsAutoSaving] = useState(false);
-  const [editingCommentId, setEditingCommentId] = useState(null);
-  const [editingCommentBody, setEditingCommentBody] = useState("");
   const titleEditorRef = useRef(null);
   const lastSavedPatchRef = useRef("");
   const previousTaskIdRef = useRef(null);
@@ -531,7 +567,7 @@ export default function TaskDrawer({
                 <div className="flex items-center justify-between">
                   <h4>Description</h4>
                 </div>
-                <RichTextEditor
+                <MemoRichTextEditor
                   value={draft.description || ""}
                   placeholder="Add task details, context, and expected outcome."
                   uploading={isUploadingDescription}
@@ -670,7 +706,7 @@ export default function TaskDrawer({
                   {activityTab === "comments" ? (
                     commentComposerOpen ? (
                       <div className="grid gap-[0.45rem] rounded-md border border-[#dfe1e6] bg-white p-[0.45rem]">
-                        <RichTextEditor
+                        <MemoRichTextEditor
                           value={commentBody}
                           placeholder="Add a comment..."
                           uploading={isUploadingComment}
@@ -791,7 +827,7 @@ export default function TaskDrawer({
                         </div>
                         {editingCommentId === comment.id ? (
                           <div className="grid gap-2">
-                            <RichTextEditor
+                            <MemoRichTextEditor
                               value={editingCommentBody}
                               placeholder="Edit comment..."
                               uploading={isUploadingComment}

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ToastContainer, toast } from "react-toastify";
+import { useShallow } from "zustand/react/shallow";
 import "react-toastify/dist/ReactToastify.css";
 import AuthView from "./components/AuthView";
 import BacklogView from "./components/BacklogView";
@@ -12,7 +13,7 @@ import TaskDrawer from "./components/TaskDrawer";
 import UserAdminView from "./components/UserAdminView";
 import MainLayout from "./components/Layout/MainLayout";
 import Modal from "./components/ui/Modal";
-import { apiRequest, getStoredToken, setStoredToken } from "./api/client";
+import { apiRequest, setStoredToken } from "./api/client";
 import { PRIORITY_OPTIONS } from "./constants/priorities.js";
 import { UNASSIGNED_AVATAR_SRC } from "./constants/unassignedAvatar.js";
 import {
@@ -20,6 +21,7 @@ import {
   getWorkTypeMeta,
 } from "./constants/workTypes.js";
 import { DEFAULT_WORKFLOW_STAGES } from "./workflowDefaults.js";
+import { useAppStore } from "./store/appStore";
 
 const PROJECT_ROUTE = /^\/project\/([^/]+)\/(board|backlog|settings)$/;
 const ASSIGNEE_VISIBLE_LIMIT = 6;
@@ -78,67 +80,157 @@ function initialActiveView(pathname) {
 function App() {
   const location = useLocation();
   const navigate = useNavigate();
-  const [token, setToken] = useState(getStoredToken());
-  const [authLoading, setAuthLoading] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [users, setUsers] = useState([]);
-  const [userGroups, setUserGroups] = useState([]);
-  const [sprints, setSprints] = useState([]);
-  const [projects, setProjects] = useState([]);
-  const [projectSettings, setProjectSettings] = useState(null);
-  const [columns, setColumns] = useState([]);
-  const [boardTotalsByStatus, setBoardTotalsByStatus] = useState({});
-  const [backlogTasks, setBacklogTasks] = useState([]);
-  const [allTasks, setAllTasks] = useState([]);
-  const [, setSprintTasks] = useState([]);
-  const [selectedSprintId, setSelectedSprintId] = useState("");
-  const [currentProjectId, setCurrentProjectId] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [taskTitle, setTaskTitle] = useState("");
-  const [storyPoints, setStoryPoints] = useState("");
-  const [assigneeId, setAssigneeId] = useState("");
-  const [taskPriority, setTaskPriority] = useState("medium");
-  const [taskType, setTaskType] = useState("task");
-  const [taskLabel, setTaskLabel] = useState("");
-  const [taskVersion, setTaskVersion] = useState("");
-  const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
-  const [showFilterModal, setShowFilterModal] = useState(false);
-  const [showAssigneeOverflow, setShowAssigneeOverflow] = useState(false);
-  const [confirmDialog, setConfirmDialog] = useState({
-    open: false,
-    title: "",
-    message: "",
-    confirmLabel: "Confirm",
-  });
+  const {
+    token,
+    setToken,
+    authLoading,
+    setAuthLoading,
+    currentUser,
+    setCurrentUser,
+    users,
+    setUsers,
+    userGroups,
+    setUserGroups,
+    sprints,
+    setSprints,
+    projects,
+    setProjects,
+    projectSettings,
+    setProjectSettings,
+    columns,
+    setColumns,
+    boardTotalsByStatus,
+    setBoardTotalsByStatus,
+    backlogTasks,
+    setBacklogTasks,
+    allTasks,
+    setAllTasks,
+    setSprintTasks,
+    selectedSprintId,
+    setSelectedSprintId,
+    currentProjectId,
+    setCurrentProjectId,
+    loading,
+    setLoading,
+    error,
+    setError,
+    taskTitle,
+    setTaskTitle,
+    storyPoints,
+    setStoryPoints,
+    assigneeId,
+    setAssigneeId,
+    taskPriority,
+    setTaskPriority,
+    taskType,
+    setTaskType,
+    taskLabel,
+    setTaskLabel,
+    taskVersion,
+    setTaskVersion,
+    showCreateTaskModal,
+    setShowCreateTaskModal,
+    showFilterModal,
+    setShowFilterModal,
+    showAssigneeOverflow,
+    setShowAssigneeOverflow,
+    confirmDialog,
+    setConfirmDialog,
+    taskBundle,
+    setTaskBundle,
+    activeView,
+    setActiveView,
+    dashboardAssignedTasks,
+    setDashboardAssignedTasks,
+    filters,
+    setFilters,
+    filterDraft,
+    setFilterDraft,
+  } = useAppStore(
+    useShallow((state) => ({
+      token: state.token,
+      setToken: state.setToken,
+      authLoading: state.authLoading,
+      setAuthLoading: state.setAuthLoading,
+      currentUser: state.currentUser,
+      setCurrentUser: state.setCurrentUser,
+      users: state.users,
+      setUsers: state.setUsers,
+      userGroups: state.userGroups,
+      setUserGroups: state.setUserGroups,
+      sprints: state.sprints,
+      setSprints: state.setSprints,
+      projects: state.projects,
+      setProjects: state.setProjects,
+      projectSettings: state.projectSettings,
+      setProjectSettings: state.setProjectSettings,
+      columns: state.columns,
+      setColumns: state.setColumns,
+      boardTotalsByStatus: state.boardTotalsByStatus,
+      setBoardTotalsByStatus: state.setBoardTotalsByStatus,
+      backlogTasks: state.backlogTasks,
+      setBacklogTasks: state.setBacklogTasks,
+      allTasks: state.allTasks,
+      setAllTasks: state.setAllTasks,
+      setSprintTasks: state.setSprintTasks,
+      selectedSprintId: state.selectedSprintId,
+      setSelectedSprintId: state.setSelectedSprintId,
+      currentProjectId: state.currentProjectId,
+      setCurrentProjectId: state.setCurrentProjectId,
+      loading: state.loading,
+      setLoading: state.setLoading,
+      error: state.error,
+      setError: state.setError,
+      taskTitle: state.taskTitle,
+      setTaskTitle: state.setTaskTitle,
+      storyPoints: state.storyPoints,
+      setStoryPoints: state.setStoryPoints,
+      assigneeId: state.assigneeId,
+      setAssigneeId: state.setAssigneeId,
+      taskPriority: state.taskPriority,
+      setTaskPriority: state.setTaskPriority,
+      taskType: state.taskType,
+      setTaskType: state.setTaskType,
+      taskLabel: state.taskLabel,
+      setTaskLabel: state.setTaskLabel,
+      taskVersion: state.taskVersion,
+      setTaskVersion: state.setTaskVersion,
+      showCreateTaskModal: state.showCreateTaskModal,
+      setShowCreateTaskModal: state.setShowCreateTaskModal,
+      showFilterModal: state.showFilterModal,
+      setShowFilterModal: state.setShowFilterModal,
+      showAssigneeOverflow: state.showAssigneeOverflow,
+      setShowAssigneeOverflow: state.setShowAssigneeOverflow,
+      confirmDialog: state.confirmDialog,
+      setConfirmDialog: state.setConfirmDialog,
+      taskBundle: state.taskBundle,
+      setTaskBundle: state.setTaskBundle,
+      activeView: state.activeView,
+      setActiveView: state.setActiveView,
+      dashboardAssignedTasks: state.dashboardAssignedTasks,
+      setDashboardAssignedTasks: state.setDashboardAssignedTasks,
+      filters: state.filters,
+      setFilters: state.setFilters,
+      filterDraft: state.filterDraft,
+      setFilterDraft: state.setFilterDraft,
+    })),
+  );
   const filterPopoverRef = useRef(null);
   const assigneeOverflowRef = useRef(null);
   const confirmResolverRef = useRef(null);
   const latestSettingsProjectIdRef = useRef("");
   const latestProjectIdRef = useRef("");
-  const [taskBundle, setTaskBundle] = useState(null);
-  const [activeView, setActiveView] = useState(() =>
-    initialActiveView(location.pathname),
-  );
-  const [dashboardAssignedTasks, setDashboardAssignedTasks] = useState([]);
-  const [filters, setFilters] = useState({
-    assigneeId: "",
-    priority: "",
-    label: "",
-    status: "",
-    type: "",
-    search: "",
-  });
-  const [filterDraft, setFilterDraft] = useState({
-    sprintId: "",
-    priority: "",
-    label: "",
-    status: "",
-    type: "",
-  });
+  useEffect(() => {
+    setActiveView((current) =>
+      current === "dashboard" ? initialActiveView(location.pathname) : current,
+    );
+  }, [location.pathname, setActiveView]);
 
-  const notify = (text, tone = "success") =>
-    tone === "error" ? toast.error(text) : toast.success(text);
+  const notify = useCallback(
+    (text, tone = "success") =>
+      tone === "error" ? toast.error(text) : toast.success(text),
+    [],
+  );
   const requestConfirmation = ({ title, message, confirmLabel = "Confirm" }) =>
     new Promise((resolve) => {
       confirmResolverRef.current = resolve;
@@ -753,7 +845,7 @@ function App() {
     currentProjectId,
   ]);
 
-  const handleNavigateMain = (key) => {
+  const handleNavigateMain = useCallback((key) => {
     if (key === "dashboard") {
       setActiveView("dashboard");
       navigate("/dashboard");
@@ -769,15 +861,15 @@ function App() {
       navigate("/users");
       return;
     }
-  };
+  }, [navigate, setActiveView]);
 
-  const handleNavigateProject = (projectId, subview) => {
+  const handleNavigateProject = useCallback((projectId, subview) => {
     const id = String(projectId);
     setCurrentProjectId(id);
     setSelectedSprintId("");
     setActiveView(subview);
     navigate(`/project/${id}/${subview}`);
-  };
+  }, [navigate, setActiveView, setCurrentProjectId, setSelectedSprintId]);
 
   const login = async ({ email, password }) => {
     setAuthLoading(true);
@@ -881,10 +973,24 @@ function App() {
     }
   };
 
-  const openTask = async (taskId) => {
+  const openTask = useCallback(async (taskId) => {
     const bundle = await apiRequest(`/task-management/tasks/${taskId}`);
     setTaskBundle(bundle);
-  };
+  }, [setTaskBundle]);
+
+  const openProjectBoard = useCallback(
+    (id) => handleNavigateProject(id, "board"),
+    [handleNavigateProject],
+  );
+  const openProjectSettings = useCallback(
+    (projectId) => handleNavigateProject(projectId, "settings"),
+    [handleNavigateProject],
+  );
+  const openCreateTaskModal = useCallback(
+    () => setShowCreateTaskModal(true),
+    [setShowCreateTaskModal],
+  );
+  const closeTaskDrawer = useCallback(() => setTaskBundle(null), [setTaskBundle]);
 
   const saveTask = async (taskId, patch) => {
     await apiRequest(`/task-management/tasks/${taskId}`, {
@@ -1705,7 +1811,7 @@ function App() {
               projectById={projectById}
               workflowStages={workflowStages}
               canManage={canManage}
-              onOpenProject={(id) => handleNavigateProject(id, "board")}
+              onOpenProject={openProjectBoard}
               onOpenTask={openTask}
             />
           ) : null}
@@ -1848,7 +1954,7 @@ function App() {
               onDeleteSprint={deleteSprint}
               onAssignTaskToSprint={assignTaskToSprintFromBacklog}
               onCreateSprint={createSprint}
-              onAddTask={() => setShowCreateTaskModal(true)}
+              onAddTask={openCreateTaskModal}
               onOpenTask={openTask}
               onDeleteTask={deleteTask}
               onNotify={notify}
@@ -1877,9 +1983,7 @@ function App() {
               onCreateProject={createProject}
               onUpdateProject={updateProject}
               onDeleteProject={deleteProject}
-              onConfigureProject={(projectId) =>
-                handleNavigateProject(projectId, "settings")
-              }
+              onConfigureProject={openProjectSettings}
               onNotify={notify}
             />
           ) : null}
@@ -1924,7 +2028,7 @@ function App() {
             workflowTransitions={workflowTransitions}
             labels={projectLabels}
             versions={projectVersions}
-            onClose={() => setTaskBundle(null)}
+            onClose={closeTaskDrawer}
             onSaveTask={saveTask}
             onAddComment={addComment}
           onUpdateComment={updateComment}

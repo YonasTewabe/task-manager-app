@@ -1,5 +1,6 @@
-import { useState } from "react";
 import Modal from "./ui/Modal";
+import { useAppStore } from "../store/appStore";
+import { useShallow } from "zustand/react/shallow";
 
 const EMPTY_FORM = {
   name: "",
@@ -16,11 +17,31 @@ export default function ProjectManagementView({
   onConfigureProject,
   onNotify,
 }) {
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [editForm, setEditForm] = useState(EMPTY_FORM);
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [editingProjectId, setEditingProjectId] = useState(null);
+  const {
+    projectMgmtForm: form,
+    setProjectMgmtForm: setForm,
+    projectMgmtEditForm: editForm,
+    setProjectMgmtEditForm: setEditForm,
+    projectMgmtShowCreateModal: showCreateModal,
+    setProjectMgmtShowCreateModal: setShowCreateModal,
+    projectMgmtShowEditModal: showEditModal,
+    setProjectMgmtShowEditModal: setShowEditModal,
+    projectMgmtEditingProjectId: editingProjectId,
+    setProjectMgmtEditingProjectId: setEditingProjectId,
+  } = useAppStore(
+    useShallow((state) => ({
+      projectMgmtForm: state.projectMgmtForm,
+      setProjectMgmtForm: state.setProjectMgmtForm,
+      projectMgmtEditForm: state.projectMgmtEditForm,
+      setProjectMgmtEditForm: state.setProjectMgmtEditForm,
+      projectMgmtShowCreateModal: state.projectMgmtShowCreateModal,
+      setProjectMgmtShowCreateModal: state.setProjectMgmtShowCreateModal,
+      projectMgmtShowEditModal: state.projectMgmtShowEditModal,
+      setProjectMgmtShowEditModal: state.setProjectMgmtShowEditModal,
+      projectMgmtEditingProjectId: state.projectMgmtEditingProjectId,
+      setProjectMgmtEditingProjectId: state.setProjectMgmtEditingProjectId,
+    })),
+  );
   const closeEditModal = () => {
     setShowEditModal(false);
     setEditingProjectId(null);

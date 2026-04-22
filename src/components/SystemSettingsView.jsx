@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import Modal from "./ui/Modal";
 import {
   BUILTIN_STAGE_KEYS,
@@ -8,6 +8,8 @@ import {
   DEFAULT_WORK_TYPE_VALUES,
   getWorkTypeMeta,
 } from "../constants/workTypes.js";
+import { useAppStore } from "../store/appStore";
+import { useShallow } from "zustand/react/shallow";
 
 const DEFAULT_FORM = {
   boardCardFields: {
@@ -190,42 +192,100 @@ export default function SystemSettingsView({
   onSaveMembers,
   onNotify,
 }) {
-  const [form, setForm] = useState(toForm(settings));
-  const [memberIds, setMemberIds] = useState(
-    projectMembers.map((member) => member.id),
+  const {
+    settingsForm,
+    setSettingsForm: setForm,
+    settingsMemberIds: memberIds,
+    setSettingsMemberIds: setMemberIds,
+    settingsSavingSettings: savingSettings,
+    setSettingsSavingSettings: setSavingSettings,
+    settingsSavingMembers: savingMembers,
+    setSettingsSavingMembers: setSavingMembers,
+    settingsActiveTab: activeTab,
+    setSettingsActiveTab: setActiveTab,
+    settingsWorkflowFromKey: workflowFromKey,
+    setSettingsWorkflowFromKey: setWorkflowFromKey,
+    settingsWorkflowToKey: workflowToKey,
+    setSettingsWorkflowToKey: setWorkflowToKey,
+    settingsShowAddStageModal: showAddStageModal,
+    setSettingsShowAddStageModal: setShowAddStageModal,
+    settingsNewStageDraft: newStageDraft,
+    setSettingsNewStageDraft: setNewStageDraft,
+    settingsNewLabel: newLabel,
+    setSettingsNewLabel: setNewLabel,
+    settingsNewType: newType,
+    setSettingsNewType: setNewType,
+    settingsNewVersion: newVersion,
+    setSettingsNewVersion: setNewVersion,
+    settingsShowAddLabelModal: showAddLabelModal,
+    setSettingsShowAddLabelModal: setShowAddLabelModal,
+    settingsShowAddTypeModal: showAddTypeModal,
+    setSettingsShowAddTypeModal: setShowAddTypeModal,
+    settingsShowAddVersionModal: showAddVersionModal,
+    setSettingsShowAddVersionModal: setShowAddVersionModal,
+    settingsStageMigrations: stageMigrations,
+    setSettingsStageMigrations: setStageMigrations,
+    settingsStageDeleteDialog: stageDeleteDialog,
+    setSettingsStageDeleteDialog: setStageDeleteDialog,
+    settingsStageDragState: stageDragState,
+    setSettingsStageDragState: setStageDragState,
+    settingsAllowedDropIndexes: allowedDropIndexes,
+    setSettingsAllowedDropIndexes: setAllowedDropIndexes,
+    settingsBlockedDropIndexes: blockedDropIndexes,
+    setSettingsBlockedDropIndexes: setBlockedDropIndexes,
+    settingsBlockedDropReason: blockedDropReason,
+    setSettingsBlockedDropReason: setBlockedDropReason,
+  } = useAppStore(
+    useShallow((state) => ({
+      settingsForm: state.settingsForm,
+      setSettingsForm: state.setSettingsForm,
+      settingsMemberIds: state.settingsMemberIds,
+      setSettingsMemberIds: state.setSettingsMemberIds,
+      settingsSavingSettings: state.settingsSavingSettings,
+      setSettingsSavingSettings: state.setSettingsSavingSettings,
+      settingsSavingMembers: state.settingsSavingMembers,
+      setSettingsSavingMembers: state.setSettingsSavingMembers,
+      settingsActiveTab: state.settingsActiveTab,
+      setSettingsActiveTab: state.setSettingsActiveTab,
+      settingsWorkflowFromKey: state.settingsWorkflowFromKey,
+      setSettingsWorkflowFromKey: state.setSettingsWorkflowFromKey,
+      settingsWorkflowToKey: state.settingsWorkflowToKey,
+      setSettingsWorkflowToKey: state.setSettingsWorkflowToKey,
+      settingsShowAddStageModal: state.settingsShowAddStageModal,
+      setSettingsShowAddStageModal: state.setSettingsShowAddStageModal,
+      settingsNewStageDraft: state.settingsNewStageDraft,
+      setSettingsNewStageDraft: state.setSettingsNewStageDraft,
+      settingsNewLabel: state.settingsNewLabel,
+      setSettingsNewLabel: state.setSettingsNewLabel,
+      settingsNewType: state.settingsNewType,
+      setSettingsNewType: state.setSettingsNewType,
+      settingsNewVersion: state.settingsNewVersion,
+      setSettingsNewVersion: state.setSettingsNewVersion,
+      settingsShowAddLabelModal: state.settingsShowAddLabelModal,
+      setSettingsShowAddLabelModal: state.setSettingsShowAddLabelModal,
+      settingsShowAddTypeModal: state.settingsShowAddTypeModal,
+      setSettingsShowAddTypeModal: state.setSettingsShowAddTypeModal,
+      settingsShowAddVersionModal: state.settingsShowAddVersionModal,
+      setSettingsShowAddVersionModal: state.setSettingsShowAddVersionModal,
+      settingsStageMigrations: state.settingsStageMigrations,
+      setSettingsStageMigrations: state.setSettingsStageMigrations,
+      settingsStageDeleteDialog: state.settingsStageDeleteDialog,
+      setSettingsStageDeleteDialog: state.setSettingsStageDeleteDialog,
+      settingsStageDragState: state.settingsStageDragState,
+      setSettingsStageDragState: state.setSettingsStageDragState,
+      settingsAllowedDropIndexes: state.settingsAllowedDropIndexes,
+      setSettingsAllowedDropIndexes: state.setSettingsAllowedDropIndexes,
+      settingsBlockedDropIndexes: state.settingsBlockedDropIndexes,
+      setSettingsBlockedDropIndexes: state.setSettingsBlockedDropIndexes,
+      settingsBlockedDropReason: state.settingsBlockedDropReason,
+      setSettingsBlockedDropReason: state.setSettingsBlockedDropReason,
+    })),
   );
-  const [savingSettings, setSavingSettings] = useState(false);
-  const [savingMembers, setSavingMembers] = useState(false);
-  const [activeTab, setActiveTab] = useState(SETTINGS_TABS[0].id);
-  const [workflowFromKey, setWorkflowFromKey] = useState("");
-  const [workflowToKey, setWorkflowToKey] = useState("");
-  const [showAddStageModal, setShowAddStageModal] = useState(false);
-  const [newStageDraft, setNewStageDraft] = useState({
-    name: "",
-    counterGroup: "",
-    afterKey: STAGE_PLACEMENT_START,
-  });
-  const [newLabel, setNewLabel] = useState("");
-  const [newType, setNewType] = useState("");
-  const [newVersion, setNewVersion] = useState("");
-  const [showAddLabelModal, setShowAddLabelModal] = useState(false);
-  const [showAddTypeModal, setShowAddTypeModal] = useState(false);
-  const [showAddVersionModal, setShowAddVersionModal] = useState(false);
-  const [stageMigrations, setStageMigrations] = useState({});
-  const [stageDeleteDialog, setStageDeleteDialog] = useState(null);
+  const form = settingsForm ?? toForm(settings);
   const dragFromRef = useRef(null);
   const blockedDropTimeoutRef = useRef(null);
   const lastSavedSettingsRef = useRef("");
   const lastSavedMembersRef = useRef("");
-  const [stageDragState, setStageDragState] = useState({
-    fromIndex: -1,
-    fromKey: "",
-    fromGroup: "",
-    overIndex: -1,
-  });
-  const [allowedDropIndexes, setAllowedDropIndexes] = useState(() => new Set());
-  const [blockedDropIndexes, setBlockedDropIndexes] = useState(() => new Set());
-  const [blockedDropReason, setBlockedDropReason] = useState("");
 
   useEffect(() => {
     const nextForm = toForm(settings);

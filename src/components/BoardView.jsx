@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import { displayTaskRef } from "../utils/taskDisplay.js";
 import { UNASSIGNED_AVATAR_SRC } from "../constants/unassignedAvatar.js";
 import { getPriorityMeta } from "../constants/priorities.js";
 import { getWorkTypeMeta } from "../constants/workTypes.js";
+import { useAppStore } from "../store/appStore";
+import { useShallow } from "zustand/react/shallow";
 
 function TaskCard({
   task,
@@ -91,6 +93,16 @@ function TaskCard({
   );
 }
 
+const MemoTaskCard = memo(TaskCard, (prev, next) => {
+  return (
+    prev.task === next.task &&
+    prev.userName === next.userName &&
+    prev.userAvatarColor === next.userAvatarColor &&
+    prev.isDragging === next.isDragging &&
+    prev.isRecentlyMoved === next.isRecentlyMoved
+  );
+});
+
 export default function BoardView({
   columns,
   workflowTransitions = [],
@@ -105,18 +117,30 @@ export default function BoardView({
 }) {
   const movePulseTimeoutRef = useRef(null);
   const blockedTimeoutRef = useRef(null);
-  const [dragState, setDragState] = useState({
-    taskId: "",
-    sourceStatus: "",
-    overStatus: "",
-  });
-  const [recentlyMovedTaskId, setRecentlyMovedTaskId] = useState("");
-  const [blockedStatus, setBlockedStatus] = useState("");
-  const [blockedStatusesDuringDrag, setBlockedStatusesDuringDrag] = useState(
-    () => new Set(),
-  );
-  const [allowedStatusesDuringDrag, setAllowedStatusesDuringDrag] = useState(
-    () => new Set(),
+  const {
+    boardDragState: dragState,
+    setBoardDragState: setDragState,
+    boardRecentlyMovedTaskId: recentlyMovedTaskId,
+    setBoardRecentlyMovedTaskId: setRecentlyMovedTaskId,
+    boardBlockedStatus: blockedStatus,
+    setBoardBlockedStatus: setBlockedStatus,
+    boardBlockedStatusesDuringDrag: blockedStatusesDuringDrag,
+    setBoardBlockedStatusesDuringDrag: setBlockedStatusesDuringDrag,
+    boardAllowedStatusesDuringDrag: allowedStatusesDuringDrag,
+    setBoardAllowedStatusesDuringDrag: setAllowedStatusesDuringDrag,
+  } = useAppStore(
+    useShallow((state) => ({
+      boardDragState: state.boardDragState,
+      setBoardDragState: state.setBoardDragState,
+      boardRecentlyMovedTaskId: state.boardRecentlyMovedTaskId,
+      setBoardRecentlyMovedTaskId: state.setBoardRecentlyMovedTaskId,
+      boardBlockedStatus: state.boardBlockedStatus,
+      setBoardBlockedStatus: state.setBoardBlockedStatus,
+      boardBlockedStatusesDuringDrag: state.boardBlockedStatusesDuringDrag,
+      setBoardBlockedStatusesDuringDrag: state.setBoardBlockedStatusesDuringDrag,
+      boardAllowedStatusesDuringDrag: state.boardAllowedStatusesDuringDrag,
+      setBoardAllowedStatusesDuringDrag: state.setBoardAllowedStatusesDuringDrag,
+    })),
   );
   const actorGroupIds = useMemo(() => {
     const actorId = String(currentUser?.id || "");
@@ -296,7 +320,7 @@ export default function BoardView({
                   </div>
                 ) : null}
                 {column.tasks.map((task) => (
-                  <TaskCard
+                  <MemoTaskCard
                     key={task.id}
                     task={task}
                     userName={usersById.get(task.assigneeId)}

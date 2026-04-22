@@ -1,14 +1,15 @@
+import { memo } from "react";
 import { useLocation } from "react-router-dom";
 
 const mainNavItems = [
-  { key: "dashboard", label: "Dashboard", icon: "◫" },
+  { key: "dashboard", label: "Overview", icon: "◫" },
   { key: "projects", label: "Projects", icon: "☰" },
   { key: "users", label: "User management", icon: "◌" },
 ];
 
 const PROJECT_SUB_ROUTE = /^\/project\/([^/]+)\/(board|backlog|settings)$/;
 
-export default function Sidebar({
+function Sidebar({
   activeView,
   currentProjectId,
   projects,
@@ -137,3 +138,5 @@ export default function Sidebar({
     </aside>
   );
 }
+
+export default memo(Sidebar);

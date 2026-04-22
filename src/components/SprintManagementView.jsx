@@ -1,6 +1,8 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { displayTaskRef } from "../utils/taskDisplay.js";
 import Modal from "./ui/Modal";
+import { useAppStore } from "../store/appStore";
+import { useShallow } from "zustand/react/shallow";
 
 export default function SprintManagementView({
   sprints,
@@ -16,21 +18,35 @@ export default function SprintManagementView({
   onAddTasksToSprint,
   onRemoveTaskFromSprint,
 }) {
-  const [createDraft, setCreateDraft] = useState({
-    name: "",
-    startDate: "",
-    endDate: "",
-  });
-  const [editDraft, setEditDraft] = useState({
-    name: "",
-    startDate: "",
-    endDate: "",
-    status: "planned",
-  });
-  const [editingSprintId, setEditingSprintId] = useState(null);
-  const [selectedBacklogTaskIds, setSelectedBacklogTaskIds] = useState([]);
-  const [isDropActive, setIsDropActive] = useState(false);
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const {
+    sprintMgmtCreateDraft: createDraft,
+    setSprintMgmtCreateDraft: setCreateDraft,
+    sprintMgmtEditDraft: editDraft,
+    setSprintMgmtEditDraft: setEditDraft,
+    sprintMgmtEditingSprintId: editingSprintId,
+    setSprintMgmtEditingSprintId: setEditingSprintId,
+    sprintMgmtSelectedBacklogTaskIds: selectedBacklogTaskIds,
+    setSprintMgmtSelectedBacklogTaskIds: setSelectedBacklogTaskIds,
+    sprintMgmtIsDropActive: isDropActive,
+    setSprintMgmtIsDropActive: setIsDropActive,
+    sprintMgmtShowCreateModal: showCreateModal,
+    setSprintMgmtShowCreateModal: setShowCreateModal,
+  } = useAppStore(
+    useShallow((state) => ({
+      sprintMgmtCreateDraft: state.sprintMgmtCreateDraft,
+      setSprintMgmtCreateDraft: state.setSprintMgmtCreateDraft,
+      sprintMgmtEditDraft: state.sprintMgmtEditDraft,
+      setSprintMgmtEditDraft: state.setSprintMgmtEditDraft,
+      sprintMgmtEditingSprintId: state.sprintMgmtEditingSprintId,
+      setSprintMgmtEditingSprintId: state.setSprintMgmtEditingSprintId,
+      sprintMgmtSelectedBacklogTaskIds: state.sprintMgmtSelectedBacklogTaskIds,
+      setSprintMgmtSelectedBacklogTaskIds: state.setSprintMgmtSelectedBacklogTaskIds,
+      sprintMgmtIsDropActive: state.sprintMgmtIsDropActive,
+      setSprintMgmtIsDropActive: state.setSprintMgmtIsDropActive,
+      sprintMgmtShowCreateModal: state.sprintMgmtShowCreateModal,
+      setSprintMgmtShowCreateModal: state.setSprintMgmtShowCreateModal,
+    })),
+  );
 
   const selectedSprint = useMemo(
     () => sprints.find((s) => String(s.id) === String(selectedSprintId)) || null,
