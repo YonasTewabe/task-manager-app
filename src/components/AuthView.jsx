@@ -1,6 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAppStore } from "../store/appStore";
 import { useShallow } from "zustand/react/shallow";
+import {
+  REQUIRED_FIELD_MESSAGE,
+  invalidFieldClassName,
+} from "../utils/formValidation.js";
 
 export default function AuthView({
   onLogin,
@@ -44,11 +48,25 @@ export default function AuthView({
   const [showForceNewPassword, setShowForceNewPassword] = useState(false);
   const [showResetNewPassword, setShowResetNewPassword] = useState(false);
   const [showResetRepeatPassword, setShowResetRepeatPassword] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  useEffect(() => {
+    setFieldErrors({});
+  }, [mode, mustChangePassword]);
 
   const submit = (event) => {
     event.preventDefault();
     setLocalError("");
     if (mustChangePassword || mode === "force-change-password") {
+      const err = {};
+      if (!String(forcePasswordForm.name || "").trim())
+        err.name = REQUIRED_FIELD_MESSAGE;
+      if (!String(forcePasswordForm.newPassword || "").trim())
+        err.newPassword = REQUIRED_FIELD_MESSAGE;
+      if (Object.keys(err).length) {
+        setFieldErrors(err);
+        return;
+      }
       onChangePassword({
         name: forcePasswordForm.name,
         currentPassword: forcePasswordForm.currentPassword,
@@ -57,6 +75,10 @@ export default function AuthView({
       return;
     }
     if (mode === "forgot-password") {
+      if (!forgotPasswordEmail.trim()) {
+        setFieldErrors({ email: REQUIRED_FIELD_MESSAGE });
+        return;
+      }
       onForgotPassword({ email: forgotPasswordEmail });
       return;
     }
@@ -65,11 +87,27 @@ export default function AuthView({
         setLocalError("Reset link is invalid or missing token.");
         return;
       }
+      const err = {};
+      if (!String(resetPasswordForm.password || "").trim())
+        err.password = REQUIRED_FIELD_MESSAGE;
+      if (!String(resetRepeatPassword || "").trim())
+        err.repeatPassword = REQUIRED_FIELD_MESSAGE;
+      if (Object.keys(err).length) {
+        setFieldErrors(err);
+        return;
+      }
       if (String(resetPasswordForm.password || "") !== String(resetRepeatPassword || "")) {
-        setLocalError("Passwords do not match.");
+        setFieldErrors({ repeatPassword: "Passwords do not match." });
         return;
       }
       onResetPassword(resetPasswordForm);
+      return;
+    }
+    const err = {};
+    if (!form.email.trim()) err.email = REQUIRED_FIELD_MESSAGE;
+    if (!form.password) err.password = REQUIRED_FIELD_MESSAGE;
+    if (Object.keys(err).length) {
+      setFieldErrors(err);
       return;
     }
     onLogin({ email: form.email, password: form.password });
@@ -112,16 +150,25 @@ export default function AuthView({
               <span className="font-medium">Full name</span>
               <input
                 type="text"
-                className="w-full rounded-[10px] border border-[#c1c7d0] px-3 py-2"
+                className={`w-full rounded-[10px] border px-3 py-2 ${fieldErrors.name ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
                 placeholder="Enter your full name"
                 value={forcePasswordForm.name}
-                onChange={(event) =>
+                onChange={(event) => {
                   setForcePasswordForm((prev) => ({
                     ...prev,
                     name: event.target.value,
-                  }))
-                }
+                  }));
+                  if (fieldErrors.name)
+                    setFieldErrors((prev) => {
+                      const n = { ...prev };
+                      delete n.name;
+                      return n;
+                    });
+                }}
               />
+              {fieldErrors.name ? (
+                <span className="text-[0.78rem] text-red-600">{fieldErrors.name}</span>
+              ) : null}
             </label>
             <label className="grid gap-1 text-[0.9rem] text-[#172b4d]">
               <span className="font-medium">
@@ -159,15 +206,21 @@ export default function AuthView({
               <div className="relative">
                 <input
                   type={showForceNewPassword ? "text" : "password"}
-                  className="w-full rounded-[10px] border border-[#c1c7d0] px-3 py-2 pr-10"
+                  className={`w-full rounded-[10px] border px-3 py-2 pr-10 ${fieldErrors.newPassword ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
                   placeholder="Enter new password"
                   value={forcePasswordForm.newPassword}
-                  onChange={(event) =>
+                  onChange={(event) => {
                     setForcePasswordForm((prev) => ({
                       ...prev,
                       newPassword: event.target.value,
-                    }))
-                  }
+                    }));
+                    if (fieldErrors.newPassword)
+                      setFieldErrors((prev) => {
+                        const n = { ...prev };
+                        delete n.newPassword;
+                        return n;
+                      });
+                  }}
                 />
                 <button
                   type="button"
@@ -179,16 +232,30 @@ export default function AuthView({
                 </button>
               </div>
             </label>
+            {fieldErrors.newPassword ? (
+              <p className="text-[0.78rem] text-red-600">{fieldErrors.newPassword}</p>
+            ) : null}
           </>
         ) : mode === "forgot-password" ? (
           <label className="grid gap-1 text-[0.9rem] text-[#172b4d]">
             <span className="font-medium">Email</span>
             <input
-              className="rounded-[10px] border border-[#c1c7d0] px-3 py-2"
+              className={`rounded-[10px] border px-3 py-2 ${fieldErrors.email ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
               placeholder="name@company.com"
               value={forgotPasswordEmail}
-              onChange={(event) => setForgotPasswordEmail(event.target.value)}
+              onChange={(event) => {
+                setForgotPasswordEmail(event.target.value);
+                if (fieldErrors.email)
+                  setFieldErrors((prev) => {
+                    const n = { ...prev };
+                    delete n.email;
+                    return n;
+                  });
+              }}
             />
+            {fieldErrors.email ? (
+              <span className="text-[0.78rem] text-red-600">{fieldErrors.email}</span>
+            ) : null}
           </label>
         ) : mode === "reset-password" ? (
           <div className="grid gap-3">
@@ -197,12 +264,21 @@ export default function AuthView({
               <div className="relative">
                 <input
                   type={showResetNewPassword ? "text" : "password"}
-                  className="w-full rounded-[10px] border border-[#c1c7d0] px-3 py-2 pr-10"
+                  className={`w-full rounded-[10px] border px-3 py-2 pr-10 ${fieldErrors.password ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
                   placeholder="Enter new password"
                   value={resetPasswordForm.password}
-                  onChange={(event) =>
-                    setResetPasswordForm((prev) => ({ ...prev, password: event.target.value }))
-                  }
+                  onChange={(event) => {
+                    setResetPasswordForm((prev) => ({
+                      ...prev,
+                      password: event.target.value,
+                    }));
+                    if (fieldErrors.password)
+                      setFieldErrors((prev) => {
+                        const n = { ...prev };
+                        delete n.password;
+                        return n;
+                      });
+                  }}
                 />
                 <button
                   type="button"
@@ -213,16 +289,27 @@ export default function AuthView({
                   {showResetNewPassword ? "🙈" : "👁"}
                 </button>
               </div>
+              {fieldErrors.password ? (
+                <span className="text-[0.78rem] text-red-600">{fieldErrors.password}</span>
+              ) : null}
             </label>
             <label className="grid gap-1 text-[0.9rem] text-[#172b4d]">
               <span className="font-medium">Repeat password</span>
               <div className="relative">
                 <input
                   type={showResetRepeatPassword ? "text" : "password"}
-                  className="w-full rounded-[10px] border border-[#c1c7d0] px-3 py-2 pr-10"
+                  className={`w-full rounded-[10px] border px-3 py-2 pr-10 ${fieldErrors.repeatPassword ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
                   placeholder="Repeat new password"
                   value={resetRepeatPassword}
-                  onChange={(event) => setResetRepeatPassword(event.target.value)}
+                  onChange={(event) => {
+                    setResetRepeatPassword(event.target.value);
+                    if (fieldErrors.repeatPassword)
+                      setFieldErrors((prev) => {
+                        const n = { ...prev };
+                        delete n.repeatPassword;
+                        return n;
+                      });
+                  }}
                 />
                 <button
                   type="button"
@@ -235,6 +322,11 @@ export default function AuthView({
                   {showResetRepeatPassword ? "🙈" : "👁"}
                 </button>
               </div>
+              {fieldErrors.repeatPassword ? (
+                <span className="text-[0.78rem] text-red-600">
+                  {fieldErrors.repeatPassword}
+                </span>
+              ) : null}
             </label>
           </div>
         ) : (
@@ -242,25 +334,40 @@ export default function AuthView({
             <label className="grid gap-1 text-[0.9rem] text-[#172b4d]">
               <span className="font-medium">Email</span>
               <input
-                className="rounded-[10px] border border-[#c1c7d0] px-3 py-2"
+                className={`rounded-[10px] border px-3 py-2 ${fieldErrors.email ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
                 placeholder="name@company.com"
                 value={form.email}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, email: event.target.value }))
-                }
+                onChange={(event) => {
+                  setForm((prev) => ({ ...prev, email: event.target.value }));
+                  if (fieldErrors.email)
+                    setFieldErrors((prev) => {
+                      const n = { ...prev };
+                      delete n.email;
+                      return n;
+                    });
+                }}
               />
+              {fieldErrors.email ? (
+                <span className="text-[0.78rem] text-red-600">{fieldErrors.email}</span>
+              ) : null}
             </label>
             <label className="grid gap-1 text-[0.9rem] text-[#172b4d]">
               <span className="font-medium">Password</span>
               <div className="relative">
                 <input
                   type={showLoginPassword ? "text" : "password"}
-                  className="w-full rounded-[10px] border border-[#c1c7d0] px-3 py-2 pr-10"
+                  className={`w-full rounded-[10px] border px-3 py-2 pr-10 ${fieldErrors.password ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
                   placeholder="Enter password"
                   value={form.password}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, password: event.target.value }))
-                  }
+                  onChange={(event) => {
+                    setForm((prev) => ({ ...prev, password: event.target.value }));
+                    if (fieldErrors.password)
+                      setFieldErrors((prev) => {
+                        const n = { ...prev };
+                        delete n.password;
+                        return n;
+                      });
+                  }}
                 />
                 <button
                   type="button"
@@ -271,6 +378,9 @@ export default function AuthView({
                   {showLoginPassword ? "🙈" : "👁"}
                 </button>
               </div>
+              {fieldErrors.password ? (
+                <span className="text-[0.78rem] text-red-600">{fieldErrors.password}</span>
+              ) : null}
             </label>
           </div>
         )}

@@ -1,6 +1,10 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { displayTaskRef } from "../utils/taskDisplay.js";
 import Modal from "./ui/Modal";
+import {
+  REQUIRED_FIELD_MESSAGE,
+  invalidFieldClassName,
+} from "../utils/formValidation.js";
 import { useAppStore } from "../store/appStore";
 import { useShallow } from "zustand/react/shallow";
 
@@ -47,6 +51,8 @@ export default function SprintManagementView({
       setSprintMgmtShowCreateModal: state.setSprintMgmtShowCreateModal,
     })),
   );
+  const [createFieldErrors, setCreateFieldErrors] = useState({});
+  const [editFieldErrors, setEditFieldErrors] = useState({});
 
   const selectedSprint = useMemo(
     () => sprints.find((s) => String(s.id) === String(selectedSprintId)) || null,
@@ -141,8 +147,24 @@ export default function SprintManagementView({
             <>
               <input
                 value={editDraft.name}
-                onChange={(e) => setEditDraft((prev) => ({ ...prev, name: e.target.value }))}
+                className={invalidFieldClassName(
+                  Boolean(editFieldErrors.name),
+                )}
+                onChange={(e) => {
+                  setEditDraft((prev) => ({ ...prev, name: e.target.value }));
+                  if (editFieldErrors.name)
+                    setEditFieldErrors((prev) => {
+                      const n = { ...prev };
+                      delete n.name;
+                      return n;
+                    });
+                }}
               />
+              {editFieldErrors.name ? (
+                <p className="text-[0.78rem] text-red-600">
+                  {editFieldErrors.name}
+                </p>
+              ) : null}
               <div className="flex flex-wrap gap-2">
                 <input
                   type="date"
@@ -167,13 +189,25 @@ export default function SprintManagementView({
                 <button
                   type="button"
                   onClick={() => {
+                    if (!String(editDraft.name || "").trim()) {
+                      setEditFieldErrors({ name: REQUIRED_FIELD_MESSAGE });
+                      return;
+                    }
+                    setEditFieldErrors({});
                     onUpdateSprint(selectedSprint.id, editDraft);
                     setEditingSprintId(null);
                   }}
                 >
                   Save
                 </button>
-                <button type="button" className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]" onClick={() => setEditingSprintId(null)}>
+                <button
+                  type="button"
+                  className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+                  onClick={() => {
+                    setEditFieldErrors({});
+                    setEditingSprintId(null);
+                  }}
+                >
                   Cancel
                 </button>
               </div>
@@ -187,6 +221,7 @@ export default function SprintManagementView({
                 <button
                   type="button"
                   onClick={() => {
+                    setEditFieldErrors({});
                     setEditingSprintId(selectedSprint.id);
                     setEditDraft({
                       name: selectedSprint.name,
@@ -250,10 +285,23 @@ export default function SprintManagementView({
         </div>
       ) : null}
       {showCreateModal ? (
-        <Modal open={showCreateModal} onOpenChange={setShowCreateModal}>
+        <Modal
+          open={showCreateModal}
+          onOpenChange={(open) => {
+            setShowCreateModal(open);
+            if (!open) setCreateFieldErrors({});
+          }}
+        >
             <div className="flex items-center justify-between gap-3">
               <h3>Create Sprint</h3>
-              <button type="button" className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]" onClick={() => setShowCreateModal(false)}>
+              <button
+                type="button"
+                className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+                onClick={() => {
+                  setCreateFieldErrors({});
+                  setShowCreateModal(false);
+                }}
+              >
                 X
               </button>
             </div>
@@ -265,9 +313,28 @@ export default function SprintManagementView({
                 <input
                   placeholder="Enter sprint name"
                   value={createDraft.name}
-                  onChange={(e) => setCreateDraft((prev) => ({ ...prev, name: e.target.value }))}
+                  className={invalidFieldClassName(
+                    Boolean(createFieldErrors.name),
+                  )}
+                  onChange={(e) => {
+                    setCreateDraft((prev) => ({
+                      ...prev,
+                      name: e.target.value,
+                    }));
+                    if (createFieldErrors.name)
+                      setCreateFieldErrors((prev) => {
+                        const n = { ...prev };
+                        delete n.name;
+                        return n;
+                      });
+                  }}
                 />
               </label>
+              {createFieldErrors.name ? (
+                <p className="text-[0.78rem] text-red-600">
+                  {createFieldErrors.name}
+                </p>
+              ) : null}
               <div className="flex flex-wrap gap-2">
                 <label>
                   Start date
@@ -290,14 +357,21 @@ export default function SprintManagementView({
                 <button
                   type="button"
                   className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
-                  onClick={() => setShowCreateModal(false)}
+                  onClick={() => {
+                    setCreateFieldErrors({});
+                    setShowCreateModal(false);
+                  }}
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={() => {
-                    if (!createDraft.name.trim()) return;
+                    if (!createDraft.name.trim()) {
+                      setCreateFieldErrors({ name: REQUIRED_FIELD_MESSAGE });
+                      return;
+                    }
+                    setCreateFieldErrors({});
                     onCreateSprint(createDraft);
                     setCreateDraft({ name: "", startDate: "", endDate: "" });
                     setShowCreateModal(false);

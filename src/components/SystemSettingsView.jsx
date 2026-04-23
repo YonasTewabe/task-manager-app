@@ -11,6 +11,10 @@ import {
 import { useAppStore } from "../store/appStore";
 import { useShallow } from "zustand/react/shallow";
 import { apiRequest } from "../api/client";
+import {
+  REQUIRED_FIELD_MESSAGE,
+  invalidFieldClassName,
+} from "../utils/formValidation.js";
 
 const DEFAULT_FORM = {
   boardCardFields: {
@@ -200,6 +204,7 @@ export default function SystemSettingsView({
   onSave,
   onSaveMembers,
   onNotify,
+  onGoToProjectBoard,
 }) {
   const {
     settingsForm,
@@ -291,6 +296,7 @@ export default function SystemSettingsView({
     })),
   );
   const form = settingsForm ?? toForm(settings);
+  const [projectAdminMemberIds, setProjectAdminMemberIds] = useState([]);
   const [githubRepos, setGithubRepos] = useState([]);
   const [automationRules, setAutomationRules] = useState([]);
   const [repoDraft, setRepoDraft] = useState({
@@ -302,6 +308,14 @@ export default function SystemSettingsView({
   const [ruleDraft, setRuleDraft] = useState(EMPTY_AUTOMATION_RULE_DRAFT);
   const [showAddRepoModal, setShowAddRepoModal] = useState(false);
   const [showAddAutomationModal, setShowAddAutomationModal] = useState(false);
+  const [addStageErrors, setAddStageErrors] = useState({});
+  const [addLabelError, setAddLabelError] = useState("");
+  const [addTypeError, setAddTypeError] = useState("");
+  const [addVersionError, setAddVersionError] = useState("");
+  const [addRepoErrors, setAddRepoErrors] = useState({});
+  const [addAutomationErrors, setAddAutomationErrors] = useState({});
+  const [workflowMoveErrors, setWorkflowMoveErrors] = useState({});
+  const [stageDeleteDestError, setStageDeleteDestError] = useState("");
   const dragFromRef = useRef(null);
   const blockedDropTimeoutRef = useRef(null);
   const lastSavedSettingsRef = useRef("");
@@ -370,9 +384,16 @@ export default function SystemSettingsView({
 
   useEffect(() => {
     setMemberIds(projectMembers.map((member) => member.id));
-    lastSavedMembersRef.current = JSON.stringify(
-      projectMembers.map((member) => member.id).sort(),
+    setProjectAdminMemberIds(
+      projectMembers.filter((m) => m.isProjectAdmin).map((m) => m.id),
     );
+    lastSavedMembersRef.current = JSON.stringify({
+      m: projectMembers.map((member) => member.id).sort(),
+      a: projectMembers
+        .filter((m) => m.isProjectAdmin)
+        .map((m) => m.id)
+        .sort(),
+    });
   }, [projectMembers]);
 
   useEffect(() => {
@@ -392,7 +413,7 @@ export default function SystemSettingsView({
           apiRequest(
             `/github/projects/${encodeURIComponent(projectId)}/automation-rules`,
           ),
-          apiRequest("/task-management/app-settings/github"),
+          apiRequest("/task-management/app-settings/github/summary"),
         ]);
         if (cancelled) return;
         setGithubRepos(Array.isArray(repos) ? repos : []);
@@ -433,12 +454,15 @@ export default function SystemSettingsView({
 
   useEffect(() => {
     if (!canManage) return undefined;
-    const signature = JSON.stringify([...memberIds].sort());
+    const signature = JSON.stringify({
+      m: [...memberIds].sort(),
+      a: [...projectAdminMemberIds].sort(),
+    });
     if (signature === lastSavedMembersRef.current) return undefined;
     const timer = setTimeout(async () => {
       setSavingMembers(true);
       try {
-        await onSaveMembers(memberIds);
+        await onSaveMembers(memberIds, projectAdminMemberIds);
         lastSavedMembersRef.current = signature;
       } catch (error) {
         onNotify?.(error.message || "Failed to save project users.", "error");
@@ -447,7 +471,7 @@ export default function SystemSettingsView({
       }
     }, 200);
     return () => clearTimeout(timer);
-  }, [canManage, memberIds, onSaveMembers, onNotify]);
+  }, [canManage, memberIds, projectAdminMemberIds, onSaveMembers, onNotify]);
 
   const setSectionValue = (section, key, value) => {
     setForm((prev) => ({
@@ -602,6 +626,7 @@ export default function SystemSettingsView({
   };
 
   const addStage = () => {
+    setAddStageErrors({});
     setShowAddStageModal(true);
     setNewStageDraft({
       name: "",
@@ -613,7 +638,14 @@ export default function SystemSettingsView({
   const createStageFromDraft = () => {
     const nextName = String(newStageDraft.name || "").trim();
     const nextGroup = String(newStageDraft.counterGroup || "").trim();
-    if (!nextName || !nextGroup) return;
+    const errs = {};
+    if (!nextName) errs.name = REQUIRED_FIELD_MESSAGE;
+    if (!nextGroup) errs.counterGroup = REQUIRED_FIELD_MESSAGE;
+    if (Object.keys(errs).length) {
+      setAddStageErrors(errs);
+      return;
+    }
+    setAddStageErrors({});
     const duplicateName = (form.boardCardFields.workflowStages || []).some(
       (stage) =>
         String(stage?.name || "")
@@ -829,7 +861,16 @@ export default function SystemSettingsView({
 
   const addRepoMapping = async () => {
     const repo = String(repoDraft.repo || "").trim();
-    if (!repo || !projectId) return;
+    const errs = {};
+    if (!repo) errs.repo = REQUIRED_FIELD_MESSAGE;
+    if (!appGithubOrg)
+      errs.org = "Configure the GitHub organization in app settings first.";
+    if (Object.keys(errs).length) {
+      setAddRepoErrors(errs);
+      return;
+    }
+    setAddRepoErrors({});
+    if (!projectId) return;
     try {
       const created = await apiRequest(
         `/github/projects/${encodeURIComponent(projectId)}/repos`,
@@ -933,7 +974,20 @@ export default function SystemSettingsView({
   const addAutomationRule = async () => {
     const eventType = String(ruleDraft.eventType || "").trim();
     const targetStatus = String(ruleDraft.targetStatus || "").trim();
-    if (!eventType || !targetStatus) return;
+    const errs = {};
+    if (!eventType) errs.eventType = REQUIRED_FIELD_MESSAGE;
+    if (!targetStatus) errs.targetStatus = REQUIRED_FIELD_MESSAGE;
+    if (
+      ruleDraft.branchScope === "specific" &&
+      !String(ruleDraft.baseBranch || "").trim()
+    ) {
+      errs.baseBranch = REQUIRED_FIELD_MESSAGE;
+    }
+    if (Object.keys(errs).length) {
+      setAddAutomationErrors(errs);
+      return;
+    }
+    setAddAutomationErrors({});
     const newRule = {
       eventType,
       isEnabled: true,
@@ -986,10 +1040,19 @@ export default function SystemSettingsView({
 
   return (
     <section className="grid gap-[0.8rem] rounded-lg border border-[#dfe1e6] bg-white p-[0.8rem]">
-      <div className="flex items-center justify-between gap-3">
-        <h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="m-0 min-w-0 text-[1.05rem] font-semibold text-[#172b4d]">
           <strong>Project settings : </strong> {projectName}
         </h2>
+        {typeof onGoToProjectBoard === "function" ? (
+          <button
+            type="button"
+            className="shrink-0 rounded-[8px] border border-[#2d64d9] bg-[#2d64d9] px-3 py-2 text-[0.82rem] font-medium text-white hover:border-[#1f4fc4] hover:bg-[#1f4fc4]"
+            onClick={() => onGoToProjectBoard()}
+          >
+            Go to Project
+          </button>
+        ) : null}
       </div>
 
       <div className="flex flex-col gap-3">
@@ -1432,9 +1495,17 @@ export default function SystemSettingsView({
                   From stage
                   <span className="relative inline-flex min-w-[11rem]">
                     <select
-                      className="w-full appearance-none rounded-[10px] border border-[#c7d2e5] bg-white px-[0.65rem] pr-8 text-[0.9rem] text-[#172b4d]"
+                      className={`w-full appearance-none rounded-[10px] border bg-white px-[0.65rem] pr-8 text-[0.9rem] text-[#172b4d] ${workflowMoveErrors.from ? invalidFieldClassName(true) : "border-[#c7d2e5]"}`}
                       value={workflowFromKey}
-                      onChange={(e) => setWorkflowFromKey(e.target.value)}
+                      onChange={(e) => {
+                        setWorkflowFromKey(e.target.value);
+                        if (workflowMoveErrors.from)
+                          setWorkflowMoveErrors((prev) => {
+                            const n = { ...prev };
+                            delete n.from;
+                            return n;
+                          });
+                      }}
                       disabled={!canManage}
                     >
                       <option value="">From stage</option>
@@ -1449,13 +1520,26 @@ export default function SystemSettingsView({
                     </span>
                   </span>
                 </label>
+                {workflowMoveErrors.from ? (
+                  <p className="w-full text-[0.78rem] text-red-600">
+                    {workflowMoveErrors.from}
+                  </p>
+                ) : null}
                 <label className="grid gap-[0.25rem] text-[0.82rem] font-semibold text-[#42526e]">
                   To stage
                   <span className="relative inline-flex min-w-[11rem]">
                     <select
-                      className="w-full appearance-none rounded-[10px] border border-[#c7d2e5] bg-white px-[0.65rem] pr-8 text-[0.9rem] text-[#172b4d]"
+                      className={`w-full appearance-none rounded-[10px] border bg-white px-[0.65rem] pr-8 text-[0.9rem] text-[#172b4d] ${workflowMoveErrors.to ? invalidFieldClassName(true) : "border-[#c7d2e5]"}`}
                       value={workflowToKey}
-                      onChange={(e) => setWorkflowToKey(e.target.value)}
+                      onChange={(e) => {
+                        setWorkflowToKey(e.target.value);
+                        if (workflowMoveErrors.to)
+                          setWorkflowMoveErrors((prev) => {
+                            const n = { ...prev };
+                            delete n.to;
+                            return n;
+                          });
+                      }}
                       disabled={!canManage}
                     >
                       <option value="">To stage</option>
@@ -1470,15 +1554,27 @@ export default function SystemSettingsView({
                     </span>
                   </span>
                 </label>
+                {workflowMoveErrors.to ? (
+                  <p className="w-full text-[0.78rem] text-red-600">
+                    {workflowMoveErrors.to}
+                  </p>
+                ) : null}
                 <button
                   type="button"
-                  disabled={
-                    !canManage ||
-                    !workflowFromKey ||
-                    !workflowToKey ||
-                    workflowFromKey === workflowToKey
-                  }
+                  disabled={!canManage || !workflowFromKey || !workflowToKey}
                   onClick={() => {
+                    const errs = {};
+                    if (!workflowFromKey)
+                      errs.from = REQUIRED_FIELD_MESSAGE;
+                    if (!workflowToKey)
+                      errs.to = REQUIRED_FIELD_MESSAGE;
+                    else if (workflowFromKey === workflowToKey)
+                      errs.to = "Choose a different stage.";
+                    if (Object.keys(errs).length) {
+                      setWorkflowMoveErrors(errs);
+                      return;
+                    }
+                    setWorkflowMoveErrors({});
                     const created = addTransition(
                       workflowFromKey,
                       workflowToKey,
@@ -1778,31 +1874,98 @@ export default function SystemSettingsView({
                     <input
                       type="checkbox"
                       checked={memberIds.includes(user.id)}
-                      onChange={() =>
-                        setMemberIds((prev) =>
-                          prev.includes(user.id)
+                      onChange={() => {
+                        setMemberIds((prev) => {
+                          const next = prev.includes(user.id)
                             ? prev.filter((id) => id !== user.id)
-                            : [...prev, user.id],
-                        )
-                      }
+                            : [...prev, user.id];
+                          if (!next.includes(user.id)) {
+                            setProjectAdminMemberIds((a) =>
+                              a.filter((x) => x !== user.id),
+                            );
+                          }
+                          return next;
+                        });
+                      }}
                       disabled={!canManage}
                     />
                     <span>{user.name}</span>
                   </label>
                 ))}
               </div>
+              <div className="grid gap-[0.35rem] rounded-[10px] border border-[#e6ebf3] bg-[#f8fbff] p-[0.65rem]">
+                <strong className="text-[0.88rem] text-[#172b4d]">
+                  Project admins
+                </strong>
+                <p className="text-[0.8rem] leading-[1.35] text-[#6b778c]">
+                  Add project admins: users with the <strong>Member</strong> app
+                  role can be given full management access for{" "}
+                  <strong>this project only</strong> (settings, sprints, backlog,
+                  GitHub integration, and task administration).
+                </p>
+                {sortedUsers.filter(
+                  (u) => u.role === "member" && memberIds.includes(u.id),
+                ).length === 0 ? (
+                  <p className="text-[0.8rem] text-[#5e6c84]">
+                    Add project members with the Member role to grant project
+                    admin access.
+                  </p>
+                ) : (
+                  <div
+                    className={`grid grid-cols-3 gap-[0.4rem] ${sortedUsers.filter((u) => u.role === "member" && memberIds.includes(u.id)).length > 6 ? "max-h-[5.75rem] overflow-y-auto pr-1" : ""}`}
+                  >
+                    {sortedUsers
+                      .filter(
+                        (u) => u.role === "member" && memberIds.includes(u.id),
+                      )
+                      .map((user) => (
+                        <label
+                          key={`proj-admin-${user.id}`}
+                          className="flex items-center gap-[0.35rem] text-[0.85rem]"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={projectAdminMemberIds.includes(user.id)}
+                            onChange={() =>
+                              setProjectAdminMemberIds((prev) =>
+                                prev.includes(user.id)
+                                  ? prev.filter((id) => id !== user.id)
+                                  : [...prev, user.id],
+                              )
+                            }
+                            disabled={!canManage}
+                          />
+                          <span>{user.name}</span>
+                        </label>
+                      ))}
+                  </div>
+                )}
+                <p className="text-[0.78rem] text-[#6b778c]">
+                  Users with the App <strong>admin</strong> role already have
+                  full access to every project.
+                </p>
+              </div>
             </article>
           ) : null}
         </div>
       </div>
       {showAddStageModal ? (
-        <Modal open={showAddStageModal} onOpenChange={setShowAddStageModal}>
+        <Modal
+          open={showAddStageModal}
+          onOpenChange={(open) => {
+            setShowAddStageModal(open);
+            if (!open) setAddStageErrors({});
+          }}
+        >
           <div className="flex items-center justify-between gap-3">
             <h3>Add stage</h3>
             <button
               type="button"
               className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
-              onClick={() => setShowAddStageModal(false)}
+              onClick={() => {
+                setAddStageErrors({});
+                setShowAddStageModal(false);
+              }}
             >
               X
             </button>
@@ -1815,27 +1978,48 @@ export default function SystemSettingsView({
               <input
                 value={newStageDraft.name}
                 placeholder="Enter stage name"
-                onChange={(event) =>
+                className={invalidFieldClassName(
+                  Boolean(addStageErrors.name),
+                )}
+                onChange={(event) => {
                   setNewStageDraft((prev) => ({
                     ...prev,
                     name: event.target.value,
-                  }))
-                }
+                  }));
+                  if (addStageErrors.name)
+                    setAddStageErrors((prev) => {
+                      const n = { ...prev };
+                      delete n.name;
+                      return n;
+                    });
+                }}
               />
             </label>
+            {addStageErrors.name ? (
+              <p className="text-[0.78rem] text-red-600">{addStageErrors.name}</p>
+            ) : null}
             <label>
               <span className="inline-flex items-center">
                 Backlog roll-up <span className="ml-1 text-red-600">*</span>
               </span>
               <select
                 value={newStageDraft.counterGroup}
-                onChange={(event) =>
+                className={invalidFieldClassName(
+                  Boolean(addStageErrors.counterGroup),
+                )}
+                onChange={(event) => {
                   setNewStageDraft((prev) => ({
                     ...prev,
                     counterGroup: event.target.value,
                     afterKey: STAGE_PLACEMENT_START,
-                  }))
-                }
+                  }));
+                  if (addStageErrors.counterGroup)
+                    setAddStageErrors((prev) => {
+                      const n = { ...prev };
+                      delete n.counterGroup;
+                      return n;
+                    });
+                }}
               >
                 <option value="">Select roll-up</option>
                 <option value="upcoming">Not started (red)</option>
@@ -1843,6 +2027,11 @@ export default function SystemSettingsView({
                 <option value="done">Done (green)</option>
               </select>
             </label>
+            {addStageErrors.counterGroup ? (
+              <p className="text-[0.78rem] text-red-600">
+                {addStageErrors.counterGroup}
+              </p>
+            ) : null}
             <label>
               Place after
               <select
@@ -1875,18 +2064,14 @@ export default function SystemSettingsView({
               <button
                 type="button"
                 className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
-                onClick={() => setShowAddStageModal(false)}
+                onClick={() => {
+                  setAddStageErrors({});
+                  setShowAddStageModal(false);
+                }}
               >
                 Cancel
               </button>
-              <button
-                type="button"
-                onClick={createStageFromDraft}
-                disabled={
-                  !String(newStageDraft.name || "").trim() ||
-                  !newStageDraft.counterGroup
-                }
-              >
+              <button type="button" onClick={createStageFromDraft}>
                 Add stage
               </button>
             </div>
@@ -1894,13 +2079,22 @@ export default function SystemSettingsView({
         </Modal>
       ) : null}
       {showAddLabelModal ? (
-        <Modal open={showAddLabelModal} onOpenChange={setShowAddLabelModal}>
+        <Modal
+          open={showAddLabelModal}
+          onOpenChange={(open) => {
+            setShowAddLabelModal(open);
+            if (!open) setAddLabelError("");
+          }}
+        >
           <div className="flex items-center justify-between gap-3">
             <h3>Add Label</h3>
             <button
               type="button"
               className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
-              onClick={() => setShowAddLabelModal(false)}
+              onClick={() => {
+                setAddLabelError("");
+                setShowAddLabelModal(false);
+              }}
             >
               X
             </button>
@@ -1913,21 +2107,35 @@ export default function SystemSettingsView({
               <input
                 value={newLabel}
                 placeholder="Enter label name"
-                onChange={(event) => setNewLabel(event.target.value)}
+                className={invalidFieldClassName(Boolean(addLabelError))}
+                onChange={(event) => {
+                  setNewLabel(event.target.value);
+                  if (addLabelError) setAddLabelError("");
+                }}
               />
             </label>
+            {addLabelError ? (
+              <p className="text-[0.78rem] text-red-600">{addLabelError}</p>
+            ) : null}
             <div className="flex justify-end gap-2">
               <button
                 type="button"
                 className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
-                onClick={() => setShowAddLabelModal(false)}
+                onClick={() => {
+                  setAddLabelError("");
+                  setShowAddLabelModal(false);
+                }}
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  if (!String(newLabel || "").trim()) return;
+                  if (!String(newLabel || "").trim()) {
+                    setAddLabelError(REQUIRED_FIELD_MESSAGE);
+                    return;
+                  }
+                  setAddLabelError("");
                   addLabel();
                   setShowAddLabelModal(false);
                 }}
@@ -1939,13 +2147,22 @@ export default function SystemSettingsView({
         </Modal>
       ) : null}
       {showAddTypeModal ? (
-        <Modal open={showAddTypeModal} onOpenChange={setShowAddTypeModal}>
+        <Modal
+          open={showAddTypeModal}
+          onOpenChange={(open) => {
+            setShowAddTypeModal(open);
+            if (!open) setAddTypeError("");
+          }}
+        >
           <div className="flex items-center justify-between gap-3">
             <h3>Add Type</h3>
             <button
               type="button"
               className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
-              onClick={() => setShowAddTypeModal(false)}
+              onClick={() => {
+                setAddTypeError("");
+                setShowAddTypeModal(false);
+              }}
             >
               X
             </button>
@@ -1958,21 +2175,35 @@ export default function SystemSettingsView({
               <input
                 value={newType}
                 placeholder="Enter type name"
-                onChange={(event) => setNewType(event.target.value)}
+                className={invalidFieldClassName(Boolean(addTypeError))}
+                onChange={(event) => {
+                  setNewType(event.target.value);
+                  if (addTypeError) setAddTypeError("");
+                }}
               />
             </label>
+            {addTypeError ? (
+              <p className="text-[0.78rem] text-red-600">{addTypeError}</p>
+            ) : null}
             <div className="flex justify-end gap-2">
               <button
                 type="button"
                 className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
-                onClick={() => setShowAddTypeModal(false)}
+                onClick={() => {
+                  setAddTypeError("");
+                  setShowAddTypeModal(false);
+                }}
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  if (!String(newType || "").trim()) return;
+                  if (!String(newType || "").trim()) {
+                    setAddTypeError(REQUIRED_FIELD_MESSAGE);
+                    return;
+                  }
+                  setAddTypeError("");
                   addType();
                   setShowAddTypeModal(false);
                 }}
@@ -1984,13 +2215,22 @@ export default function SystemSettingsView({
         </Modal>
       ) : null}
       {showAddVersionModal ? (
-        <Modal open={showAddVersionModal} onOpenChange={setShowAddVersionModal}>
+        <Modal
+          open={showAddVersionModal}
+          onOpenChange={(open) => {
+            setShowAddVersionModal(open);
+            if (!open) setAddVersionError("");
+          }}
+        >
           <div className="flex items-center justify-between gap-3">
             <h3>Add Version</h3>
             <button
               type="button"
               className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
-              onClick={() => setShowAddVersionModal(false)}
+              onClick={() => {
+                setAddVersionError("");
+                setShowAddVersionModal(false);
+              }}
             >
               X
             </button>
@@ -2003,21 +2243,35 @@ export default function SystemSettingsView({
               <input
                 value={newVersion}
                 placeholder="Enter version name"
-                onChange={(event) => setNewVersion(event.target.value)}
+                className={invalidFieldClassName(Boolean(addVersionError))}
+                onChange={(event) => {
+                  setNewVersion(event.target.value);
+                  if (addVersionError) setAddVersionError("");
+                }}
               />
             </label>
+            {addVersionError ? (
+              <p className="text-[0.78rem] text-red-600">{addVersionError}</p>
+            ) : null}
             <div className="flex justify-end gap-2">
               <button
                 type="button"
                 className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
-                onClick={() => setShowAddVersionModal(false)}
+                onClick={() => {
+                  setAddVersionError("");
+                  setShowAddVersionModal(false);
+                }}
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  if (!String(newVersion || "").trim()) return;
+                  if (!String(newVersion || "").trim()) {
+                    setAddVersionError(REQUIRED_FIELD_MESSAGE);
+                    return;
+                  }
+                  setAddVersionError("");
                   addVersion();
                   setShowAddVersionModal(false);
                 }}
@@ -2029,13 +2283,22 @@ export default function SystemSettingsView({
         </Modal>
       ) : null}
       {showAddRepoModal ? (
-        <Modal open={showAddRepoModal} onOpenChange={setShowAddRepoModal}>
+        <Modal
+          open={showAddRepoModal}
+          onOpenChange={(open) => {
+            setShowAddRepoModal(open);
+            if (!open) setAddRepoErrors({});
+          }}
+        >
           <div className="flex items-center justify-between gap-3">
             <h3>Add repository mapping</h3>
             <button
               type="button"
               className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
-              onClick={() => setShowAddRepoModal(false)}
+              onClick={() => {
+                setAddRepoErrors({});
+                setShowAddRepoModal(false);
+              }}
             >
               X
             </button>
@@ -2044,6 +2307,9 @@ export default function SystemSettingsView({
             <p className="text-[0.82rem] text-[#6b778c]">
               Organization: <strong>{appGithubOrg || "Not configured"}</strong>
             </p>
+            {addRepoErrors.org ? (
+              <p className="text-[0.78rem] text-red-600">{addRepoErrors.org}</p>
+            ) : null}
             <label>
               <span className="inline-flex items-center">
                 Repository name <span className="ml-1 text-red-600">*</span>
@@ -2051,14 +2317,24 @@ export default function SystemSettingsView({
               <input
                 placeholder="Enter repository name"
                 value={repoDraft.repo}
-                onChange={(event) =>
+                className={invalidFieldClassName(Boolean(addRepoErrors.repo))}
+                onChange={(event) => {
                   setRepoDraft((prev) => ({
                     ...prev,
                     repo: event.target.value,
-                  }))
-                }
+                  }));
+                  if (addRepoErrors.repo)
+                    setAddRepoErrors((prev) => {
+                      const n = { ...prev };
+                      delete n.repo;
+                      return n;
+                    });
+                }}
               />
             </label>
+            {addRepoErrors.repo ? (
+              <p className="text-[0.78rem] text-red-600">{addRepoErrors.repo}</p>
+            ) : null}
             <label>
               Default branch
               <input
@@ -2076,15 +2352,14 @@ export default function SystemSettingsView({
               <button
                 type="button"
                 className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
-                onClick={() => setShowAddRepoModal(false)}
+                onClick={() => {
+                  setAddRepoErrors({});
+                  setShowAddRepoModal(false);
+                }}
               >
                 Cancel
               </button>
-              <button
-                type="button"
-                disabled={!String(repoDraft.repo || "").trim() || !appGithubOrg}
-                onClick={addRepoMapping}
-              >
+              <button type="button" onClick={addRepoMapping}>
                 Add repository
               </button>
             </div>
@@ -2094,14 +2369,20 @@ export default function SystemSettingsView({
       {showAddAutomationModal ? (
         <Modal
           open={showAddAutomationModal}
-          onOpenChange={setShowAddAutomationModal}
+          onOpenChange={(open) => {
+            setShowAddAutomationModal(open);
+            if (!open) setAddAutomationErrors({});
+          }}
         >
           <div className="flex items-center justify-between gap-3">
             <h3>Add automation rule</h3>
             <button
               type="button"
               className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
-              onClick={() => setShowAddAutomationModal(false)}
+              onClick={() => {
+                setAddAutomationErrors({});
+                setShowAddAutomationModal(false);
+              }}
             >
               X
             </button>
@@ -2113,12 +2394,21 @@ export default function SystemSettingsView({
               </span>
               <select
                 value={ruleDraft.eventType}
-                onChange={(event) =>
+                className={invalidFieldClassName(
+                  Boolean(addAutomationErrors.eventType),
+                )}
+                onChange={(event) => {
                   setRuleDraft((prev) => ({
                     ...prev,
                     eventType: event.target.value,
-                  }))
-                }
+                  }));
+                  if (addAutomationErrors.eventType)
+                    setAddAutomationErrors((prev) => {
+                      const n = { ...prev };
+                      delete n.eventType;
+                      return n;
+                    });
+                }}
               >
                 <option value="">Select event trigger</option>
                 <option value="branch_created">Branch created</option>
@@ -2129,18 +2419,32 @@ export default function SystemSettingsView({
                 <option value="pr_closed">PR closed</option>
               </select>
             </label>
+            {addAutomationErrors.eventType ? (
+              <p className="text-[0.78rem] text-red-600">
+                {addAutomationErrors.eventType}
+              </p>
+            ) : null}
             <label>
               <span className="inline-flex items-center">
                 Target status <span className="ml-1 text-red-600">*</span>
               </span>
               <select
                 value={ruleDraft.targetStatus}
-                onChange={(event) =>
+                className={invalidFieldClassName(
+                  Boolean(addAutomationErrors.targetStatus),
+                )}
+                onChange={(event) => {
                   setRuleDraft((prev) => ({
                     ...prev,
                     targetStatus: event.target.value,
-                  }))
-                }
+                  }));
+                  if (addAutomationErrors.targetStatus)
+                    setAddAutomationErrors((prev) => {
+                      const n = { ...prev };
+                      delete n.targetStatus;
+                      return n;
+                    });
+                }}
               >
                 <option value="">Select target status</option>
                 {stages.map((stage) => (
@@ -2150,6 +2454,11 @@ export default function SystemSettingsView({
                 ))}
               </select>
             </label>
+            {addAutomationErrors.targetStatus ? (
+              <p className="text-[0.78rem] text-red-600">
+                {addAutomationErrors.targetStatus}
+              </p>
+            ) : null}
             <div className="branch-filter-options">
               <span>Branch filter</span>
               <label className="branch-scope-option !grid !grid-cols-[16px_auto] !items-center !gap-2">
@@ -2189,34 +2498,42 @@ export default function SystemSettingsView({
                 <input
                   placeholder="develop"
                   value={ruleDraft.baseBranch}
-                  onChange={(event) =>
+                  className={invalidFieldClassName(
+                    Boolean(addAutomationErrors.baseBranch),
+                  )}
+                  onChange={(event) => {
                     setRuleDraft((prev) => ({
                       ...prev,
                       baseBranch: event.target.value,
-                    }))
-                  }
+                    }));
+                    if (addAutomationErrors.baseBranch)
+                      setAddAutomationErrors((prev) => {
+                        const n = { ...prev };
+                        delete n.baseBranch;
+                        return n;
+                      });
+                  }}
                 />
               ) : null}
             </div>
+            {addAutomationErrors.baseBranch ? (
+              <p className="text-[0.78rem] text-red-600">
+                {addAutomationErrors.baseBranch}
+              </p>
+            ) : null}
             <div className="flex justify-end gap-2">
               <button
                 type="button"
                 className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
                 onClick={() => {
+                  setAddAutomationErrors({});
                   setRuleDraft(EMPTY_AUTOMATION_RULE_DRAFT);
                   setShowAddAutomationModal(false);
                 }}
               >
                 Cancel
               </button>
-              <button
-                type="button"
-                onClick={addAutomationRule}
-                disabled={
-                  !String(ruleDraft.eventType || "").trim() ||
-                  !String(ruleDraft.targetStatus || "").trim()
-                }
-              >
+              <button type="button" onClick={addAutomationRule}>
                 Add automation rule
               </button>
             </div>
@@ -2234,7 +2551,10 @@ export default function SystemSettingsView({
           open={Boolean(stageDeleteDialog)}
           cardClassName="max-w-[460px]"
           onOpenChange={(open) => {
-            if (!open) setStageDeleteDialog(null);
+            if (!open) {
+              setStageDeleteDestError("");
+              setStageDeleteDialog(null);
+            }
           }}
         >
           <div className="flex items-center justify-between gap-3">
@@ -2242,7 +2562,10 @@ export default function SystemSettingsView({
             <button
               type="button"
               className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
-              onClick={() => setStageDeleteDialog(null)}
+              onClick={() => {
+                setStageDeleteDestError("");
+                setStageDeleteDialog(null);
+              }}
             >
               X
             </button>
@@ -2252,12 +2575,14 @@ export default function SystemSettingsView({
               Move tasks in <strong>{stageDeleteDialog.stageName}</strong> to:
             </p>
             <select
+              className={invalidFieldClassName(Boolean(stageDeleteDestError))}
               value={stageDeleteDialog.destinationKey}
-              onChange={(event) =>
+              onChange={(event) => {
+                setStageDeleteDestError("");
                 setStageDeleteDialog((prev) =>
                   prev ? { ...prev, destinationKey: event.target.value } : prev,
-                )
-              }
+                );
+              }}
             >
               <option value="">Select destination column</option>
               {dialogDestinationOptions.map((stage) => (
@@ -2266,20 +2591,29 @@ export default function SystemSettingsView({
                 </option>
               ))}
             </select>
+            {stageDeleteDestError ? (
+              <p className="text-[0.78rem] text-red-600">{stageDeleteDestError}</p>
+            ) : null}
             <div className="flex justify-end gap-2">
               <button
                 type="button"
                 className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
-                onClick={() => setStageDeleteDialog(null)}
+                onClick={() => {
+                  setStageDeleteDestError("");
+                  setStageDeleteDialog(null);
+                }}
               >
                 Cancel
               </button>
               <button
                 type="button"
                 className="border border-[#dc2626] bg-[#dc2626] text-white hover:border-[#b91c1c] hover:bg-[#b91c1c]"
-                disabled={!stageDeleteDialog.destinationKey}
                 onClick={() => {
-                  if (!stageDeleteDialog.destinationKey) return;
+                  if (!stageDeleteDialog.destinationKey) {
+                    setStageDeleteDestError(REQUIRED_FIELD_MESSAGE);
+                    return;
+                  }
+                  setStageDeleteDestError("");
                   removeStageAt(
                     stageDeleteDialog.index,
                     stageDeleteDialog.destinationKey,

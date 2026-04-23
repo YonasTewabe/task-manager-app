@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "../api/client";
+import {
+  REQUIRED_FIELD_MESSAGE,
+  invalidFieldClassName,
+} from "../utils/formValidation.js";
 
 export default function AppSettingsView({ canManage = false, onNotify }) {
   const [form, setForm] = useState({
@@ -11,6 +15,7 @@ export default function AppSettingsView({ canManage = false, onNotify }) {
   const [loading, setLoading] = useState(true);
   const [showGithubToken, setShowGithubToken] = useState(false);
   const [showGithubWebhookSecret, setShowGithubWebhookSecret] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
 
   useEffect(() => {
     let cancelled = false;
@@ -19,6 +24,7 @@ export default function AppSettingsView({ canManage = false, onNotify }) {
       try {
         const settings = await apiRequest("/task-management/app-settings/github");
         if (cancelled) return;
+        setFieldErrors({});
         setForm({
           githubOrg: settings.githubOrg || "",
           githubToken: settings.githubToken || "",
@@ -40,6 +46,18 @@ export default function AppSettingsView({ canManage = false, onNotify }) {
   }, [canManage, onNotify]);
 
   const save = async () => {
+    const err = {};
+    if (!String(form.githubOrg || "").trim())
+      err.githubOrg = REQUIRED_FIELD_MESSAGE;
+    if (!String(form.githubToken || "").trim())
+      err.githubToken = REQUIRED_FIELD_MESSAGE;
+    if (!String(form.githubWebhookSecret || "").trim())
+      err.githubWebhookSecret = REQUIRED_FIELD_MESSAGE;
+    if (Object.keys(err).length) {
+      setFieldErrors(err);
+      return;
+    }
+    setFieldErrors({});
     setSaving(true);
     try {
       await apiRequest("/task-management/app-settings/github", {
@@ -77,27 +95,52 @@ export default function AppSettingsView({ canManage = false, onNotify }) {
             </p>
           </div>
           <label className="grid gap-[0.35rem] text-[0.9rem] text-[#253858]">
-            GitHub owner / org
+            <span className="inline-flex items-center">
+              GitHub owner / org{" "}
+              <span className="ml-1 text-red-600">*</span>
+            </span>
             <input
-              className="w-full rounded-[8px] border border-[#c9d2e3] bg-white px-[0.55rem] py-[0.45rem] text-[0.9rem] text-[#172b4d]"
+              className={`w-full rounded-[8px] border bg-white px-[0.55rem] py-[0.45rem] text-[0.9rem] text-[#172b4d] ${fieldErrors.githubOrg ? invalidFieldClassName(true) : "border-[#c9d2e3]"}`}
               placeholder="Enter GitHub organization or owner"
               value={form.githubOrg}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, githubOrg: event.target.value }))
-              }
+              onChange={(event) => {
+                setForm((prev) => ({ ...prev, githubOrg: event.target.value }));
+                if (fieldErrors.githubOrg)
+                  setFieldErrors((prev) => {
+                    const n = { ...prev };
+                    delete n.githubOrg;
+                    return n;
+                  });
+              }}
             />
+            {fieldErrors.githubOrg ? (
+              <span className="text-[0.78rem] text-red-600">
+                {fieldErrors.githubOrg}
+              </span>
+            ) : null}
           </label>
           <label className="grid gap-[0.35rem] text-[0.9rem] text-[#253858]">
-            GitHub token
+            <span className="inline-flex items-center">
+              GitHub token <span className="ml-1 text-red-600">*</span>
+            </span>
             <div className="grid grid-cols-[1fr_auto] gap-2">
               <input
-                className="w-full rounded-[8px] border border-[#c9d2e3] bg-white px-[0.55rem] py-[0.45rem] text-[0.9rem] text-[#172b4d]"
+                className={`w-full rounded-[8px] border bg-white px-[0.55rem] py-[0.45rem] text-[0.9rem] text-[#172b4d] ${fieldErrors.githubToken ? invalidFieldClassName(true) : "border-[#c9d2e3]"}`}
                 type={showGithubToken ? "text" : "password"}
                 placeholder="Enter GitHub token"
                 value={form.githubToken}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, githubToken: event.target.value }))
-                }
+                onChange={(event) => {
+                  setForm((prev) => ({
+                    ...prev,
+                    githubToken: event.target.value,
+                  }));
+                  if (fieldErrors.githubToken)
+                    setFieldErrors((prev) => {
+                      const n = { ...prev };
+                      delete n.githubToken;
+                      return n;
+                    });
+                }}
               />
               <button
                 type="button"
@@ -109,21 +152,35 @@ export default function AppSettingsView({ canManage = false, onNotify }) {
                 {showGithubToken ? "🙈" : "👁"}
               </button>
             </div>
+            {fieldErrors.githubToken ? (
+              <span className="text-[0.78rem] text-red-600">
+                {fieldErrors.githubToken}
+              </span>
+            ) : null}
           </label>
           <label className="grid gap-[0.35rem] text-[0.9rem] text-[#253858]">
-            GitHub webhook secret
+            <span className="inline-flex items-center">
+              GitHub webhook secret{" "}
+              <span className="ml-1 text-red-600">*</span>
+            </span>
             <div className="grid grid-cols-[1fr_auto] gap-2">
               <input
-                className="w-full rounded-[8px] border border-[#c9d2e3] bg-white px-[0.55rem] py-[0.45rem] text-[0.9rem] text-[#172b4d]"
+                className={`w-full rounded-[8px] border bg-white px-[0.55rem] py-[0.45rem] text-[0.9rem] text-[#172b4d] ${fieldErrors.githubWebhookSecret ? invalidFieldClassName(true) : "border-[#c9d2e3]"}`}
                 type={showGithubWebhookSecret ? "text" : "password"}
                 placeholder="Enter webhook secret"
                 value={form.githubWebhookSecret}
-                onChange={(event) =>
+                onChange={(event) => {
                   setForm((prev) => ({
                     ...prev,
                     githubWebhookSecret: event.target.value,
-                  }))
-                }
+                  }));
+                  if (fieldErrors.githubWebhookSecret)
+                    setFieldErrors((prev) => {
+                      const n = { ...prev };
+                      delete n.githubWebhookSecret;
+                      return n;
+                    });
+                }}
               />
               <button
                 type="button"
@@ -139,6 +196,11 @@ export default function AppSettingsView({ canManage = false, onNotify }) {
                 {showGithubWebhookSecret ? "🙈" : "👁"}
               </button>
             </div>
+            {fieldErrors.githubWebhookSecret ? (
+              <span className="text-[0.78rem] text-red-600">
+                {fieldErrors.githubWebhookSecret}
+              </span>
+            ) : null}
           </label>
           <div className="flex justify-end pt-1">
             <button type="button" disabled={saving} onClick={save}>

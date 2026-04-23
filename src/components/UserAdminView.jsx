@@ -1,5 +1,9 @@
 import { useState } from "react";
 import Modal from "./ui/Modal";
+import {
+  REQUIRED_FIELD_MESSAGE,
+  invalidFieldClassName,
+} from "../utils/formValidation.js";
 import { useAppStore } from "../store/appStore";
 import { useShallow } from "zustand/react/shallow";
 
@@ -74,13 +78,19 @@ export default function UserAdminView({
     })),
   );
   const [isCreatingUser, setIsCreatingUser] = useState(false);
+  const [createUserErrors, setCreateUserErrors] = useState({});
+  const [createGroupErrors, setCreateGroupErrors] = useState({});
+  const [editUserErrors, setEditUserErrors] = useState({});
+  const [editGroupErrors, setEditGroupErrors] = useState({});
 
   const closeEditModal = () => {
+    setEditUserErrors({});
     setShowEditModal(false);
     setEditingUserId(null);
   };
 
   const startEdit = (user) => {
+    setEditUserErrors({});
     setEditingUserId(user.id);
     setEditDraft({
       name: user.name,
@@ -97,6 +107,7 @@ export default function UserAdminView({
   };
 
   const startEditGroup = (group) => {
+    setEditGroupErrors({});
     setEditingGroupId(group.id);
     setEditGroupName(group.name);
     setEditGroupMemberIds((group.members || []).map((m) => m.id));
@@ -104,6 +115,7 @@ export default function UserAdminView({
   };
 
   const closeEditGroupModal = () => {
+    setEditGroupErrors({});
     setShowEditGroupModal(false);
     setEditingGroupId(null);
   };
@@ -203,10 +215,23 @@ export default function UserAdminView({
         </div>
       </div>
       {canManage && showCreateModal ? (
-        <Modal open={showCreateModal} onOpenChange={setShowCreateModal}>
+        <Modal
+          open={showCreateModal}
+          onOpenChange={(open) => {
+            setShowCreateModal(open);
+            if (!open) setCreateUserErrors({});
+          }}
+        >
             <div className="flex items-center justify-between gap-3">
               <h3>Add user</h3>
-              <button type="button" className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]" onClick={() => setShowCreateModal(false)}>
+              <button
+                type="button"
+                className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+                onClick={() => {
+                  setCreateUserErrors({});
+                  setShowCreateModal(false);
+                }}
+              >
                 X
               </button>
             </div>
@@ -218,23 +243,61 @@ export default function UserAdminView({
                 <input
                   value={email}
                   placeholder="Enter email"
-                  onChange={(e) => setEmail(e.target.value)}
+                  className={invalidFieldClassName(
+                    Boolean(createUserErrors.email),
+                  )}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (createUserErrors.email)
+                      setCreateUserErrors((prev) => {
+                        const n = { ...prev };
+                        delete n.email;
+                        return n;
+                      });
+                  }}
                 />
               </label>
+              {createUserErrors.email ? (
+                <p className="text-[0.78rem] text-red-600">
+                  {createUserErrors.email}
+                </p>
+              ) : null}
               <label>
                 <span className="inline-flex items-center">
                   Role <span className="ml-1 text-red-600">*</span>
                 </span>
-                <select value={role} onChange={(e) => setRole(e.target.value)}>
+                <select
+                  value={role}
+                  className={invalidFieldClassName(
+                    Boolean(createUserErrors.role),
+                  )}
+                  onChange={(e) => {
+                    setRole(e.target.value);
+                    if (createUserErrors.role)
+                      setCreateUserErrors((prev) => {
+                        const n = { ...prev };
+                        delete n.role;
+                        return n;
+                      });
+                  }}
+                >
                   <option value="member">member</option>
                   <option value="admin">admin</option>
                 </select>
               </label>
+              {createUserErrors.role ? (
+                <p className="text-[0.78rem] text-red-600">
+                  {createUserErrors.role}
+                </p>
+              ) : null}
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
                   className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
-                  onClick={() => setShowCreateModal(false)}
+                  onClick={() => {
+                    setCreateUserErrors({});
+                    setShowCreateModal(false);
+                  }}
                 >
                   Cancel
                 </button>
@@ -242,7 +305,14 @@ export default function UserAdminView({
                   type="button"
                   disabled={isCreatingUser}
                   onClick={async () => {
-                    if (!email.trim() || !role) return;
+                    const err = {};
+                    if (!email.trim()) err.email = REQUIRED_FIELD_MESSAGE;
+                    if (!role) err.role = REQUIRED_FIELD_MESSAGE;
+                    if (Object.keys(err).length) {
+                      setCreateUserErrors(err);
+                      return;
+                    }
+                    setCreateUserErrors({});
                     try {
                       setIsCreatingUser(true);
                       await onCreateUser({ email: email.trim(), role });
@@ -261,10 +331,23 @@ export default function UserAdminView({
         </Modal>
       ) : null}
       {canManage && showCreateGroupModal ? (
-        <Modal open={showCreateGroupModal} onOpenChange={setShowCreateGroupModal}>
+        <Modal
+          open={showCreateGroupModal}
+          onOpenChange={(open) => {
+            setShowCreateGroupModal(open);
+            if (!open) setCreateGroupErrors({});
+          }}
+        >
             <div className="flex items-center justify-between gap-3">
               <h3>Add group</h3>
-              <button type="button" className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]" onClick={() => setShowCreateGroupModal(false)}>
+              <button
+                type="button"
+                className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+                onClick={() => {
+                  setCreateGroupErrors({});
+                  setShowCreateGroupModal(false);
+                }}
+              >
                 X
               </button>
             </div>
@@ -276,9 +359,25 @@ export default function UserAdminView({
                 <input
                   value={groupName}
                   placeholder="Enter group name"
-                  onChange={(e) => setGroupName(e.target.value)}
+                  className={invalidFieldClassName(
+                    Boolean(createGroupErrors.name),
+                  )}
+                  onChange={(e) => {
+                    setGroupName(e.target.value);
+                    if (createGroupErrors.name)
+                      setCreateGroupErrors((prev) => {
+                        const n = { ...prev };
+                        delete n.name;
+                        return n;
+                      });
+                  }}
                 />
               </label>
+              {createGroupErrors.name ? (
+                <p className="text-[0.78rem] text-red-600">
+                  {createGroupErrors.name}
+                </p>
+              ) : null}
               <div>
                 <p className="text-[#5e6c84]">Members</p>
                 <div className="grid grid-cols-3 gap-[0.4rem]">
@@ -302,14 +401,21 @@ export default function UserAdminView({
                 <button
                   type="button"
                   className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
-                  onClick={() => setShowCreateGroupModal(false)}
+                  onClick={() => {
+                    setCreateGroupErrors({});
+                    setShowCreateGroupModal(false);
+                  }}
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={() => {
-                    if (!groupName.trim()) return;
+                    if (!groupName.trim()) {
+                      setCreateGroupErrors({ name: REQUIRED_FIELD_MESSAGE });
+                      return;
+                    }
+                    setCreateGroupErrors({});
                     onCreateUserGroup({ name: groupName.trim(), memberIds: groupMemberIds });
                     setGroupName("");
                     setGroupMemberIds([]);
@@ -343,9 +449,25 @@ export default function UserAdminView({
                 <input
                   value={editDraft.name}
                   placeholder="Enter full name"
-                  onChange={(e) => setEditDraft((prev) => ({ ...prev, name: e.target.value }))}
+                  className={invalidFieldClassName(
+                    Boolean(editUserErrors.name),
+                  )}
+                  onChange={(e) => {
+                    setEditDraft((prev) => ({ ...prev, name: e.target.value }));
+                    if (editUserErrors.name)
+                      setEditUserErrors((prev) => {
+                        const n = { ...prev };
+                        delete n.name;
+                        return n;
+                      });
+                  }}
                 />
               </label>
+              {editUserErrors.name ? (
+                <p className="text-[0.78rem] text-red-600">
+                  {editUserErrors.name}
+                </p>
+              ) : null}
               <label>
                 <span className="inline-flex items-center">
                   Email <span className="ml-1 text-red-600">*</span>
@@ -353,9 +475,28 @@ export default function UserAdminView({
                 <input
                   value={editDraft.email}
                   placeholder="Enter email"
-                  onChange={(e) => setEditDraft((prev) => ({ ...prev, email: e.target.value }))}
+                  className={invalidFieldClassName(
+                    Boolean(editUserErrors.email),
+                  )}
+                  onChange={(e) => {
+                    setEditDraft((prev) => ({
+                      ...prev,
+                      email: e.target.value,
+                    }));
+                    if (editUserErrors.email)
+                      setEditUserErrors((prev) => {
+                        const n = { ...prev };
+                        delete n.email;
+                        return n;
+                      });
+                  }}
                 />
               </label>
+              {editUserErrors.email ? (
+                <p className="text-[0.78rem] text-red-600">
+                  {editUserErrors.email}
+                </p>
+              ) : null}
               <label>
                 Role
                 <select
@@ -373,6 +514,16 @@ export default function UserAdminView({
                 <button
                   type="button"
                   onClick={() => {
+                    const err = {};
+                    if (!String(editDraft.name || "").trim())
+                      err.name = REQUIRED_FIELD_MESSAGE;
+                    if (!String(editDraft.email || "").trim())
+                      err.email = REQUIRED_FIELD_MESSAGE;
+                    if (Object.keys(err).length) {
+                      setEditUserErrors(err);
+                      return;
+                    }
+                    setEditUserErrors({});
                     onUpdateUser(editingUserId, editDraft);
                     closeEditModal();
                   }}
@@ -404,9 +555,25 @@ export default function UserAdminView({
                 <input
                   value={editGroupName}
                   placeholder="Enter group name"
-                  onChange={(e) => setEditGroupName(e.target.value)}
+                  className={invalidFieldClassName(
+                    Boolean(editGroupErrors.name),
+                  )}
+                  onChange={(e) => {
+                    setEditGroupName(e.target.value);
+                    if (editGroupErrors.name)
+                      setEditGroupErrors((prev) => {
+                        const n = { ...prev };
+                        delete n.name;
+                        return n;
+                      });
+                  }}
                 />
               </label>
+              {editGroupErrors.name ? (
+                <p className="text-[0.78rem] text-red-600">
+                  {editGroupErrors.name}
+                </p>
+              ) : null}
               <div>
                 <p className="text-[#5e6c84]">Members</p>
                 <div className="grid grid-cols-3 gap-[0.4rem]">
@@ -433,6 +600,11 @@ export default function UserAdminView({
                 <button
                   type="button"
                   onClick={() => {
+                    if (!editGroupName.trim()) {
+                      setEditGroupErrors({ name: REQUIRED_FIELD_MESSAGE });
+                      return;
+                    }
+                    setEditGroupErrors({});
                     onUpdateUserGroup(editingGroupId, {
                       name: editGroupName.trim(),
                       memberIds: editGroupMemberIds,

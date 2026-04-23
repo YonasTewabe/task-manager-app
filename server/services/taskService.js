@@ -813,11 +813,34 @@ function normalizeMemberIds(memberIds = []) {
   ];
 }
 
-async function setProjectMembers(projectId, memberIds) {
-  await dbQuery("DELETE FROM project_members WHERE project_id = $1", [
-    projectId,
-  ]);
+async function setProjectMembers(
+  projectId,
+  memberIds,
+  projectAdminMemberIds = undefined,
+) {
+  const pid = asUuid(projectId);
   const normalized = normalizeMemberIds(memberIds);
+  let adminSet = new Set();
+  if (projectAdminMemberIds !== undefined) {
+    normalizeMemberIds(projectAdminMemberIds).forEach((uid) =>
+      adminSet.add(String(uid)),
+    );
+  } else if (normalized.length) {
+    const prev = await dbQuery(
+      `SELECT user_id, is_project_admin FROM project_members WHERE project_id = $1`,
+      [pid],
+    );
+    const prevAdmin = new Set(
+      prev.rows
+        .filter((r) => r.is_project_admin === true)
+        .map((r) => String(r.user_id)),
+    );
+    normalized.forEach((uid) => {
+      if (prevAdmin.has(String(uid))) adminSet.add(String(uid));
+    });
+  }
+
+  await dbQuery("DELETE FROM project_members WHERE project_id = $1", [pid]);
   if (!normalized.length) return;
   const activeUsersResult = await dbQuery(
     `SELECT id
@@ -829,12 +852,28 @@ async function setProjectMembers(projectId, memberIds) {
   const activeUserIds = activeUsersResult.rows.map((row) => String(row.id));
   if (!activeUserIds.length) return;
 
-  const valuesSql = activeUserIds
-    .map((_, index) => `($1, $${index + 2})`)
-    .join(", ");
+  const placeholders = [];
+  const params = [pid];
+  let idx = 2;
+  activeUserIds.forEach((uid) => {
+    placeholders.push(`($1, $${idx++}, $${idx++})`);
+    params.push(uid);
+    params.push(adminSet.has(String(uid)));
+  });
   await dbQuery(
-    `INSERT INTO project_members (project_id, user_id) VALUES ${valuesSql} ON CONFLICT DO NOTHING`,
-    [projectId, ...activeUserIds],
+    `INSERT INTO project_members (project_id, user_id, is_project_admin) VALUES ${placeholders.join(", ")}`,
+    params,
+  );
+}
+
+async function updateProjectAdminFlagsOnly(projectId, adminMemberIds) {
+  const pid = asUuid(projectId);
+  const admins = normalizeMemberIds(adminMemberIds);
+  await dbQuery(
+    `UPDATE project_members
+     SET is_project_admin = (user_id = ANY($2::uuid[]))
+     WHERE project_id = $1`,
+    [pid, admins],
   );
 }
 
@@ -884,7 +923,12 @@ export async function getProjects() {
        p.created_at AS "createdAt",
        COALESCE(
          JSON_AGG(
-           JSON_BUILD_OBJECT('id', u.id, 'name', u.name, 'email', u.email)
+           JSON_BUILD_OBJECT(
+             'id', u.id,
+             'name', u.name,
+             'email', u.email,
+             'isProjectAdmin', COALESCE(pm.is_project_admin, FALSE)
+           )
          ) FILTER (WHERE u.id IS NOT NULL),
          '[]'::json
        ) AS members
@@ -971,11 +1015,48 @@ export async function updateProject(projectId, patch) {
   }
 
   if (patch.memberIds !== undefined) {
-    await setProjectMembers(projectId, patch.memberIds);
+    await setProjectMembers(
+      projectId,
+      patch.memberIds,
+      patch.projectAdminMemberIds,
+    );
+  } else if (patch.projectAdminMemberIds !== undefined) {
+    await updateProjectAdminFlagsOnly(
+      projectId,
+      patch.projectAdminMemberIds,
+    );
   }
 
   const projects = await getProjects();
   return projects.find((item) => String(item.id) === String(projectId)) || null;
+}
+
+export async function userCanManageProject(userId, projectId) {
+  const uid = asUuid(userId);
+  const pid = asUuid(projectId);
+  if (!uid || !pid) return false;
+  const userRow = await dbQuery(
+    `SELECT role FROM users WHERE id = $1 AND is_active = TRUE`,
+    [uid],
+  );
+  if (userRow.rows[0]?.role === "admin") return true;
+  const pm = await dbQuery(
+    `SELECT 1 FROM project_members
+     WHERE project_id = $1 AND user_id = $2 AND is_project_admin = TRUE
+     LIMIT 1`,
+    [pid, uid],
+  );
+  return Boolean(pm.rows[0]);
+}
+
+export async function getSprintProjectId(sprintId) {
+  const sid = asUuid(sprintId);
+  if (!sid) return null;
+  const r = await dbQuery(
+    `SELECT project_id AS "projectId" FROM sprints WHERE id = $1 LIMIT 1`,
+    [sid],
+  );
+  return r.rows[0]?.projectId || null;
 }
 
 export async function deleteProject(projectId) {
@@ -2054,24 +2135,6 @@ export async function getSummaryWorkloadAnalytics(filters = {}) {
   };
 }
 
-function csvEscape(value) {
-  const text = String(value ?? "");
-  if (/[",\n]/.test(text)) {
-    return `"${text.replace(/"/g, "\"\"")}"`;
-  }
-  return text;
-}
-
-function rowsToCsv(rows = []) {
-  if (!rows.length) return "No data\n";
-  const headers = Object.keys(rows[0]);
-  const lines = [headers.join(",")];
-  rows.forEach((row) => {
-    lines.push(headers.map((header) => csvEscape(row[header])).join(","));
-  });
-  return `${lines.join("\n")}\n`;
-}
-
 function buildXlsxBuffer(rows = [], sheetName = "Summary") {
   const workbook = XLSX.utils.book_new();
   const worksheet = XLSX.utils.json_to_sheet(rows.length ? rows : [{ note: "No data" }]);
@@ -2081,10 +2144,6 @@ function buildXlsxBuffer(rows = [], sheetName = "Summary") {
 
 export async function buildSummaryReportExport(filters = {}) {
   const type = String(filters.type || "overview").trim().toLowerCase();
-  const format = String(filters.format || "csv").trim().toLowerCase();
-  if (format !== "csv" && format !== "xlsx") {
-    throw new Error("Unsupported report format. Use csv or xlsx.");
-  }
   let rows = [];
   if (type === "sprint") {
     const sprint = await getSummarySprintAnalytics(filters);
@@ -2127,18 +2186,11 @@ export async function buildSummaryReportExport(filters = {}) {
     ]);
   }
 
-  if (format === "xlsx") {
-    return {
-      contentType:
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      extension: "xlsx",
-      buffer: buildXlsxBuffer(rows, "Summary"),
-    };
-  }
   return {
-    contentType: "text/csv; charset=utf-8",
-    extension: "csv",
-    buffer: Buffer.from(rowsToCsv(rows), "utf8"),
+    contentType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    extension: "xlsx",
+    buffer: buildXlsxBuffer(rows, "Summary"),
   };
 }
 

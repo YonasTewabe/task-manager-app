@@ -1,4 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  REQUIRED_FIELD_MESSAGE,
+  invalidFieldClassName,
+} from "../utils/formValidation.js";
 
 export default function ProfileView({ currentUser, onUpdateProfile, onChangePassword }) {
   const [activeTab, setActiveTab] = useState("info");
@@ -15,6 +19,13 @@ export default function ProfileView({ currentUser, onUpdateProfile, onChangePass
   const [infoMessage, setInfoMessage] = useState("");
   const [passwordMessage, setPasswordMessage] = useState("");
   const [error, setError] = useState("");
+  const [infoFieldErrors, setInfoFieldErrors] = useState({});
+  const [passwordFieldErrors, setPasswordFieldErrors] = useState({});
+
+  useEffect(() => {
+    setInfoFieldErrors({});
+    setPasswordFieldErrors({});
+  }, [activeTab]);
 
   const isInfoChanged = useMemo(() => {
     return (
@@ -29,6 +40,14 @@ export default function ProfileView({ currentUser, onUpdateProfile, onChangePass
     setError("");
     setInfoMessage("");
     setPasswordMessage("");
+    const err = {};
+    if (!String(name || "").trim()) err.name = REQUIRED_FIELD_MESSAGE;
+    if (!String(email || "").trim()) err.email = REQUIRED_FIELD_MESSAGE;
+    if (Object.keys(err).length) {
+      setInfoFieldErrors(err);
+      return;
+    }
+    setInfoFieldErrors({});
     setSavingInfo(true);
     try {
       await onUpdateProfile({ name, email });
@@ -45,10 +64,24 @@ export default function ProfileView({ currentUser, onUpdateProfile, onChangePass
     setError("");
     setPasswordMessage("");
     setInfoMessage("");
-    if (!newPassword || newPassword !== confirmPassword) {
-      setError("New password and confirmation must match.");
+    const err = {};
+    if (!String(currentPassword || "").trim())
+      err.currentPassword = REQUIRED_FIELD_MESSAGE;
+    if (!String(newPassword || "").trim())
+      err.newPassword = REQUIRED_FIELD_MESSAGE;
+    if (!String(confirmPassword || "").trim())
+      err.confirmPassword = REQUIRED_FIELD_MESSAGE;
+    if (Object.keys(err).length) {
+      setPasswordFieldErrors(err);
       return;
     }
+    if (newPassword !== confirmPassword) {
+      setPasswordFieldErrors({
+        confirmPassword: "Passwords do not match.",
+      });
+      return;
+    }
+    setPasswordFieldErrors({});
     setSavingPassword(true);
     try {
       await onChangePassword({ currentPassword, newPassword });
@@ -111,18 +144,40 @@ export default function ProfileView({ currentUser, onUpdateProfile, onChangePass
             <label className="grid gap-1 text-[0.9rem] text-[#172b4d]">
               <span className="font-medium">Full name</span>
               <input
-                className="rounded-[8px] border border-[#c1c7d0] px-3 py-2"
+                className={`rounded-[8px] border px-3 py-2 ${infoFieldErrors.name ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
                 value={name}
-                onChange={(event) => setName(event.target.value)}
+                onChange={(event) => {
+                  setName(event.target.value);
+                  if (infoFieldErrors.name)
+                    setInfoFieldErrors((prev) => {
+                      const n = { ...prev };
+                      delete n.name;
+                      return n;
+                    });
+                }}
               />
+              {infoFieldErrors.name ? (
+                <span className="text-[0.78rem] text-red-600">{infoFieldErrors.name}</span>
+              ) : null}
             </label>
             <label className="grid gap-1 text-[0.9rem] text-[#172b4d]">
               <span className="font-medium">Email</span>
               <input
-                className="rounded-[8px] border border-[#c1c7d0] px-3 py-2"
+                className={`rounded-[8px] border px-3 py-2 ${infoFieldErrors.email ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
                 value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                onChange={(event) => {
+                  setEmail(event.target.value);
+                  if (infoFieldErrors.email)
+                    setInfoFieldErrors((prev) => {
+                      const n = { ...prev };
+                      delete n.email;
+                      return n;
+                    });
+                }}
               />
+              {infoFieldErrors.email ? (
+                <span className="text-[0.78rem] text-red-600">{infoFieldErrors.email}</span>
+              ) : null}
             </label>
             <div className="flex justify-end border-t border-[#ebecf0] pt-3">
               <button type="submit" disabled={savingInfo || !isInfoChanged}>
@@ -137,9 +192,17 @@ export default function ProfileView({ currentUser, onUpdateProfile, onChangePass
               <div className="relative">
                 <input
                   type={showCurrentPassword ? "text" : "password"}
-                  className="w-full rounded-[8px] border border-[#c1c7d0] px-3 py-2 pr-10"
+                  className={`w-full rounded-[8px] border px-3 py-2 pr-10 ${passwordFieldErrors.currentPassword ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
                   value={currentPassword}
-                  onChange={(event) => setCurrentPassword(event.target.value)}
+                  onChange={(event) => {
+                    setCurrentPassword(event.target.value);
+                    if (passwordFieldErrors.currentPassword)
+                      setPasswordFieldErrors((prev) => {
+                        const n = { ...prev };
+                        delete n.currentPassword;
+                        return n;
+                      });
+                  }}
                 />
                 <button
                   type="button"
@@ -150,15 +213,28 @@ export default function ProfileView({ currentUser, onUpdateProfile, onChangePass
                   {showCurrentPassword ? "🙈" : "👁"}
                 </button>
               </div>
+              {passwordFieldErrors.currentPassword ? (
+                <span className="text-[0.78rem] text-red-600">
+                  {passwordFieldErrors.currentPassword}
+                </span>
+              ) : null}
             </label>
             <label className="grid gap-1 text-[0.9rem] text-[#172b4d]">
               <span className="font-medium">New password</span>
               <div className="relative">
                 <input
                   type={showNewPassword ? "text" : "password"}
-                  className="w-full rounded-[8px] border border-[#c1c7d0] px-3 py-2 pr-10"
+                  className={`w-full rounded-[8px] border px-3 py-2 pr-10 ${passwordFieldErrors.newPassword ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
                   value={newPassword}
-                  onChange={(event) => setNewPassword(event.target.value)}
+                  onChange={(event) => {
+                    setNewPassword(event.target.value);
+                    if (passwordFieldErrors.newPassword)
+                      setPasswordFieldErrors((prev) => {
+                        const n = { ...prev };
+                        delete n.newPassword;
+                        return n;
+                      });
+                  }}
                 />
                 <button
                   type="button"
@@ -169,15 +245,28 @@ export default function ProfileView({ currentUser, onUpdateProfile, onChangePass
                   {showNewPassword ? "🙈" : "👁"}
                 </button>
               </div>
+              {passwordFieldErrors.newPassword ? (
+                <span className="text-[0.78rem] text-red-600">
+                  {passwordFieldErrors.newPassword}
+                </span>
+              ) : null}
             </label>
             <label className="grid gap-1 text-[0.9rem] text-[#172b4d]">
               <span className="font-medium">Confirm new password</span>
               <div className="relative">
                 <input
                   type={showConfirmPassword ? "text" : "password"}
-                  className="w-full rounded-[8px] border border-[#c1c7d0] px-3 py-2 pr-10"
+                  className={`w-full rounded-[8px] border px-3 py-2 pr-10 ${passwordFieldErrors.confirmPassword ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
                   value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  onChange={(event) => {
+                    setConfirmPassword(event.target.value);
+                    if (passwordFieldErrors.confirmPassword)
+                      setPasswordFieldErrors((prev) => {
+                        const n = { ...prev };
+                        delete n.confirmPassword;
+                        return n;
+                      });
+                  }}
                 />
                 <button
                   type="button"
@@ -188,6 +277,11 @@ export default function ProfileView({ currentUser, onUpdateProfile, onChangePass
                   {showConfirmPassword ? "🙈" : "👁"}
                 </button>
               </div>
+              {passwordFieldErrors.confirmPassword ? (
+                <span className="text-[0.78rem] text-red-600">
+                  {passwordFieldErrors.confirmPassword}
+                </span>
+              ) : null}
             </label>
             <div className="flex justify-end border-t border-[#ebecf0] pt-3">
               <button type="submit" disabled={savingPassword}>

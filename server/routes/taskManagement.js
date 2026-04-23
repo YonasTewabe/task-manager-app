@@ -2,6 +2,10 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { requireAuth } from "../middleware/auth.js";
+import {
+  requireProjectManagementAccess,
+  requireProjectManagementAccessForSprint,
+} from "../middleware/projectManagement.js";
 import { requireRole } from "../middleware/roles.js";
 import { isNonEmptyString } from "../utils/validation.js";
 import { createUploadMiddleware, handleUploadError } from "../utils/upload.js";
@@ -191,7 +195,6 @@ function summaryFiltersFromQuery(req) {
     to: req.query.to ? String(req.query.to) : "",
     interval: req.query.interval ? String(req.query.interval) : "week",
     type: req.query.type ? String(req.query.type) : "overview",
-    format: req.query.format ? String(req.query.format) : "csv",
   });
 }
 
@@ -249,6 +252,22 @@ router.get("/app-settings/github", requireRole("admin"), async (_req, res) => {
   }
 });
 
+/** Org + flags only (no secrets); any signed-in user — for project settings / integration UI. */
+router.get("/app-settings/github/summary", async (_req, res) => {
+  try {
+    const settings = await getGithubIntegrationSettings();
+    return res.json({
+      githubOrg: settings.githubOrg || "",
+      hasGithubToken: Boolean(settings.githubToken),
+      hasGithubWebhookSecret: Boolean(settings.githubWebhookSecret),
+    });
+  } catch {
+    return res
+      .status(500)
+      .json({ error: "Failed to load GitHub integration summary" });
+  }
+});
+
 router.patch("/app-settings/github", requireRole("admin"), async (req, res) => {
   try {
     const updated = await updateGithubIntegrationSettings(req.body || {});
@@ -260,7 +279,10 @@ router.patch("/app-settings/github", requireRole("admin"), async (req, res) => {
       githubWebhookSecret: updated.githubWebhookSecret,
       updatedAt: updated.updatedAt,
     });
-  } catch {
+  } catch (error) {
+    if (error?.code === "GITHUB_SETTINGS_VALIDATION") {
+      return res.status(400).json({ error: error.message });
+    }
     return res
       .status(500)
       .json({ error: "Failed to save app GitHub settings" });
@@ -368,8 +390,16 @@ router.patch("/projects/:projectId", async (req, res) => {
   if (req.body.description !== undefined)
     patch.description = String(req.body.description);
   if (req.body.memberIds !== undefined) patch.memberIds = req.body.memberIds;
+  if (req.body.projectAdminMemberIds !== undefined) {
+    patch.projectAdminMemberIds = req.body.projectAdminMemberIds;
+  }
 
   try {
+    if (
+      !(await requireProjectManagementAccess(req, res, req.params.projectId))
+    ) {
+      return;
+    }
     const beforeProjects = await getProjects();
     const beforeProject = beforeProjects.find(
       (item) => String(item.id) === String(req.params.projectId),
@@ -411,6 +441,9 @@ router.patch("/projects/:projectId", async (req, res) => {
 });
 
 router.delete("/projects/:projectId", async (req, res) => {
+  if (!(await requireProjectManagementAccess(req, res, req.params.projectId))) {
+    return;
+  }
   const deleted = await deleteProject(req.params.projectId);
   if (!deleted) {
     return res.status(404).json({ error: "Project not found" });
@@ -426,14 +459,16 @@ router.get("/projects/:projectId/settings", async (req, res) => {
   return res.json(settings);
 });
 
-router.patch(
-  "/projects/:projectId/settings",
-  requireRole("admin"),
-  async (req, res) => {
-    if (!(await projectExists(req.params.projectId))) {
-      return res.status(404).json({ error: "Project not found" });
-    }
-    try {
+router.patch("/projects/:projectId/settings", async (req, res) => {
+  if (!(await projectExists(req.params.projectId))) {
+    return res.status(404).json({ error: "Project not found" });
+  }
+  if (
+    !(await requireProjectManagementAccess(req, res, req.params.projectId))
+  ) {
+    return;
+  }
+  try {
       await updateProjectSettings(req.params.projectId, req.body || {});
       const settings = await getProjectSettings(req.params.projectId);
       return res.json(settings);
@@ -442,8 +477,7 @@ router.patch(
         .status(400)
         .json({ error: error.message || "Invalid settings" });
     }
-  },
-);
+});
 
 router.get("/board", async (req, res) => {
   const sprintId = req.query.sprintId ? String(req.query.sprintId) : "";
@@ -757,10 +791,13 @@ router.get("/sprints", async (req, res) => {
   return res.json(sprints);
 });
 
-router.post("/sprints", requireRole("admin"), async (req, res) => {
+router.post("/sprints", async (req, res) => {
   const { name, projectId } = req.body;
   if (!name || !projectId) {
     return res.status(400).json({ error: "name and projectId are required" });
+  }
+  if (!(await requireProjectManagementAccess(req, res, projectId))) {
+    return;
   }
   try {
     const sprint = await createSprint(req.body);
@@ -775,7 +812,16 @@ router.post("/sprints", requireRole("admin"), async (req, res) => {
   }
 });
 
-router.patch("/sprints/:sprintId", requireRole("admin"), async (req, res) => {
+router.patch("/sprints/:sprintId", async (req, res) => {
+  if (
+    !(await requireProjectManagementAccessForSprint(
+      req,
+      res,
+      req.params.sprintId,
+    ))
+  ) {
+    return;
+  }
   try {
     const sprint = await updateSprint(req.params.sprintId, req.body || {});
     if (!sprint) {
@@ -794,12 +840,18 @@ router.patch("/sprints/:sprintId", requireRole("admin"), async (req, res) => {
   }
 });
 
-router.post(
-  "/sprints/:sprintId/start",
-  requireRole("admin"),
-  async (req, res) => {
-    try {
-      const sprint = await updateSprint(req.params.sprintId, {
+router.post("/sprints/:sprintId/start", async (req, res) => {
+  if (
+    !(await requireProjectManagementAccessForSprint(
+      req,
+      res,
+      req.params.sprintId,
+    ))
+  ) {
+    return;
+  }
+  try {
+    const sprint = await updateSprint(req.params.sprintId, {
         status: "active",
       });
       if (!sprint) {
@@ -814,15 +866,20 @@ router.post(
         .status(400)
         .json({ error: error.message || "Failed to start sprint" });
     }
-  },
-);
+});
 
-router.post(
-  "/sprints/:sprintId/complete",
-  requireRole("admin"),
-  async (req, res) => {
-    try {
-      const sprint = await completeSprint(
+router.post("/sprints/:sprintId/complete", async (req, res) => {
+  if (
+    !(await requireProjectManagementAccessForSprint(
+      req,
+      res,
+      req.params.sprintId,
+    ))
+  ) {
+    return;
+  }
+  try {
+    const sprint = await completeSprint(
         req.params.sprintId,
         req.body?.moveIncompleteToSprintId || null,
       );
@@ -835,8 +892,7 @@ router.post(
         .status(400)
         .json({ error: error.message || "Failed to complete sprint" });
     }
-  },
-);
+});
 
 router.get("/sprints/:sprintId/tasks", async (req, res) => {
   const tasks = await getTasks({
@@ -846,41 +902,60 @@ router.get("/sprints/:sprintId/tasks", async (req, res) => {
   return res.json(tasks);
 });
 
-router.post(
-  "/sprints/:sprintId/tasks",
-  requireRole("admin"),
-  async (req, res) => {
-    const sprintId = String(req.params.sprintId);
-    const taskIds = Array.isArray(req.body?.taskIds) ? req.body.taskIds : [];
-    if (!taskIds.length) {
-      return res.status(400).json({ error: "taskIds is required" });
-    }
+router.post("/sprints/:sprintId/tasks", async (req, res) => {
+  if (
+    !(await requireProjectManagementAccessForSprint(
+      req,
+      res,
+      req.params.sprintId,
+    ))
+  ) {
+    return;
+  }
+  const sprintId = String(req.params.sprintId);
+  const taskIds = Array.isArray(req.body?.taskIds) ? req.body.taskIds : [];
+  if (!taskIds.length) {
+    return res.status(400).json({ error: "taskIds is required" });
+  }
 
-    const updatedTasks = [];
+  const updatedTasks = [];
     for (const taskId of taskIds) {
       const updated = await assignTaskToSprint(String(taskId), sprintId);
       if (updated) updatedTasks.push(updated);
     }
-    return res.json({ updatedTasks });
-  },
-);
+  return res.json({ updatedTasks });
+});
 
-router.delete(
-  "/sprints/:sprintId/tasks/:taskId",
-  requireRole("admin"),
-  async (req, res) => {
-    const removed = await removeTaskFromSprint(
+router.delete("/sprints/:sprintId/tasks/:taskId", async (req, res) => {
+  if (
+    !(await requireProjectManagementAccessForSprint(
+      req,
+      res,
+      req.params.sprintId,
+    ))
+  ) {
+    return;
+  }
+  const removed = await removeTaskFromSprint(
       String(req.params.taskId),
       String(req.params.sprintId),
     );
-    if (!removed) {
-      return res.status(404).json({ error: "Task not found in sprint" });
-    }
-    return res.json(removed);
-  },
-);
+  if (!removed) {
+    return res.status(404).json({ error: "Task not found in sprint" });
+  }
+  return res.json(removed);
+});
 
-router.delete("/sprints/:sprintId", requireRole("admin"), async (req, res) => {
+router.delete("/sprints/:sprintId", async (req, res) => {
+  if (
+    !(await requireProjectManagementAccessForSprint(
+      req,
+      res,
+      req.params.sprintId,
+    ))
+  ) {
+    return;
+  }
   try {
     const deleted = await deleteSprint(req.params.sprintId);
     if (!deleted) return res.status(404).json({ error: "Sprint not found" });

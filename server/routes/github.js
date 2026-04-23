@@ -1,7 +1,7 @@
 import { Router } from "express";
 import axios from "axios";
 import { requireAuth } from "../middleware/auth.js";
-import { requireRole } from "../middleware/roles.js";
+import { requireProjectManagementAccess } from "../middleware/projectManagement.js";
 import {
   createProjectRepo,
   deleteProjectRepo,
@@ -97,7 +97,12 @@ router.get("/projects/:projectId/repos", async (req, res) => {
   }
 });
 
-router.post("/projects/:projectId/repos", requireRole("admin"), async (req, res) => {
+router.post("/projects/:projectId/repos", async (req, res) => {
+  if (
+    !(await requireProjectManagementAccess(req, res, req.params.projectId))
+  ) {
+    return;
+  }
   const cfg = await githubConfig();
   const owner = String(req.body?.owner || cfg.org || "").trim();
   const repo = String(req.body?.repo || "").trim();
@@ -120,11 +125,13 @@ router.post("/projects/:projectId/repos", requireRole("admin"), async (req, res)
   }
 });
 
-router.put(
-  "/projects/:projectId/repos/:repoId",
-  requireRole("admin"),
-  async (req, res) => {
-    try {
+router.put("/projects/:projectId/repos/:repoId", async (req, res) => {
+  if (
+    !(await requireProjectManagementAccess(req, res, req.params.projectId))
+  ) {
+    return;
+  }
+  try {
       const row = await updateProjectRepo(
         req.params.projectId,
         req.params.repoId,
@@ -135,36 +142,37 @@ router.put(
     } catch {
       return res.status(500).json({ error: "Failed to update repository mapping" });
     }
-  },
-);
+});
 
-router.post(
-  "/projects/:projectId/resync",
-  requireRole("admin"),
-  async (req, res) => {
-    try {
+router.post("/projects/:projectId/resync", async (req, res) => {
+  if (
+    !(await requireProjectManagementAccess(req, res, req.params.projectId))
+  ) {
+    return;
+  }
+  try {
       const cfg = await githubConfig();
       const result = await resyncProjectLinks(req.params.projectId, cfg.token);
       return res.json(result);
     } catch (error) {
       return res.status(500).json({ error: error.message || "Resync failed" });
     }
-  },
-);
+});
 
-router.delete(
-  "/projects/:projectId/repos/:repoId",
-  requireRole("admin"),
-  async (req, res) => {
-    try {
+router.delete("/projects/:projectId/repos/:repoId", async (req, res) => {
+  if (
+    !(await requireProjectManagementAccess(req, res, req.params.projectId))
+  ) {
+    return;
+  }
+  try {
       const removed = await deleteProjectRepo(req.params.projectId, req.params.repoId);
       if (!removed) return res.status(404).json({ error: "Repository mapping not found" });
       return res.status(204).send();
     } catch {
       return res.status(500).json({ error: "Failed to remove repository mapping" });
     }
-  },
-);
+});
 
 router.get("/projects/:projectId/automation-rules", async (req, res) => {
   try {
@@ -175,11 +183,13 @@ router.get("/projects/:projectId/automation-rules", async (req, res) => {
   }
 });
 
-router.put(
-  "/projects/:projectId/automation-rules",
-  requireRole("admin"),
-  async (req, res) => {
-    try {
+router.put("/projects/:projectId/automation-rules", async (req, res) => {
+  if (
+    !(await requireProjectManagementAccess(req, res, req.params.projectId))
+  ) {
+    return;
+  }
+  try {
       const rules = await replaceAutomationRules(
         req.params.projectId,
         Array.isArray(req.body?.rules) ? req.body.rules : [],
@@ -188,8 +198,7 @@ router.put(
     } catch {
       return res.status(500).json({ error: "Failed to save automation rules" });
     }
-  },
-);
+});
 
 router.get("/branches", async (req, res) => {
   const { repo, org } = req.query;

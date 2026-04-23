@@ -26,6 +26,10 @@ import {
 import { DEFAULT_WORKFLOW_STAGES } from "./workflowDefaults.js";
 import { useAppStore } from "./store/appStore";
 import { buildNotificationPath } from "./utils/notificationLinks";
+import {
+  REQUIRED_FIELD_MESSAGE,
+  invalidFieldClassName,
+} from "./utils/formValidation.js";
 
 const PROJECT_ROUTE = /^\/project\/([^/]+)\/(board|backlog|summary|settings)$/;
 const ASSIGNEE_VISIBLE_LIMIT = 6;
@@ -101,6 +105,7 @@ function initialActiveView(pathname) {
 
 function App() {
   const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [createTaskFieldErrors, setCreateTaskFieldErrors] = useState({});
   const location = useLocation();
   const navigate = useNavigate();
   const {
@@ -383,8 +388,6 @@ function App() {
     const activeSprint = sprints.find((sprint) => sprint.status === "active");
     return activeSprint ? String(activeSprint.id) : "";
   }, [sprints]);
-  const canManage = currentUser?.role === "admin";
-
   const workflowStages = useMemo(
     () =>
       projectSettings?.boardCardFields?.workflowStages?.length > 0
@@ -420,6 +423,20 @@ function App() {
     projects.forEach((p) => map.set(String(p.id), p));
     return map;
   }, [projects]);
+  const isOrgAdmin = currentUser?.role === "admin";
+  const userManagesProject = useCallback(
+    (projectId) => {
+      const id = String(projectId || "");
+      if (!currentUser || !id) return false;
+      if (currentUser.role === "admin") return true;
+      return (projectById.get(id)?.members || []).some(
+        (m) =>
+          String(m.id) === String(currentUser.id) && Boolean(m.isProjectAdmin),
+      );
+    },
+    [currentUser, projectById],
+  );
+  const canManageProject = userManagesProject(currentProjectId);
   const evaluateProjectReadiness = useCallback(
     async (projectId) => {
       const id = String(projectId || "").trim();
@@ -822,11 +839,10 @@ function App() {
   );
 
   const exportSummaryReport = useCallback(
-    async (type, format, projectId, fromDate, toDate) => {
+    async (type, projectId, fromDate, toDate) => {
       const params = new URLSearchParams();
       params.set("projectId", String(projectId));
       params.set("type", String(type || "overview"));
-      params.set("format", String(format || "csv"));
       if (fromDate) params.set("from", String(fromDate));
       if (toDate) params.set("to", String(toDate));
       const response = await fetch(
@@ -842,7 +858,8 @@ function App() {
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const contentDisposition = response.headers.get("content-disposition") || "";
-      const fallbackName = `summary-${type}.${format}`;
+      const reportType = String(type || "overview");
+      const fallbackName = `summary-${reportType}.xlsx`;
       const matched =
         contentDisposition.match(/filename\*=UTF-8''([^;]+)/i) ||
         contentDisposition.match(/filename="?([^"]+)"?/i);
@@ -854,7 +871,7 @@ function App() {
       anchor.click();
       anchor.remove();
       window.URL.revokeObjectURL(url);
-      notify(`Report exported (${String(format).toUpperCase()}).`);
+      notify("Report downloaded.");
     },
     [notify, token],
   );
@@ -1231,7 +1248,12 @@ function App() {
       setCurrentProjectId(String(parsed.projectId));
     }
 
-    if (parsed.view === "settings" && parsed.projectId && currentUser && !canManage) {
+    if (
+      parsed.view === "settings" &&
+      parsed.projectId &&
+      currentUser &&
+      !userManagesProject(parsed.projectId)
+    ) {
       navigate(`/project/${parsed.projectId}/board`, { replace: true });
       return;
     }
@@ -1258,7 +1280,7 @@ function App() {
     navigate,
     currentProjectId,
     currentUser,
-    canManage,
+    userManagesProject,
   ]);
 
   const handleNavigateMain = useCallback((key) => {
@@ -1293,7 +1315,7 @@ function App() {
     async (projectId, subview) => {
       const id = String(projectId);
       const targetSubview = String(subview || "board");
-      if (!canManage && targetSubview === "settings") {
+      if (!userManagesProject(id) && targetSubview === "settings") {
         lastReadinessBlockRef.current = "";
         setCurrentProjectId(id);
         setSelectedSprintId("");
@@ -1302,7 +1324,7 @@ function App() {
         return;
       }
       if (targetSubview === "board" || targetSubview === "backlog") {
-        if (!canManage) {
+        if (!userManagesProject(id)) {
           lastReadinessBlockRef.current = "";
           setCurrentProjectId(id);
           setSelectedSprintId("");
@@ -1346,7 +1368,7 @@ function App() {
       evaluateProjectReadiness,
       navigate,
       notify,
-      canManage,
+      userManagesProject,
       setActiveView,
       setCurrentProjectId,
       setSelectedSprintId,
@@ -1356,7 +1378,7 @@ function App() {
   useEffect(() => {
     if (!token || loading || !currentProjectId) return;
     if (activeView !== "board" && activeView !== "backlog") return;
-    if (!canManage) return;
+    if (!canManageProject) return;
     let cancelled = false;
     (async () => {
       try {
@@ -1394,7 +1416,7 @@ function App() {
     evaluateProjectReadiness,
     navigate,
     notify,
-    canManage,
+    canManageProject,
     setActiveView,
   ]);
 
@@ -1582,7 +1604,15 @@ function App() {
 
   const createTask = async (event) => {
     event.preventDefault();
-    if (!taskTitle.trim() || !currentProjectId) return;
+    const nextErrors = {};
+    if (!taskTitle.trim()) nextErrors.title = REQUIRED_FIELD_MESSAGE;
+    if (!String(taskType || "").trim()) nextErrors.type = REQUIRED_FIELD_MESSAGE;
+    if (Object.keys(nextErrors).length) {
+      setCreateTaskFieldErrors(nextErrors);
+      return;
+    }
+    setCreateTaskFieldErrors({});
+    if (!currentProjectId) return;
     const noActiveSprint = activeView === "board" && !activeSprintId;
     const targetSprintId =
       activeView === "board" ? activeSprintId || null : null;
@@ -1694,10 +1724,10 @@ function App() {
     (projectId) => handleNavigateProject(projectId, "settings"),
     [handleNavigateProject],
   );
-  const openCreateTaskModal = useCallback(
-    () => setShowCreateTaskModal(true),
-    [setShowCreateTaskModal],
-  );
+  const openCreateTaskModal = useCallback(() => {
+    setCreateTaskFieldErrors({});
+    setShowCreateTaskModal(true);
+  }, [setShowCreateTaskModal]);
   const closeTaskDrawer = useCallback(() => setTaskBundle(null), [setTaskBundle]);
 
   const saveTask = async (taskId, patch) => {
@@ -2048,13 +2078,13 @@ function App() {
     return updated;
   };
 
-  const saveProjectMembers = async (memberIds) => {
+  const saveProjectMembers = async (memberIds, projectAdminMemberIds) => {
     if (!currentProjectId) return null;
     const updated = await apiRequest(
       `/task-management/projects/${currentProjectId}`,
       {
         method: "PATCH",
-        body: JSON.stringify({ memberIds }),
+        body: JSON.stringify({ memberIds, projectAdminMemberIds }),
       },
     );
     setProjects((prev) =>
@@ -2194,7 +2224,7 @@ function App() {
       <MainLayout
         currentUser={currentUser}
         onLogout={logout}
-        canManage={canManage}
+        canManage={isOrgAdmin}
         activeView={activeView}
         currentProjectId={currentProjectId}
         projects={sidebarProjects}
@@ -2540,7 +2570,10 @@ function App() {
                     {activeView === "board" ? (
                       <button
                         type="button"
-                        onClick={() => setShowCreateTaskModal(true)}
+                        onClick={() => {
+                          setCreateTaskFieldErrors({});
+                          setShowCreateTaskModal(true);
+                        }}
                       >
                         Add Task
                       </button>
@@ -2559,7 +2592,6 @@ function App() {
               assignedTasks={dashboardAssignedTasks}
               projectById={projectById}
               workflowStages={workflowStages}
-              canManage={canManage}
               onOpenProject={openProjectBoard}
               onOpenTask={openTask}
             />
@@ -2567,19 +2599,26 @@ function App() {
           {showCreateTaskModal ? (
             <Modal
               open={showCreateTaskModal}
-              onOpenChange={setShowCreateTaskModal}
+              onOpenChange={(open) => {
+                setShowCreateTaskModal(open);
+                if (!open) setCreateTaskFieldErrors({});
+              }}
+              cardClassName="max-w-[420px] gap-[0.65rem] p-[0.75rem] [&_.flex.items-center.justify-between]:pb-[0.55rem] [&_h3]:text-[0.98rem] [&_label]:gap-[0.28rem] [&_label]:text-[0.8rem] [&_label]:text-[#344563] [&_input]:px-[0.45rem] [&_select]:px-[0.45rem] [&_input]:py-[0.32rem] [&_select]:py-[0.32rem] [&_input]:text-[0.82rem] [&_select]:text-[0.82rem]"
             >
               <div className="flex items-center justify-between gap-3">
                 <h3>Create Task</h3>
                 <button
                   type="button"
-                  className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
-                  onClick={() => setShowCreateTaskModal(false)}
+                  className="border border-[#dfe1e6] bg-transparent text-[0.8rem] text-[#42526e] hover:bg-[#f4f5f7] px-2 py-1"
+                  onClick={() => {
+                    setCreateTaskFieldErrors({});
+                    setShowCreateTaskModal(false);
+                  }}
                 >
                   X
                 </button>
               </div>
-              <form className="grid gap-[0.6rem]" onSubmit={createTask}>
+              <form className="grid gap-[0.45rem]" onSubmit={createTask}>
                 <label>
                   <span className="inline-flex items-center">
                     Task title <span className="ml-1 text-red-600">*</span>
@@ -2587,9 +2626,26 @@ function App() {
                   <input
                     placeholder="Enter task title"
                     value={taskTitle}
-                    onChange={(event) => setTaskTitle(event.target.value)}
+                    className={invalidFieldClassName(
+                      Boolean(createTaskFieldErrors.title),
+                    )}
+                    onChange={(event) => {
+                      setTaskTitle(event.target.value);
+                      if (createTaskFieldErrors.title) {
+                        setCreateTaskFieldErrors((prev) => {
+                          const next = { ...prev };
+                          delete next.title;
+                          return next;
+                        });
+                      }
+                    }}
                   />
                 </label>
+                {createTaskFieldErrors.title ? (
+                  <p className="text-[0.78rem] text-red-600">
+                    {createTaskFieldErrors.title}
+                  </p>
+                ) : null}
                 <label>
                   Story points
                   <input
@@ -2601,96 +2657,129 @@ function App() {
                     onChange={(event) => setStoryPoints(event.target.value)}
                   />
                 </label>
-                <label>
-                  Due date
-                  <input
-                    type="date"
-                    value={taskDueDate}
-                    onChange={(event) => setTaskDueDate(event.target.value)}
-                  />
-                </label>
-                <label>
-                  <span className="inline-flex items-center">
-                    Work type <span className="ml-1 text-red-600">*</span>
-                  </span>
-                  <select
-                    value={taskType}
-                    onChange={(event) => setTaskType(event.target.value)}
-                  >
-                    {projectTypes.map((type) => {
-                      const meta = getWorkTypeMeta(type);
-                      return (
-                        <option key={type} value={type}>
-                          {meta.label}
+                <div className="grid grid-cols-2 gap-[0.45rem]">
+                  <label>
+                    Due date
+                    <input
+                      type="date"
+                      value={taskDueDate}
+                      onChange={(event) => setTaskDueDate(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Version
+                    <select
+                      value={taskVersion}
+                      onChange={(event) => setTaskVersion(event.target.value)}
+                    >
+                      <option value="">None</option>
+                      {projectVersions.map((version) => (
+                        <option key={version} value={version}>
+                          {version}
                         </option>
-                      );
-                    })}
-                  </select>
-                </label>
-                <label>
-                  Assignee
-                  <select
-                    value={assigneeId}
-                    onChange={(event) => setAssigneeId(event.target.value)}
-                  >
-                    <option value="">Unassigned</option>
-                    {projectUsers.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Priority
-                  <select
-                    value={taskPriority}
-                    onChange={(event) => setTaskPriority(event.target.value)}
-                  >
-                    {PRIORITY_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Label
-                  <select
-                    value={taskLabel}
-                    onChange={(event) => setTaskLabel(event.target.value)}
-                  >
-                    <option value="">Select label</option>
-                    {projectLabels.map((label) => (
-                      <option key={label} value={label}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Version
-                  <select
-                    value={taskVersion}
-                    onChange={(event) => setTaskVersion(event.target.value)}
-                  >
-                    <option value="">None</option>
-                    {projectVersions.map((version) => (
-                      <option key={version} value={version}>
-                        {version}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="flex justify-end gap-2">
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="grid grid-cols-2 gap-[0.45rem]">
+                  <div className="grid gap-[0.2rem]">
+                    <label>
+                      <span className="inline-flex items-center">
+                        Work type <span className="ml-1 text-red-600">*</span>
+                      </span>
+                      <select
+                        value={taskType}
+                        className={invalidFieldClassName(
+                          Boolean(createTaskFieldErrors.type),
+                        )}
+                        onChange={(event) => {
+                          setTaskType(event.target.value);
+                          if (createTaskFieldErrors.type) {
+                            setCreateTaskFieldErrors((prev) => {
+                              const next = { ...prev };
+                              delete next.type;
+                              return next;
+                            });
+                          }
+                        }}
+                      >
+                        {projectTypes.map((type) => {
+                          const meta = getWorkTypeMeta(type);
+                          return (
+                            <option key={type} value={type}>
+                              {meta.label}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </label>
+                    {createTaskFieldErrors.type ? (
+                      <p className="text-[0.78rem] text-red-600">
+                        {createTaskFieldErrors.type}
+                      </p>
+                    ) : null}
+                  </div>
+                  <label>
+                    Assignee
+                    <select
+                      value={assigneeId}
+                      onChange={(event) => setAssigneeId(event.target.value)}
+                    >
+                      <option value="">Unassigned</option>
+                      {projectUsers.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="grid grid-cols-2 gap-[0.45rem]">
+                  <label>
+                    Priority
+                    <select
+                      value={taskPriority}
+                      onChange={(event) => setTaskPriority(event.target.value)}
+                    >
+                      {PRIORITY_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Label
+                    <select
+                      value={taskLabel}
+                      onChange={(event) => setTaskLabel(event.target.value)}
+                    >
+                      <option value="">Select label</option>
+                      {projectLabels.map((label) => (
+                        <option key={label} value={label}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="flex justify-end gap-2 pt-1">
                   <button
                     type="button"
-                    className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
-                    onClick={() => setShowCreateTaskModal(false)}
+                    className="border border-[#dfe1e6] bg-transparent text-[0.82rem] text-[#42526e] hover:bg-[#f4f5f7] px-3 py-1.5"
+                    onClick={() => {
+                      setCreateTaskFieldErrors({});
+                      setShowCreateTaskModal(false);
+                    }}
                   >
                     Cancel
                   </button>
-                  <button type="submit">Create Task</button>
+                  <button
+                    type="submit"
+                    className="rounded-[8px] border border-[#2d64d9] bg-[#2d64d9] px-3 py-1.5 text-[0.82rem] font-medium text-white hover:border-[#1f4fc4] hover:bg-[#1f4fc4]"
+                  >
+                    Create Task
+                  </button>
                 </div>
               </form>
             </Modal>
@@ -2705,7 +2794,7 @@ function App() {
               workflowStages={workflowStages}
               selectedSprintId={selectedSprintId}
               onSelectSprint={setSelectedSprintId}
-              canManage={canManage}
+              canManage={canManageProject}
               onStartSprint={startSprint}
               onCompleteSprint={completeSprint}
               onDeleteSprint={deleteSprint}
@@ -2748,7 +2837,15 @@ function App() {
           {activeView === "projects" ? (
             <ProjectManagementView
               projects={visibleProjects}
-              canManage={canManage}
+              canManageOrganization={isOrgAdmin}
+              canOpenProjectSettings={(project) =>
+                isOrgAdmin ||
+                (project.members || []).some(
+                  (m) =>
+                    String(m.id) === String(currentUser?.id) &&
+                    Boolean(m.isProjectAdmin),
+                )
+              }
               onCreateProject={createProject}
               onUpdateProject={updateProject}
               onDeleteProject={deleteProject}
@@ -2761,7 +2858,7 @@ function App() {
             <UserAdminView
               users={users}
               userGroups={userGroups}
-              canManage={canManage}
+              canManage={isOrgAdmin}
               currentUserId={currentUser?.id}
               onCreateUser={createUser}
               onUpdateUser={updateUser}
@@ -2774,7 +2871,7 @@ function App() {
           ) : null}
 
           {activeView === "app-settings" ? (
-            <AppSettingsView canManage={canManage} onNotify={notify} />
+            <AppSettingsView canManage={isOrgAdmin} onNotify={notify} />
           ) : null}
 
           {activeView === "profile" ? (
@@ -2795,10 +2892,11 @@ function App() {
               projectMembers={
                 projectById.get(String(currentProjectId))?.members || []
               }
-              canManage={canManage}
+              canManage={canManageProject}
               onSave={saveProjectSettings}
               onSaveMembers={saveProjectMembers}
               onNotify={notify}
+              onGoToProjectBoard={() => openProjectBoard(currentProjectId)}
             />
           ) : null}
 
@@ -2861,8 +2959,7 @@ function App() {
           ) : null}
           <ToastContainer
             position="top-right"
-            autoClose={1600}
-            hideProgressBar
+            autoClose={2400}
             theme="colored"
           />
         </div>

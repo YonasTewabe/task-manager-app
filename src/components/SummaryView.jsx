@@ -457,11 +457,11 @@ export default function SummaryView({
             />
           </label>
           <div className="ml-auto flex flex-wrap gap-[0.35rem]">
-            <button type="button" onClick={() => onExportReport("overview", "csv", projectId, fromDate, toDate)}>
-              Export CSV
-            </button>
-            <button type="button" onClick={() => onExportReport("overview", "xlsx", projectId, fromDate, toDate)}>
-              Export XLSX
+            <button
+              type="button"
+              onClick={() => onExportReport("overview", projectId, fromDate, toDate)}
+            >
+              Download Report
             </button>
           </div>
         </div>

@@ -42,7 +42,9 @@ function MainLayout({
   );
   const showProjectSubNav =
     Boolean(currentProjectId) &&
-    (activeView === "summary" || activeView === "board" || activeView === "backlog");
+    (activeView === "summary" ||
+      activeView === "board" ||
+      activeView === "backlog");
   const projectSubOptions = [
     { key: "summary", label: "Summary" },
     { key: "board", label: "Board" },
@@ -145,48 +147,53 @@ function MainLayout({
 
       <div className="ml-[260px] min-h-screen max-[1100px]:ml-[88px]">
         <header className="sticky top-0 z-[15] flex h-16 items-center justify-between border-b border-[#dfe1e6] bg-white/90 px-4 backdrop-blur-[4px]">
-          <div className="relative w-full flex-1" ref={globalSearchWrapperRef}>
-            <div className="flex items-center gap-[0.4rem] rounded-[10px] border border-[#d6dce8] bg-[#f7f8fa] px-[0.7rem] py-[0.45rem]">
-              <span className="text-[0.92rem] text-[#6b778c]">⌕</span>
-              <input
-                className="w-full border-none bg-transparent p-0 shadow-none focus:outline-none focus-visible:outline-none"
-                value={globalSearchTerm}
-                placeholder="Search"
-                onFocus={() => {
-                  if (globalSearchResults.length || globalSearchTerm.trim()) {
-                    setGlobalSearchOpen(true);
-                  }
-                }}
-                onChange={(event) => setGlobalSearchTerm(event.target.value)}
-              />
-            </div>
-            {globalSearchOpen ? (
-              <div className="absolute left-0 top-[calc(100%+0.35rem)] z-40 grid max-h-[320px] w-full overflow-auto rounded-[10px] border border-[#d6dce8] bg-white p-[0.35rem] shadow-[0_12px_28px_rgba(9,30,66,0.16)]">
-                {globalSearchLoading ? (
-                  <div className="px-[0.55rem] py-[0.45rem] text-[0.86rem] text-[#5e6c84]">
-                    Searching...
-                  </div>
-                ) : null}
-                {!globalSearchLoading && !globalSearchResults.length ? (
-                  <div className="px-[0.55rem] py-[0.45rem] text-[0.86rem] text-[#5e6c84]">
-                    No tasks found.
-                  </div>
-                ) : null}
-                {!globalSearchLoading
-                  ? globalSearchResults.map((task) => (
-                      <button
-                        key={task.id}
-                        type="button"
-                        className="rounded-[8px] px-[0.55rem] py-[0.45rem] text-left text-[0.88rem] text-[#253858] hover:bg-[#f4f6fa]"
-                        onClick={() => handleSelectGlobalTask(task)}
-                        title={`${task.taskKey || "TASK"}: ${task.title || ""}`}
-                      >
-                        {`${task.taskKey || "TASK"}: ${task.title || ""}`}
-                      </button>
-                    ))
-                  : null}
+          <div className="flex w-full min-w-0 flex-1 items-center gap-3">
+            <div
+              className="relative w-full min-w-0 flex-1"
+              ref={globalSearchWrapperRef}
+            >
+              <div className="flex items-center gap-[0.4rem] rounded-[10px] border border-[#d6dce8] bg-[#f7f8fa] px-[0.7rem] py-[0.45rem]">
+                <span className="text-[0.92rem] text-[#6b778c]">⌕</span>
+                <input
+                  className="w-full border-none bg-transparent p-0 shadow-none focus:outline-none focus-visible:outline-none"
+                  value={globalSearchTerm}
+                  placeholder="Search"
+                  onFocus={() => {
+                    if (globalSearchResults.length || globalSearchTerm.trim()) {
+                      setGlobalSearchOpen(true);
+                    }
+                  }}
+                  onChange={(event) => setGlobalSearchTerm(event.target.value)}
+                />
               </div>
-            ) : null}
+              {globalSearchOpen ? (
+                <div className="absolute left-0 top-[calc(100%+0.35rem)] z-40 grid max-h-[320px] w-full overflow-auto rounded-[10px] border border-[#d6dce8] bg-white p-[0.35rem] shadow-[0_12px_28px_rgba(9,30,66,0.16)]">
+                  {globalSearchLoading ? (
+                    <div className="px-[0.55rem] py-[0.45rem] text-[0.86rem] text-[#5e6c84]">
+                      Searching...
+                    </div>
+                  ) : null}
+                  {!globalSearchLoading && !globalSearchResults.length ? (
+                    <div className="px-[0.55rem] py-[0.45rem] text-[0.86rem] text-[#5e6c84]">
+                      No tasks found.
+                    </div>
+                  ) : null}
+                  {!globalSearchLoading
+                    ? globalSearchResults.map((task) => (
+                        <button
+                          key={task.id}
+                          type="button"
+                          className="rounded-[8px] px-[0.55rem] py-[0.45rem] text-left text-[0.88rem] text-[#253858] hover:bg-[#f4f6fa]"
+                          onClick={() => handleSelectGlobalTask(task)}
+                          title={`${task.taskKey || "TASK"}: ${task.title || ""}`}
+                        >
+                          {`${task.taskKey || "TASK"}: ${task.title || ""}`}
+                        </button>
+                      ))
+                    : null}
+                </div>
+              ) : null}
+            </div>
           </div>
           <div className="ml-3 flex shrink-0 items-center gap-2">
             <div className="relative" ref={notificationWrapperRef}>
@@ -283,7 +290,9 @@ function MainLayout({
                         ? "border-[#0b6bcb] text-[#0b6bcb]"
                         : "border-transparent text-[#52627b] hover:text-[#1d4ed8]"
                     }`}
-                    onClick={() => onNavigateProject(currentProjectId, item.key)}
+                    onClick={() =>
+                      onNavigateProject(currentProjectId, item.key)
+                    }
                   >
                     {item.label}
                   </button>

@@ -1,7 +1,11 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_WORKFLOW_STAGES } from "../workflowDefaults.js";
 import { displayTaskRef } from "../utils/taskDisplay.js";
 import Modal from "./ui/Modal";
+import {
+  REQUIRED_FIELD_MESSAGE,
+  invalidFieldClassName,
+} from "../utils/formValidation.js";
 import { useAppStore } from "../store/appStore";
 import { useShallow } from "zustand/react/shallow";
 
@@ -77,8 +81,6 @@ export default function BacklogView({
     setBacklogExpandedKeys: setExpandedKeys,
     backlogCreateDraft: createDraft,
     setBacklogCreateDraft: setCreateDraft,
-    backlogCreateNameError: createNameError,
-    setBacklogCreateNameError: setCreateNameError,
     backlogSprintCompleteDialog: sprintCompleteDialog,
     setBacklogSprintCompleteDialog: setSprintCompleteDialog,
     backlogSprintDeleteDialog: sprintDeleteDialog,
@@ -99,8 +101,6 @@ export default function BacklogView({
       setBacklogExpandedKeys: state.setBacklogExpandedKeys,
       backlogCreateDraft: state.backlogCreateDraft,
       setBacklogCreateDraft: state.setBacklogCreateDraft,
-      backlogCreateNameError: state.backlogCreateNameError,
-      setBacklogCreateNameError: state.setBacklogCreateNameError,
       backlogSprintCompleteDialog: state.backlogSprintCompleteDialog,
       setBacklogSprintCompleteDialog: state.setBacklogSprintCompleteDialog,
       backlogSprintDeleteDialog: state.backlogSprintDeleteDialog,
@@ -117,6 +117,8 @@ export default function BacklogView({
   );
   const movedTaskTimeoutRef = useRef(null);
   const blockedDropTimeoutRef = useRef(null);
+  const [createSprintErrors, setCreateSprintErrors] = useState({});
+  const [sprintDeleteDestError, setSprintDeleteDestError] = useState("");
   const stageList = workflowStages?.length
     ? workflowStages
     : DEFAULT_WORKFLOW_STAGES;
@@ -537,14 +539,20 @@ export default function BacklogView({
       {showCreateSprintModal ? (
         <Modal
           open={showCreateSprintModal}
-          onOpenChange={setShowCreateSprintModal}
+          onOpenChange={(open) => {
+            setShowCreateSprintModal(open);
+            if (!open) setCreateSprintErrors({});
+          }}
         >
           <div className="flex items-center justify-between gap-3">
             <h3>Create Sprint</h3>
             <button
               type="button"
               className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
-              onClick={() => setShowCreateSprintModal(false)}
+              onClick={() => {
+                setCreateSprintErrors({});
+                setShowCreateSprintModal(false);
+              }}
             >
               X
             </button>
@@ -557,19 +565,27 @@ export default function BacklogView({
               <input
                 placeholder="Enter sprint name"
                 value={createDraft.name}
+                className={invalidFieldClassName(
+                  Boolean(createSprintErrors.name),
+                )}
                 onChange={(event) => {
                   setCreateDraft((prev) => ({
                     ...prev,
                     name: event.target.value,
                   }));
-                  if (String(event.target.value || "").trim()) {
-                    setCreateNameError("");
-                  }
+                  if (createSprintErrors.name)
+                    setCreateSprintErrors((prev) => {
+                      const n = { ...prev };
+                      delete n.name;
+                      return n;
+                    });
                 }}
               />
             </label>
-            {createNameError ? (
-              <p className="my-2 text-red-600">{createNameError}</p>
+            {createSprintErrors.name ? (
+              <p className="text-[0.78rem] text-red-600">
+                {createSprintErrors.name}
+              </p>
             ) : null}
             <div className="flex flex-wrap gap-2">
               <label>
@@ -579,19 +595,20 @@ export default function BacklogView({
                 <input
                   type="date"
                   value={createDraft.startDate}
+                  className={invalidFieldClassName(
+                    Boolean(createSprintErrors.startDate),
+                  )}
                   onChange={(event) => {
-                    const nextStartDate = event.target.value;
                     setCreateDraft((prev) => ({
                       ...prev,
-                      startDate: nextStartDate,
+                      startDate: event.target.value,
                     }));
-                    if (
-                      nextStartDate &&
-                      String(createDraft.endDate || "").trim() &&
-                      String(createDraft.name || "").trim()
-                    ) {
-                      setCreateNameError("");
-                    }
+                    if (createSprintErrors.startDate)
+                      setCreateSprintErrors((prev) => {
+                        const n = { ...prev };
+                        delete n.startDate;
+                        return n;
+                      });
                   }}
                 />
               </label>
@@ -602,28 +619,37 @@ export default function BacklogView({
                 <input
                   type="date"
                   value={createDraft.endDate}
+                  className={invalidFieldClassName(
+                    Boolean(createSprintErrors.endDate),
+                  )}
                   onChange={(event) => {
-                    const nextEndDate = event.target.value;
                     setCreateDraft((prev) => ({
                       ...prev,
-                      endDate: nextEndDate,
+                      endDate: event.target.value,
                     }));
-                    if (
-                      String(createDraft.startDate || "").trim() &&
-                      nextEndDate &&
-                      String(createDraft.name || "").trim()
-                    ) {
-                      setCreateNameError("");
-                    }
+                    if (createSprintErrors.endDate)
+                      setCreateSprintErrors((prev) => {
+                        const n = { ...prev };
+                        delete n.endDate;
+                        return n;
+                      });
                   }}
                 />
               </label>
             </div>
+            {createSprintErrors.startDate || createSprintErrors.endDate ? (
+              <p className="text-[0.78rem] text-red-600">
+                {createSprintErrors.startDate || createSprintErrors.endDate}
+              </p>
+            ) : null}
             <div className="flex justify-end gap-2">
               <button
                 type="button"
                 className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
-                onClick={() => setShowCreateSprintModal(false)}
+                onClick={() => {
+                  setCreateSprintErrors({});
+                  setShowCreateSprintModal(false);
+                }}
               >
                 Cancel
               </button>
@@ -631,17 +657,17 @@ export default function BacklogView({
                 type="button"
                 onClick={async () => {
                   const normalizedName = String(createDraft.name || "").trim();
-                  if (!normalizedName) {
-                    setCreateNameError("Sprint name is required.");
+                  const err = {};
+                  if (!normalizedName) err.name = REQUIRED_FIELD_MESSAGE;
+                  if (!String(createDraft.startDate || "").trim())
+                    err.startDate = REQUIRED_FIELD_MESSAGE;
+                  if (!String(createDraft.endDate || "").trim())
+                    err.endDate = REQUIRED_FIELD_MESSAGE;
+                  if (Object.keys(err).length) {
+                    setCreateSprintErrors(err);
                     return;
                   }
-                  if (
-                    !String(createDraft.startDate || "").trim() ||
-                    !String(createDraft.endDate || "").trim()
-                  ) {
-                    setCreateNameError("Start date and end date are required.");
-                    return;
-                  }
+                  setCreateSprintErrors({});
                   const exists = sprints.some(
                     (sprint) =>
                       String(sprint.name || "")
@@ -661,7 +687,6 @@ export default function BacklogView({
                       name: normalizedName,
                     });
                     setCreateDraft({ name: "", startDate: "", endDate: "" });
-                    setCreateNameError("");
                     setShowCreateSprintModal(false);
                   } catch (error) {
                     onNotify?.(
@@ -685,6 +710,7 @@ export default function BacklogView({
             if (!open) {
               setSprintDeleteDialog(null);
               setSprintDeleteError("");
+              setSprintDeleteDestError("");
             }
           }}
         >
@@ -696,6 +722,7 @@ export default function BacklogView({
               onClick={() => {
                 setSprintDeleteDialog(null);
                 setSprintDeleteError("");
+                setSprintDeleteDestError("");
               }}
             >
               X
@@ -706,8 +733,10 @@ export default function BacklogView({
               Move tasks in <strong>{sprintDeleteDialog.sprintName}</strong> to:
             </p>
             <select
+              className={invalidFieldClassName(Boolean(sprintDeleteDestError))}
               value={sprintDeleteDialog.destinationSprintId}
-              onChange={(event) =>
+              onChange={(event) => {
+                setSprintDeleteDestError("");
                 setSprintDeleteDialog((prev) =>
                   prev
                     ? {
@@ -715,8 +744,8 @@ export default function BacklogView({
                         destinationSprintId: event.target.value,
                       }
                     : prev,
-                )
-              }
+                );
+              }}
             >
               <option value="">Select destination sprint</option>
               {sprintDeleteDialog.destinationOptions.map((item) => (
@@ -725,6 +754,9 @@ export default function BacklogView({
                 </option>
               ))}
             </select>
+            {sprintDeleteDestError ? (
+              <p className="text-[0.78rem] text-red-600">{sprintDeleteDestError}</p>
+            ) : null}
             {sprintDeleteError ? (
               <p className="my-2 text-red-600">{sprintDeleteError}</p>
             ) : null}
@@ -735,6 +767,7 @@ export default function BacklogView({
                 onClick={() => {
                   setSprintDeleteDialog(null);
                   setSprintDeleteError("");
+                  setSprintDeleteDestError("");
                 }}
               >
                 Cancel
@@ -742,12 +775,12 @@ export default function BacklogView({
               <button
                 type="button"
                 className="border border-[#dc2626] bg-[#dc2626] text-white hover:border-[#b91c1c] hover:bg-[#b91c1c]"
-                disabled={!sprintDeleteDialog.destinationSprintId}
                 onClick={async () => {
                   if (!sprintDeleteDialog.destinationSprintId) {
-                    setSprintDeleteError("Please choose a destination sprint.");
+                    setSprintDeleteDestError(REQUIRED_FIELD_MESSAGE);
                     return;
                   }
+                  setSprintDeleteDestError("");
                   try {
                     const destinationSprintId =
                       sprintDeleteDialog.destinationSprintId === "backlog"
@@ -761,6 +794,7 @@ export default function BacklogView({
                     await onDeleteSprint(sprintDeleteDialog.sprintKey);
                     setSprintDeleteDialog(null);
                     setSprintDeleteError("");
+                    setSprintDeleteDestError("");
                   } catch (error) {
                     setSprintDeleteError(
                       error?.message ||

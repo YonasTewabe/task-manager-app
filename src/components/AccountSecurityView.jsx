@@ -1,4 +1,8 @@
 import { useState } from "react";
+import {
+  REQUIRED_FIELD_MESSAGE,
+  invalidFieldClassName,
+} from "../utils/formValidation.js";
 
 export default function AccountSecurityView({ onChangePassword }) {
   const [currentPassword, setCurrentPassword] = useState("");
@@ -7,15 +11,28 @@ export default function AccountSecurityView({ onChangePassword }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
 
   const submit = async (event) => {
     event.preventDefault();
     setError("");
     setSuccess("");
-    if (!newPassword || newPassword !== confirmPassword) {
-      setError("New password and confirmation must match.");
+    const err = {};
+    if (!String(currentPassword || "").trim())
+      err.currentPassword = REQUIRED_FIELD_MESSAGE;
+    if (!String(newPassword || "").trim())
+      err.newPassword = REQUIRED_FIELD_MESSAGE;
+    if (!String(confirmPassword || "").trim())
+      err.confirmPassword = REQUIRED_FIELD_MESSAGE;
+    if (Object.keys(err).length) {
+      setFieldErrors(err);
       return;
     }
+    if (newPassword !== confirmPassword) {
+      setFieldErrors({ confirmPassword: "Passwords do not match." });
+      return;
+    }
+    setFieldErrors({});
     setLoading(true);
     try {
       await onChangePassword({ currentPassword, newPassword });
@@ -56,28 +73,67 @@ export default function AccountSecurityView({ onChangePassword }) {
             <span className="font-medium">Current password</span>
             <input
               type="password"
-              className="rounded-[8px] border border-[#c1c7d0] px-3 py-2"
+              className={`rounded-[8px] border px-3 py-2 ${fieldErrors.currentPassword ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
               value={currentPassword}
-              onChange={(event) => setCurrentPassword(event.target.value)}
+              onChange={(event) => {
+                setCurrentPassword(event.target.value);
+                if (fieldErrors.currentPassword)
+                  setFieldErrors((prev) => {
+                    const n = { ...prev };
+                    delete n.currentPassword;
+                    return n;
+                  });
+              }}
             />
+            {fieldErrors.currentPassword ? (
+              <span className="text-[0.78rem] text-red-600">
+                {fieldErrors.currentPassword}
+              </span>
+            ) : null}
           </label>
           <label className="grid gap-1 text-[0.9rem] text-[#172b4d]">
             <span className="font-medium">New password</span>
             <input
               type="password"
-              className="rounded-[8px] border border-[#c1c7d0] px-3 py-2"
+              className={`rounded-[8px] border px-3 py-2 ${fieldErrors.newPassword ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
               value={newPassword}
-              onChange={(event) => setNewPassword(event.target.value)}
+              onChange={(event) => {
+                setNewPassword(event.target.value);
+                if (fieldErrors.newPassword)
+                  setFieldErrors((prev) => {
+                    const n = { ...prev };
+                    delete n.newPassword;
+                    return n;
+                  });
+              }}
             />
+            {fieldErrors.newPassword ? (
+              <span className="text-[0.78rem] text-red-600">
+                {fieldErrors.newPassword}
+              </span>
+            ) : null}
           </label>
           <label className="grid gap-1 text-[0.9rem] text-[#172b4d]">
             <span className="font-medium">Confirm new password</span>
             <input
               type="password"
-              className="rounded-[8px] border border-[#c1c7d0] px-3 py-2"
+              className={`rounded-[8px] border px-3 py-2 ${fieldErrors.confirmPassword ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
               value={confirmPassword}
-              onChange={(event) => setConfirmPassword(event.target.value)}
+              onChange={(event) => {
+                setConfirmPassword(event.target.value);
+                if (fieldErrors.confirmPassword)
+                  setFieldErrors((prev) => {
+                    const n = { ...prev };
+                    delete n.confirmPassword;
+                    return n;
+                  });
+              }}
             />
+            {fieldErrors.confirmPassword ? (
+              <span className="text-[0.78rem] text-red-600">
+                {fieldErrors.confirmPassword}
+              </span>
+            ) : null}
           </label>
           <div className="flex justify-end border-t border-[#ebecf0] pt-3">
             <button type="submit" disabled={loading}>

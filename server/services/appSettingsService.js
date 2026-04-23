@@ -34,6 +34,17 @@ export async function updateGithubIntegrationSettings(patch = {}) {
         ? String(patch.githubWebhookSecret || "").trim()
         : current.githubWebhookSecret,
   };
+  if (
+    !next.githubOrg ||
+    !next.githubToken ||
+    !next.githubWebhookSecret
+  ) {
+    const err = new Error(
+      "GitHub organization, token, and webhook secret are required.",
+    );
+    err.code = "GITHUB_SETTINGS_VALIDATION";
+    throw err;
+  }
   const result = await dbQuery(
     `UPDATE app_integration_settings
      SET github_org = $1,

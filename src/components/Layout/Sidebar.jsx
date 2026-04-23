@@ -23,8 +23,12 @@ function Sidebar({
   return (
     <aside className="fixed inset-y-0 left-0 z-20 flex w-[260px] flex-col overflow-hidden border-r border-[#dfe1e6] bg-white max-[1100px]:w-[88px]">
       <div className="flex h-[86px] items-center gap-[0.7rem] px-4">
-        <div className="grid h-11 w-11 place-items-center rounded-[12px] bg-[#dbe6f8] font-bold text-[#2d64d9]">
-          TM
+        <div className="grid h-11 w-11 place-items-center rounded-[12px] bg-[#dbe6f8] p-[0.35rem]">
+          <img
+            src="/favicon.svg"
+            alt="Task Manager"
+            className="h-full w-full rounded-[8px]"
+          />
         </div>
         <div className="max-[1100px]:hidden">
           <div className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b889f]">
