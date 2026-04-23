@@ -1274,7 +1274,7 @@ export default function SystemSettingsView({
                             : ""}
                         </span>
                         <label className="flex items-center gap-[0.35rem] text-[0.78rem] text-[#42526e]">
-                          Backlog roll-up
+                          Roll-up Group
                           <select
                             value={stage.counterGroup || ""}
                             disabled={!canManage}
@@ -1284,7 +1284,6 @@ export default function SystemSettingsView({
                               })
                             }
                           >
-                            <option value="">Select roll-up</option>
                             <option value="upcoming">Not started (red)</option>
                             <option value="active">Active (blue)</option>
                             <option value="done">Done (green)</option>
@@ -1990,7 +1989,7 @@ export default function SystemSettingsView({
             ) : null}
             <label>
               <span className="inline-flex items-center">
-                Backlog roll-up <span className="ml-1 text-red-600">*</span>
+                Roll-up Group <span className="ml-1 text-red-600">*</span>
               </span>
               <select
                 value={newStageDraft.counterGroup}

@@ -2079,7 +2079,8 @@ function App() {
   const deleteProject = async (projectId) => {
     const confirmed = await requestConfirmation({
       title: "Delete project",
-      message: "Delete this project? ",
+      message:
+        "Delete this project? This removes all tasks and configurations permanently.",
       confirmLabel: "Delete project",
     });
     if (!confirmed) {
