@@ -171,12 +171,17 @@ export default function BacklogView({
   };
 
   const activeSprintRows = useMemo(
-    () => sprintRows.filter((row) => row.status === "active").sort(sortByDateThenName),
+    () =>
+      sprintRows
+        .filter((row) => row.status === "active")
+        .sort(sortByDateThenName),
     [sprintRows],
   );
   const plannedSprintRows = useMemo(
     () =>
-      sprintRows.filter((row) => row.status === "planned").sort(sortByDateThenName),
+      sprintRows
+        .filter((row) => row.status === "planned")
+        .sort(sortByDateThenName),
     [sprintRows],
   );
   const otherSprintRows = useMemo(
@@ -200,9 +205,23 @@ export default function BacklogView({
   const rows = useMemo(
     () =>
       selectedSprintId
-        ? sprintRows.filter((row) => String(row.key) === String(selectedSprintId))
-        : [backlogRow, ...activeSprintRows, ...plannedSprintRows, ...otherSprintRows],
-    [selectedSprintId, sprintRows, backlogRow, activeSprintRows, plannedSprintRows, otherSprintRows],
+        ? sprintRows.filter(
+            (row) => String(row.key) === String(selectedSprintId),
+          )
+        : [
+            backlogRow,
+            ...activeSprintRows,
+            ...plannedSprintRows,
+            ...otherSprintRows,
+          ],
+    [
+      selectedSprintId,
+      sprintRows,
+      backlogRow,
+      activeSprintRows,
+      plannedSprintRows,
+      otherSprintRows,
+    ],
   );
 
   const toggleExpanded = (key) => {
@@ -330,9 +349,15 @@ export default function BacklogView({
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex items-center gap-[0.3rem]">
-                    <span className="min-w-6 rounded border border-[#f3c6c3] bg-[#fdeceb] px-[0.28rem] py-[0.08rem] text-center text-[0.7rem] text-[#b42318]">{redPoints}</span>
-                    <span className="min-w-6 rounded border border-[#c6d9ff] bg-[#e9f2ff] px-[0.28rem] py-[0.08rem] text-center text-[0.7rem] text-[#114fba]">{bluePoints}</span>
-                    <span className="min-w-6 rounded border border-[#bde7ca] bg-[#e8f7ed] px-[0.28rem] py-[0.08rem] text-center text-[0.7rem] text-[#1a7f37]">{greenPoints}</span>
+                    <span className="min-w-6 rounded border border-[#f3c6c3] bg-[#fdeceb] px-[0.28rem] py-[0.08rem] text-center text-[0.7rem] text-[#b42318]">
+                      {redPoints}
+                    </span>
+                    <span className="min-w-6 rounded border border-[#c6d9ff] bg-[#e9f2ff] px-[0.28rem] py-[0.08rem] text-center text-[0.7rem] text-[#114fba]">
+                      {bluePoints}
+                    </span>
+                    <span className="min-w-6 rounded border border-[#bde7ca] bg-[#e8f7ed] px-[0.28rem] py-[0.08rem] text-center text-[0.7rem] text-[#1a7f37]">
+                      {greenPoints}
+                    </span>
                   </div>
                   {row.status === "active" && canManage ? (
                     <button
@@ -755,7 +780,9 @@ export default function BacklogView({
               ))}
             </select>
             {sprintDeleteDestError ? (
-              <p className="text-[0.78rem] text-red-600">{sprintDeleteDestError}</p>
+              <p className="text-[0.78rem] text-red-600">
+                {sprintDeleteDestError}
+              </p>
             ) : null}
             {sprintDeleteError ? (
               <p className="my-2 text-red-600">{sprintDeleteError}</p>

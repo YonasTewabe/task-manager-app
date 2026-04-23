@@ -540,6 +540,14 @@ export default function TaskDrawer({
     if (item?.meta?.source === "github_automation") return "Automation rule";
     return item.userName || userMap.get(item.userId) || "Unknown";
   };
+  const getActivityDetailHtml = (item) => {
+    const action = String(item?.action || "").toLowerCase();
+    const detail = String(item?.meta?.detail || "").trim();
+    if (!action.startsWith("comment_") || !detail) {
+      return "";
+    }
+    return toDisplayRichText(detail);
+  };
 
   const buildPatch = useCallback((source) => {
     return {
@@ -1184,7 +1192,10 @@ export default function TaskDrawer({
                     ))
                   ) : visibleActivity.length ? (
                     visibleActivity.map((item) => (
-                      <div key={item.id} className="grid gap-1 rounded-md border border-[#e5e9f0] bg-[#f9fafc] px-[0.55rem] py-[0.5rem] text-[0.84rem]">
+                      <div
+                        key={item.id}
+                        className="grid gap-1 rounded-md border border-[#e5e9f0] bg-[#f9fafc] px-[0.55rem] py-[0.5rem] text-[0.84rem]"
+                      >
                         <div className="font-medium text-[#1f3657]">
                           {formatActivityAction(item.action)}
                         </div>
@@ -1214,6 +1225,14 @@ export default function TaskDrawer({
                               </div>
                             ))
                           : null}
+                        {getActivityDetailHtml(item) ? (
+                          <div
+                            className="mt-1 rounded-md border border-[#dfe1e6] bg-[#fafbfc] p-2 whitespace-pre-wrap [&_a]:break-words [&_a]:text-[#0c66e4] [&_a]:underline [&_a]:decoration-1 [&_a]:underline-offset-2 [&_a:hover]:text-[#0052cc] [&_ul]:my-[0.3rem] [&_ul]:ml-[1.1rem] [&_ul]:list-disc [&_ol]:my-[0.3rem] [&_ol]:ml-[1.1rem] [&_ol]:list-decimal"
+                            dangerouslySetInnerHTML={{
+                              __html: getActivityDetailHtml(item),
+                            }}
+                          />
+                        ) : null}
                       </div>
                     ))
                   ) : (
@@ -1560,7 +1579,7 @@ export default function TaskDrawer({
               </h3>
               <button
                 type="button"
-                className="rounded-md border border-transparent bg-transparent px-2 py-1 text-[#42526e] hover:bg-[#f4f5f7]"
+                className="rounded-md border bg-transparent px-2 py-1 text-[#42526e] hover:bg-[#f4f5f7]"
                 onClick={() => setIsDevLinksModalOpen(false)}
               >
                 Close

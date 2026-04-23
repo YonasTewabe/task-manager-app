@@ -11,6 +11,15 @@ function toInitials(name) {
     .toUpperCase();
 }
 
+function formatStatusLabel(status) {
+  const text = String(status || "").trim();
+  if (!text) return "Unknown";
+  return text
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export default function DashboardView({
   currentUser,
   projects,
@@ -151,7 +160,8 @@ export default function DashboardView({
               const proj = task.projectId
                 ? projectById.get(String(task.projectId))
                 : null;
-              const statusText = stageMeta.get(task.status)?.label;
+              const statusText =
+                stageMeta.get(task.status)?.label || formatStatusLabel(task.status);
               const typeText =
                 String(task.type).charAt(0).toUpperCase() + String(task.type).slice(1);
               return (
@@ -171,7 +181,7 @@ export default function DashboardView({
                     </span>
                   </div>
                   <span className="whitespace-nowrap rounded-full border border-[#d4e3ff] bg-[#ecf3ff] px-[0.5rem] py-[0.18rem] text-[0.69rem] font-bold text-[#1e40af]">
-                    {String(statusText).toUpperCase()}
+                    {statusText.toUpperCase()}
                   </span>
                 </button>
               );

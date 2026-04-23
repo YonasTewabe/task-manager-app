@@ -437,7 +437,7 @@ export default function SummaryView({
   return (
     <section className="grid gap-[0.8rem]">
       <div className="rounded-[12px] border border-[#dfe1e6] bg-white p-[0.9rem]">
-        <div className="flex flex-wrap items-end gap-[0.6rem]">
+        <div className="flex flex-wrap items-center gap-[0.6rem]">
           <label className="grid gap-[0.3rem] text-[0.82rem] text-[#42526e]">
             From
             <input

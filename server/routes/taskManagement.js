@@ -1187,7 +1187,9 @@ router.post("/tasks/:taskId/comments", async (req, res) => {
     req.user.id,
     req.body.body.trim(),
   );
-  await addTaskActivity(req.params.taskId, req.user.id, "comment_added", {});
+  await addTaskActivity(req.params.taskId, req.user.id, "comment_added", {
+    detail: comment.body,
+  });
   if (task.assigneeId) {
     await createAndDispatchNotifications({
       actorUserId: req.user.id,
@@ -1245,7 +1247,9 @@ router.patch("/tasks/:taskId/comments/:commentId", async (req, res) => {
       .status(404)
       .json({ error: "Comment not found or not owned by user" });
   }
-  await addTaskActivity(req.params.taskId, req.user.id, "comment_updated", {});
+  await addTaskActivity(req.params.taskId, req.user.id, "comment_updated", {
+    detail: updated.body,
+  });
   const mentionedUserIds = await resolveMentionedUserIds(req.body.body.trim(), {
     excludeUserId: req.user.id,
     projectId: task.projectId,

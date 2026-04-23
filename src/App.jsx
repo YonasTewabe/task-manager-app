@@ -16,7 +16,12 @@ import UserAdminView from "./components/UserAdminView";
 import ProfileView from "./components/ProfileView";
 import MainLayout from "./components/Layout/MainLayout";
 import Modal from "./components/ui/Modal";
-import { apiRequest, buildApiUrl, getAuthToken, setStoredToken } from "./api/client";
+import {
+  apiRequest,
+  buildApiUrl,
+  getAuthToken,
+  setStoredToken,
+} from "./api/client";
 import { PRIORITY_OPTIONS } from "./constants/priorities.js";
 import { UNASSIGNED_AVATAR_SRC } from "./constants/unassignedAvatar.js";
 import {
@@ -326,7 +331,9 @@ function App() {
     ) {
       return;
     }
-    const vapidPublicKey = String(import.meta.env.VITE_PUSH_PUBLIC_KEY || "").trim();
+    const vapidPublicKey = String(
+      import.meta.env.VITE_PUSH_PUBLIC_KEY || "",
+    ).trim();
     if (!vapidPublicKey) return;
     const permission = await Notification.requestPermission();
     if (permission !== "granted") return;
@@ -334,7 +341,9 @@ function App() {
     const existing = await registration.pushManager.getSubscription();
     const base64ToUint8Array = (base64String) => {
       const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-      const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+      const base64 = (base64String + padding)
+        .replace(/-/g, "+")
+        .replace(/_/g, "/");
       const raw = window.atob(base64);
       return Uint8Array.from([...raw].map((char) => char.charCodeAt(0)));
     };
@@ -477,7 +486,9 @@ function App() {
         );
         const hasRepo = Array.isArray(repos) && repos.length > 0;
         if (currentUser?.role === "admin") {
-          const appGitHub = await apiRequest("/task-management/app-settings/github");
+          const appGitHub = await apiRequest(
+            "/task-management/app-settings/github",
+          );
           const hasOrg = Boolean(String(appGitHub?.githubOrg || "").trim());
           const hasToken = Boolean(appGitHub?.hasGithubToken);
           integrationReady = hasRepo && hasOrg && hasToken;
@@ -510,7 +521,9 @@ function App() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [currentProjectId, projectById, users]);
   const projectMentionCandidates = useMemo(() => {
-    const projectMemberIds = new Set(projectUsers.map((user) => String(user.id)));
+    const projectMemberIds = new Set(
+      projectUsers.map((user) => String(user.id)),
+    );
     const userCandidates = projectUsers.map((user) => ({
       id: `user-${user.id}`,
       type: "user",
@@ -799,7 +812,9 @@ function App() {
       params.set("projectId", String(projectId));
       if (fromDate) params.set("from", String(fromDate));
       if (toDate) params.set("to", String(toDate));
-      return apiRequest(`/task-management/analytics/overview?${params.toString()}`);
+      return apiRequest(
+        `/task-management/analytics/overview?${params.toString()}`,
+      );
     },
     [],
   );
@@ -810,7 +825,9 @@ function App() {
       params.set("projectId", String(projectId));
       if (fromDate) params.set("from", String(fromDate));
       if (toDate) params.set("to", String(toDate));
-      return apiRequest(`/task-management/analytics/sprint?${params.toString()}`);
+      return apiRequest(
+        `/task-management/analytics/sprint?${params.toString()}`,
+      );
     },
     [],
   );
@@ -833,7 +850,9 @@ function App() {
       params.set("projectId", String(projectId));
       if (fromDate) params.set("from", String(fromDate));
       if (toDate) params.set("to", String(toDate));
-      return apiRequest(`/task-management/analytics/workload?${params.toString()}`);
+      return apiRequest(
+        `/task-management/analytics/workload?${params.toString()}`,
+      );
     },
     [],
   );
@@ -857,13 +876,16 @@ function App() {
       }
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
-      const contentDisposition = response.headers.get("content-disposition") || "";
+      const contentDisposition =
+        response.headers.get("content-disposition") || "";
       const reportType = String(type || "overview");
       const fallbackName = `summary-${reportType}.xlsx`;
       const matched =
         contentDisposition.match(/filename\*=UTF-8''([^;]+)/i) ||
         contentDisposition.match(/filename="?([^"]+)"?/i);
-      const filename = matched?.[1] ? decodeURIComponent(matched[1]) : fallbackName;
+      const filename = matched?.[1]
+        ? decodeURIComponent(matched[1])
+        : fallbackName;
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = filename;
@@ -1133,7 +1155,8 @@ function App() {
   ]);
 
   useEffect(() => {
-    if (!token || loading || activeView !== "board" || !currentProjectId) return;
+    if (!token || loading || activeView !== "board" || !currentProjectId)
+      return;
     const params = new URLSearchParams(location.search || "");
     const taskId = params.get("taskId");
     if (!taskId) return;
@@ -1283,33 +1306,36 @@ function App() {
     userManagesProject,
   ]);
 
-  const handleNavigateMain = useCallback((key) => {
-    if (key === "dashboard") {
-      setActiveView("dashboard");
-      navigate("/dashboard");
-      return;
-    }
-    if (key === "projects") {
-      setActiveView("projects");
-      navigate("/projects");
-      return;
-    }
-    if (key === "users") {
-      setActiveView("users");
-      navigate("/users");
-      return;
-    }
-    if (key === "profile") {
-      setActiveView("profile");
-      navigate("/profile");
-      return;
-    }
-    if (key === "app-settings") {
-      setActiveView("app-settings");
-      navigate("/settings");
-      return;
-    }
-  }, [navigate, setActiveView]);
+  const handleNavigateMain = useCallback(
+    (key) => {
+      if (key === "dashboard") {
+        setActiveView("dashboard");
+        navigate("/dashboard");
+        return;
+      }
+      if (key === "projects") {
+        setActiveView("projects");
+        navigate("/projects");
+        return;
+      }
+      if (key === "users") {
+        setActiveView("users");
+        navigate("/users");
+        return;
+      }
+      if (key === "profile") {
+        setActiveView("profile");
+        navigate("/profile");
+        return;
+      }
+      if (key === "app-settings") {
+        setActiveView("app-settings");
+        navigate("/settings");
+        return;
+      }
+    },
+    [navigate, setActiveView],
+  );
 
   const handleNavigateProject = useCallback(
     async (projectId, subview) => {
@@ -1350,7 +1376,10 @@ function App() {
             return;
           }
         } catch {
-          notify("Failed to verify project setup. Open project settings.", "error");
+          notify(
+            "Failed to verify project setup. Open project settings.",
+            "error",
+          );
           setCurrentProjectId(id);
           setSelectedSprintId("");
           setActiveView("settings");
@@ -1398,7 +1427,10 @@ function App() {
         });
       } catch {
         if (cancelled) return;
-        notify("Failed to verify project setup. Open project settings.", "error");
+        notify(
+          "Failed to verify project setup. Open project settings.",
+          "error",
+        );
         setActiveView("settings");
         navigate(`/project/${encodeURIComponent(currentProjectId)}/settings`, {
           replace: true,
@@ -1473,7 +1505,9 @@ function App() {
         method: "POST",
         body: JSON.stringify({ email }),
       });
-      notify(data.message || "If the account exists, a reset email has been sent.");
+      notify(
+        data.message || "If the account exists, a reset email has been sent.",
+      );
     } catch (err) {
       setError(err.message || "Failed to request password reset");
     } finally {
@@ -1516,7 +1550,10 @@ function App() {
     }
   };
 
-  const changePasswordFromProfile = async ({ currentPassword, newPassword }) => {
+  const changePasswordFromProfile = async ({
+    currentPassword,
+    newPassword,
+  }) => {
     try {
       const data = await apiRequest("/auth/change-password", {
         method: "POST",
@@ -1606,7 +1643,8 @@ function App() {
     event.preventDefault();
     const nextErrors = {};
     if (!taskTitle.trim()) nextErrors.title = REQUIRED_FIELD_MESSAGE;
-    if (!String(taskType || "").trim()) nextErrors.type = REQUIRED_FIELD_MESSAGE;
+    if (!String(taskType || "").trim())
+      nextErrors.type = REQUIRED_FIELD_MESSAGE;
     if (Object.keys(nextErrors).length) {
       setCreateTaskFieldErrors(nextErrors);
       return;
@@ -1668,7 +1706,9 @@ function App() {
 
   const markNotificationRead = useCallback(
     async (notificationId) => {
-      await apiRequest(`/notifications/${notificationId}/read`, { method: "PATCH" });
+      await apiRequest(`/notifications/${notificationId}/read`, {
+        method: "PATCH",
+      });
       await loadNotifications();
     },
     [loadNotifications],
@@ -1702,7 +1742,9 @@ function App() {
     if (!term) return [];
     const params = new URLSearchParams();
     params.set("search", term);
-    const data = await apiRequest(`/task-management/tasks?${params.toString()}`);
+    const data = await apiRequest(
+      `/task-management/tasks?${params.toString()}`,
+    );
     return (Array.isArray(data) ? data : []).slice(0, 12);
   }, []);
 
@@ -1711,7 +1753,9 @@ function App() {
       const taskId = String(task?.id || "").trim();
       const projectId = String(task?.projectId || "").trim();
       if (!taskId || !projectId) return;
-      navigate(`/project/${encodeURIComponent(projectId)}/board?taskId=${encodeURIComponent(taskId)}`);
+      navigate(
+        `/project/${encodeURIComponent(projectId)}/board?taskId=${encodeURIComponent(taskId)}`,
+      );
     },
     [navigate],
   );
@@ -1728,7 +1772,10 @@ function App() {
     setCreateTaskFieldErrors({});
     setShowCreateTaskModal(true);
   }, [setShowCreateTaskModal]);
-  const closeTaskDrawer = useCallback(() => setTaskBundle(null), [setTaskBundle]);
+  const closeTaskDrawer = useCallback(
+    () => setTaskBundle(null),
+    [setTaskBundle],
+  );
 
   const saveTask = async (taskId, patch) => {
     await apiRequest(`/task-management/tasks/${taskId}`, {
@@ -1756,6 +1803,14 @@ function App() {
     await refetchAfterCrud({ includeDashboard: true });
   };
   const deleteComment = async (taskId, commentId) => {
+    const confirmed = await requestConfirmation({
+      title: "Delete comment",
+      message: "Delete this comment? This action cannot be undone.",
+      confirmLabel: "Delete comment",
+    });
+    if (!confirmed) {
+      return;
+    }
     await apiRequest(`/task-management/tasks/${taskId}/comments/${commentId}`, {
       method: "DELETE",
     });
@@ -1824,7 +1879,8 @@ function App() {
   const disableUser = async (userId) => {
     const confirmed = await requestConfirmation({
       title: "Delete user",
-      message: "Disable this user? Their account will remain for history and they will be removed from groups.",
+      message:
+        "Disable this user? Their account will remain for history and they will be removed from groups.",
       confirmLabel: "Disable user",
     });
     if (!confirmed) {
@@ -1848,6 +1904,14 @@ function App() {
   };
 
   const enableUser = async (userId) => {
+    const confirmed = await requestConfirmation({
+      title: "Reactivate user",
+      message: "Reactivate this user and restore account access?",
+      confirmLabel: "Reactivate user",
+    });
+    if (!confirmed) {
+      return;
+    }
     try {
       await apiRequest(`/task-management/users/${userId}/enable`, {
         method: "PATCH",
@@ -2322,7 +2386,8 @@ function App() {
                             onClick={() => {
                               setFilters((prev) => ({
                                 ...prev,
-                                assigneeId: prev.assigneeId === item.id ? "" : item.id,
+                                assigneeId:
+                                  prev.assigneeId === item.id ? "" : item.id,
                               }));
                               setShowAssigneeOverflow(false);
                             }}
@@ -2333,7 +2398,11 @@ function App() {
                               style={
                                 item.isUnassigned
                                   ? undefined
-                                  : { backgroundColor: getUserAvatarColor(item.id) }
+                                  : {
+                                      backgroundColor: getUserAvatarColor(
+                                        item.id,
+                                      ),
+                                    }
                               }
                             >
                               {item.isUnassigned ? (
@@ -2667,6 +2736,36 @@ function App() {
                     />
                   </label>
                   <label>
+                    Assignee
+                    <select
+                      value={assigneeId}
+                      onChange={(event) => setAssigneeId(event.target.value)}
+                    >
+                      <option value="">Unassigned</option>
+                      {projectUsers.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="grid grid-cols-2 gap-[0.45rem]">
+                  <label>
+                    Label
+                    <select
+                      value={taskLabel}
+                      onChange={(event) => setTaskLabel(event.target.value)}
+                    >
+                      <option value="">Select label</option>
+                      {projectLabels.map((label) => (
+                        <option key={label} value={label}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
                     Version
                     <select
                       value={taskVersion}
@@ -2720,22 +2819,6 @@ function App() {
                     ) : null}
                   </div>
                   <label>
-                    Assignee
-                    <select
-                      value={assigneeId}
-                      onChange={(event) => setAssigneeId(event.target.value)}
-                    >
-                      <option value="">Unassigned</option>
-                      {projectUsers.map((user) => (
-                        <option key={user.id} value={user.id}>
-                          {user.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <div className="grid grid-cols-2 gap-[0.45rem]">
-                  <label>
                     Priority
                     <select
                       value={taskPriority}
@@ -2744,20 +2827,6 @@ function App() {
                       {PRIORITY_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>
                           {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Label
-                    <select
-                      value={taskLabel}
-                      onChange={(event) => setTaskLabel(event.target.value)}
-                    >
-                      <option value="">Select label</option>
-                      {projectLabels.map((label) => (
-                        <option key={label} value={label}>
-                          {label}
                         </option>
                       ))}
                     </select>
@@ -2902,7 +2971,7 @@ function App() {
 
           <TaskDrawer
             taskBundle={taskBundle}
-          currentUserId={currentUser?.id}
+            currentUserId={currentUser?.id}
             users={users}
             assigneeUsers={projectUsers}
             mentionUsers={projectMentionCandidates}
@@ -2913,8 +2982,8 @@ function App() {
             onClose={closeTaskDrawer}
             onSaveTask={saveTask}
             onAddComment={addComment}
-          onUpdateComment={updateComment}
-          onDeleteComment={deleteComment}
+            onUpdateComment={updateComment}
+            onDeleteComment={deleteComment}
             onUploadAsset={uploadTaskAsset}
             onNotify={notify}
           />

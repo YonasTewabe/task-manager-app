@@ -236,7 +236,16 @@ export default function SprintManagementView({
                 <button type="button" onClick={() => onStartSprint(selectedSprint.id)}>
                   Start Sprint
                 </button>
-                <button type="button" onClick={() => onCompleteSprint(selectedSprint.id)}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const confirmed = window.confirm(
+                      "Complete this sprint? Unfinished tasks will move to the backlog.",
+                    );
+                    if (!confirmed) return;
+                    onCompleteSprint(selectedSprint.id);
+                  }}
+                >
                   Complete Sprint
                 </button>
               </div>

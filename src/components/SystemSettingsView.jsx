@@ -119,8 +119,8 @@ function sortStagesByRollup(stages) {
 const SETTINGS_TABS = [
   { id: "users", label: "Users" },
   { id: "board-columns", label: "Board columns" },
-  { id: "workflow", label: "Workflow" },
-  { id: "integrations", label: "Integrations" },
+  { id: "workflow", label: "Workflow Rules" },
+  { id: "integrations", label: "Integration Rules" },
   { id: "labels", label: "Labels" },
   { id: "types", label: "Types" },
   { id: "versions", label: "Versions" },
@@ -965,10 +965,15 @@ export default function SystemSettingsView({
     const branchIncludes = String(rule?.conditions?.branchIncludes || "")
       .trim()
       .toLowerCase();
-    const requireTaskKey = rule?.conditions?.requireTaskKey === true ? "1" : "0";
-    return [eventType, targetStatus, baseBranch, branchIncludes, requireTaskKey].join(
-      "|",
-    );
+    const requireTaskKey =
+      rule?.conditions?.requireTaskKey === true ? "1" : "0";
+    return [
+      eventType,
+      targetStatus,
+      baseBranch,
+      branchIncludes,
+      requireTaskKey,
+    ].join("|");
   };
 
   const addAutomationRule = async () => {
@@ -1085,7 +1090,7 @@ export default function SystemSettingsView({
               aria-labelledby="settings-tab-board-columns"
               className="grid max-w-full gap-[0.55rem] rounded-lg border border-[#dfe3ea] bg-white p-[0.7rem]"
             >
-              <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <h3 className="text-[1rem] font-bold text-[#172b4d]">
                     Board columns
@@ -1290,7 +1295,7 @@ export default function SystemSettingsView({
                     {canManage && !BUILTIN_STAGE_KEYS.has(stage.key) ? (
                       <button
                         type="button"
-                        className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
+                        className="self-center border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
                         onClick={() => {
                           const destinations = stages.filter(
                             (candidate) =>
@@ -1564,10 +1569,8 @@ export default function SystemSettingsView({
                   disabled={!canManage || !workflowFromKey || !workflowToKey}
                   onClick={() => {
                     const errs = {};
-                    if (!workflowFromKey)
-                      errs.from = REQUIRED_FIELD_MESSAGE;
-                    if (!workflowToKey)
-                      errs.to = REQUIRED_FIELD_MESSAGE;
+                    if (!workflowFromKey) errs.from = REQUIRED_FIELD_MESSAGE;
+                    if (!workflowToKey) errs.to = REQUIRED_FIELD_MESSAGE;
                     else if (workflowFromKey === workflowToKey)
                       errs.to = "Choose a different stage.";
                     if (Object.keys(errs).length) {
@@ -1700,7 +1703,7 @@ export default function SystemSettingsView({
             >
               <div className="grid gap-[0.25rem]">
                 <h3 className="text-[1rem] font-bold text-[#172b4d]">
-                  GitHub integrations
+                  GitHub Integrations
                 </h3>
                 <p className="text-[0.82rem] leading-[1.35] text-[#6b778c]">
                   Connect repositories and define automation rules for task
@@ -1709,7 +1712,7 @@ export default function SystemSettingsView({
               </div>
 
               <div className="grid gap-[0.45rem] rounded-[12px] border border-[#dfe3ea] bg-[#fbfcff] p-[0.75rem]">
-                <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="grid gap-[0.2rem]">
                     <strong className="text-[0.94rem] text-[#172b4d]">
                       Repository mapping
@@ -1789,7 +1792,7 @@ export default function SystemSettingsView({
               </div>
 
               <div className="grid gap-[0.55rem] rounded-[12px] border border-[#dfe3ea] bg-white p-[0.75rem]">
-                <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="grid gap-[0.2rem]">
                     <strong className="text-[0.94rem] text-[#172b4d]">
                       Automation rules
@@ -1895,21 +1898,12 @@ export default function SystemSettingsView({
               </div>
               <div className="grid gap-[0.35rem] rounded-[10px] border border-[#e6ebf3] bg-[#f8fbff] p-[0.65rem]">
                 <strong className="text-[0.88rem] text-[#172b4d]">
-                  Project admins
+                  Add Project admins
                 </strong>
-                <p className="text-[0.8rem] leading-[1.35] text-[#6b778c]">
-                  Add project admins: users with the <strong>Member</strong> app
-                  role can be given full management access for{" "}
-                  <strong>this project only</strong> (settings, sprints, backlog,
-                  GitHub integration, and task administration).
-                </p>
                 {sortedUsers.filter(
                   (u) => u.role === "member" && memberIds.includes(u.id),
                 ).length === 0 ? (
-                  <p className="text-[0.8rem] text-[#5e6c84]">
-                    Add project members with the Member role to grant project
-                    admin access.
-                  </p>
+                  <p className="text-[0.8rem] text-[#5e6c84]"></p>
                 ) : (
                   <div
                     className={`grid grid-cols-3 gap-[0.4rem] ${sortedUsers.filter((u) => u.role === "member" && memberIds.includes(u.id)).length > 6 ? "max-h-[5.75rem] overflow-y-auto pr-1" : ""}`}
@@ -1940,10 +1934,6 @@ export default function SystemSettingsView({
                       ))}
                   </div>
                 )}
-                <p className="text-[0.78rem] text-[#6b778c]">
-                  Users with the App <strong>admin</strong> role already have
-                  full access to every project.
-                </p>
               </div>
             </article>
           ) : null}
@@ -1978,9 +1968,7 @@ export default function SystemSettingsView({
               <input
                 value={newStageDraft.name}
                 placeholder="Enter stage name"
-                className={invalidFieldClassName(
-                  Boolean(addStageErrors.name),
-                )}
+                className={invalidFieldClassName(Boolean(addStageErrors.name))}
                 onChange={(event) => {
                   setNewStageDraft((prev) => ({
                     ...prev,
@@ -1996,7 +1984,9 @@ export default function SystemSettingsView({
               />
             </label>
             {addStageErrors.name ? (
-              <p className="text-[0.78rem] text-red-600">{addStageErrors.name}</p>
+              <p className="text-[0.78rem] text-red-600">
+                {addStageErrors.name}
+              </p>
             ) : null}
             <label>
               <span className="inline-flex items-center">
@@ -2333,7 +2323,9 @@ export default function SystemSettingsView({
               />
             </label>
             {addRepoErrors.repo ? (
-              <p className="text-[0.78rem] text-red-600">{addRepoErrors.repo}</p>
+              <p className="text-[0.78rem] text-red-600">
+                {addRepoErrors.repo}
+              </p>
             ) : null}
             <label>
               Default branch
@@ -2475,7 +2467,9 @@ export default function SystemSettingsView({
                     }))
                   }
                 />
-                <span className="!m-0 !inline-block leading-5">On any branch</span>
+                <span className="!m-0 !inline-block leading-5">
+                  On any branch
+                </span>
               </label>
               <label className="branch-scope-option !grid !grid-cols-[16px_auto] !items-center !gap-2">
                 <input
@@ -2592,7 +2586,9 @@ export default function SystemSettingsView({
               ))}
             </select>
             {stageDeleteDestError ? (
-              <p className="text-[0.78rem] text-red-600">{stageDeleteDestError}</p>
+              <p className="text-[0.78rem] text-red-600">
+                {stageDeleteDestError}
+              </p>
             ) : null}
             <div className="flex justify-end gap-2">
               <button

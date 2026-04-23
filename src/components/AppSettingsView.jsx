@@ -22,7 +22,9 @@ export default function AppSettingsView({ canManage = false, onNotify }) {
     const load = async () => {
       setLoading(true);
       try {
-        const settings = await apiRequest("/task-management/app-settings/github");
+        const settings = await apiRequest(
+          "/task-management/app-settings/github",
+        );
         if (cancelled) return;
         setFieldErrors({});
         setForm({
@@ -96,8 +98,7 @@ export default function AppSettingsView({ canManage = false, onNotify }) {
           </div>
           <label className="grid gap-[0.35rem] text-[0.9rem] text-[#253858]">
             <span className="inline-flex items-center">
-              GitHub owner / org{" "}
-              <span className="ml-1 text-red-600">*</span>
+              GitHub owner / org <span className="ml-1 text-red-600">*</span>
             </span>
             <input
               className={`w-full rounded-[8px] border bg-white px-[0.55rem] py-[0.45rem] text-[0.9rem] text-[#172b4d] ${fieldErrors.githubOrg ? invalidFieldClassName(true) : "border-[#c9d2e3]"}`}
@@ -146,7 +147,9 @@ export default function AppSettingsView({ canManage = false, onNotify }) {
                 type="button"
                 className="border border-[#dfe1e6] bg-transparent text-[#42526e] hover:bg-[#f4f5f7]"
                 onClick={() => setShowGithubToken((prev) => !prev)}
-                aria-label={showGithubToken ? "Hide GitHub token" : "Show GitHub token"}
+                aria-label={
+                  showGithubToken ? "Hide GitHub token" : "Show GitHub token"
+                }
                 title={showGithubToken ? "Hide token" : "Show token"}
               >
                 {showGithubToken ? "🙈" : "👁"}
@@ -160,8 +163,7 @@ export default function AppSettingsView({ canManage = false, onNotify }) {
           </label>
           <label className="grid gap-[0.35rem] text-[0.9rem] text-[#253858]">
             <span className="inline-flex items-center">
-              GitHub webhook secret{" "}
-              <span className="ml-1 text-red-600">*</span>
+              GitHub webhook secret <span className="ml-1 text-red-600">*</span>
             </span>
             <div className="grid grid-cols-[1fr_auto] gap-2">
               <input
