@@ -1,5 +1,14 @@
 import { dbQuery } from "./pool.js";
 
+/**
+ * Canonical PostgreSQL schema for this app. Keep in sync with:
+ * - server/services/taskService.js (primary CRUD)
+ * - server/services/githubIntegrationService.js, notificationService.js, appSettingsService.js
+ * - server/utils/mentionParser.js
+ *
+ * initSchema() is idempotent: safe to run on every server start and on existing databases
+ * (uses IF NOT EXISTS / additive ALTERs where needed).
+ */
 const createTablesSql = `
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
@@ -52,8 +61,21 @@ CREATE TABLE IF NOT EXISTS sprints (
 CREATE TABLE IF NOT EXISTS project_members (
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  is_project_admin BOOLEAN NOT NULL DEFAULT FALSE,
   PRIMARY KEY (project_id, user_id)
 );
+
+CREATE TABLE IF NOT EXISTS system_settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  board_card_fields JSONB NOT NULL DEFAULT '{}'::jsonb,
+  workflow_rules JSONB NOT NULL DEFAULT '{}'::jsonb,
+  general_rules JSONB NOT NULL DEFAULT '{"labels": []}'::jsonb,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO system_settings (updated_at)
+SELECT NOW()
+WHERE NOT EXISTS (SELECT 1 FROM system_settings);
 
 CREATE TABLE IF NOT EXISTS project_settings (
   project_id UUID PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
@@ -79,78 +101,6 @@ SELECT p.id
 FROM projects p
 WHERE NOT EXISTS (SELECT 1 FROM project_settings ps WHERE ps.project_id = p.id);
 
-CREATE TABLE IF NOT EXISTS project_github_repos (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  github_installation_id BIGINT,
-  owner TEXT NOT NULL,
-  repo TEXT NOT NULL,
-  default_branch TEXT NOT NULL DEFAULT 'main',
-  is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (project_id, owner, repo)
-);
-
-CREATE INDEX IF NOT EXISTS idx_project_github_repos_project_id
-  ON project_github_repos(project_id);
-CREATE INDEX IF NOT EXISTS idx_project_github_repos_owner_repo
-  ON project_github_repos(owner, repo);
-
-CREATE TABLE IF NOT EXISTS project_automation_rules (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  event_type TEXT NOT NULL,
-  is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-  priority INTEGER NOT NULL DEFAULT 100,
-  conditions_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-  actions_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_project_automation_rules_project_id
-  ON project_automation_rules(project_id);
-CREATE INDEX IF NOT EXISTS idx_project_automation_rules_event
-  ON project_automation_rules(project_id, event_type, is_enabled, priority);
-
-CREATE TABLE IF NOT EXISTS task_dev_links (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-  provider TEXT NOT NULL DEFAULT 'github',
-  artifact_type TEXT NOT NULL CHECK (artifact_type IN ('branch', 'commit', 'pull_request')),
-  external_id TEXT NOT NULL,
-  owner TEXT NOT NULL DEFAULT '',
-  repo TEXT NOT NULL DEFAULT '',
-  url TEXT NOT NULL DEFAULT '',
-  title_or_message TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL DEFAULT '',
-  payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (provider, artifact_type, external_id, task_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_task_dev_links_task_id
-  ON task_dev_links(task_id);
-CREATE INDEX IF NOT EXISTS idx_task_dev_links_repo
-  ON task_dev_links(owner, repo);
-
-CREATE TABLE IF NOT EXISTS app_integration_settings (
-  id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-  github_org TEXT NOT NULL DEFAULT '',
-  github_token TEXT NOT NULL DEFAULT '',
-  github_webhook_secret TEXT NOT NULL DEFAULT '',
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-ALTER TABLE app_integration_settings
-ADD COLUMN IF NOT EXISTS github_org TEXT NOT NULL DEFAULT '';
-
-INSERT INTO app_integration_settings (id)
-VALUES (1)
-ON CONFLICT (id) DO NOTHING;
-
 CREATE TABLE IF NOT EXISTS tasks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title TEXT NOT NULL,
@@ -167,6 +117,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   assignee_id UUID REFERENCES users(id) ON DELETE SET NULL,
   sprint_id UUID REFERENCES sprints(id) ON DELETE SET NULL,
   created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  task_number INTEGER,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -232,19 +183,76 @@ CREATE TABLE IF NOT EXISTS user_audit_log (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS system_settings (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  board_card_fields JSONB NOT NULL DEFAULT '{}'::jsonb,
-  workflow_rules JSONB NOT NULL DEFAULT '{}'::jsonb,
-  general_rules JSONB NOT NULL DEFAULT '{"labels": []}'::jsonb,
+CREATE TABLE IF NOT EXISTS app_integration_settings (
+  id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  github_org TEXT NOT NULL DEFAULT '',
+  github_token TEXT NOT NULL DEFAULT '',
+  github_webhook_secret TEXT NOT NULL DEFAULT '',
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-INSERT INTO system_settings (updated_at)
-SELECT NOW()
-WHERE NOT EXISTS (SELECT 1 FROM system_settings);
+INSERT INTO app_integration_settings (id)
+VALUES (1)
+ON CONFLICT (id) DO NOTHING;
 
--- Older DBs may have sprints without project_id (CREATE TABLE IF NOT EXISTS skipped upgrades).
+CREATE TABLE IF NOT EXISTS project_github_repos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  github_installation_id BIGINT,
+  owner TEXT NOT NULL,
+  repo TEXT NOT NULL,
+  default_branch TEXT NOT NULL DEFAULT 'main',
+  is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (project_id, owner, repo)
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_github_repos_project_id
+  ON project_github_repos(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_github_repos_owner_repo
+  ON project_github_repos(owner, repo);
+
+CREATE TABLE IF NOT EXISTS project_automation_rules (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL,
+  is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  priority INTEGER NOT NULL DEFAULT 100,
+  conditions_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  actions_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_automation_rules_project_id
+  ON project_automation_rules(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_automation_rules_event
+  ON project_automation_rules(project_id, event_type, is_enabled, priority);
+
+CREATE TABLE IF NOT EXISTS task_dev_links (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL DEFAULT 'github',
+  artifact_type TEXT NOT NULL CHECK (artifact_type IN ('branch', 'commit', 'pull_request')),
+  external_id TEXT NOT NULL,
+  owner TEXT NOT NULL DEFAULT '',
+  repo TEXT NOT NULL DEFAULT '',
+  url TEXT NOT NULL DEFAULT '',
+  title_or_message TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT '',
+  payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (provider, artifact_type, external_id, task_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_dev_links_task_id
+  ON task_dev_links(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_dev_links_repo
+  ON task_dev_links(owner, repo);
+
+-- Legacy upgrades for databases that predate per-project sprints / task shape
 ALTER TABLE sprints ADD COLUMN IF NOT EXISTS project_id UUID;
 UPDATE sprints s
 SET project_id = p.id
@@ -268,7 +276,6 @@ BEGIN
   END IF;
 END $$;
 
--- Older DBs may have tasks without project_id (CREATE TABLE IF NOT EXISTS skipped upgrades).
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS project_id UUID;
 UPDATE tasks t
 SET project_id = s.project_id
@@ -323,7 +330,6 @@ UPDATE tasks SET acceptance_criteria = '[]'::jsonb WHERE acceptance_criteria IS 
 ALTER TABLE tasks ALTER COLUMN acceptance_criteria SET NOT NULL;
 ALTER TABLE tasks ALTER COLUMN acceptance_criteria SET DEFAULT '[]'::jsonb;
 
--- Task keys: PROJECTKEY-sequential (see migrations/002_task_keys.sql).
 CREATE TABLE IF NOT EXISTS project_task_seq (
   project_id UUID PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
   last_value INTEGER NOT NULL DEFAULT 0
@@ -348,6 +354,7 @@ ON CONFLICT (project_id) DO UPDATE
 SET last_value = GREATEST(project_task_seq.last_value, EXCLUDED.last_value);
 
 CREATE UNIQUE INDEX IF NOT EXISTS tasks_project_id_task_number_key ON tasks (project_id, task_number);
+
 CREATE INDEX IF NOT EXISTS idx_notifications_user_unread_created
   ON notifications (user_id, read_at, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notifications_entity
@@ -360,6 +367,13 @@ CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id
 CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expires_at
   ON password_reset_tokens(expires_at);
 
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM tasks WHERE task_number IS NULL) THEN
+    ALTER TABLE tasks ALTER COLUMN task_number SET NOT NULL;
+  END IF;
+END $$;
+
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled_by UUID REFERENCES users(id) ON DELETE SET NULL;
@@ -368,12 +382,11 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM tasks WHERE task_number IS NULL) THEN
-    ALTER TABLE tasks ALTER COLUMN task_number SET NOT NULL;
-  END IF;
-END $$;
+ALTER TABLE project_members
+ADD COLUMN IF NOT EXISTS is_project_admin BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE app_integration_settings
+ADD COLUMN IF NOT EXISTS github_org TEXT NOT NULL DEFAULT '';
 `;
 
 export async function initSchema() {
