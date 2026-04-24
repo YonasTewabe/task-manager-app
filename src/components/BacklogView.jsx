@@ -258,9 +258,11 @@ export default function BacklogView({
             </button>
           ) : null}
 
-          <button type="button" onClick={onAddTask}>
-            Add Task
-          </button>
+          {canManage ? (
+            <button type="button" onClick={onAddTask}>
+              Add Task
+            </button>
+          ) : null}
         </div>
       </div>
       <div className="grid gap-[0.45rem]">

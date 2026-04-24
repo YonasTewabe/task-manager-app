@@ -39,12 +39,20 @@ function StatCard({ label, value, sublabel = "" }) {
       <div className="mt-[0.25rem] text-[1.2rem] font-semibold text-[#172b4d]">
         {value}
       </div>
-      {sublabel ? <div className="text-[0.78rem] text-[#6b778c]">{sublabel}</div> : null}
+      {sublabel ? (
+        <div className="text-[0.78rem] text-[#6b778c]">{sublabel}</div>
+      ) : null}
     </div>
   );
 }
 
-function BarChart({ title, items, color = "#2d64d9", valueSuffix = "", multiColor = false }) {
+function BarChart({
+  title,
+  items,
+  color = "#2d64d9",
+  valueSuffix = "",
+  multiColor = false,
+}) {
   const maxValue = Math.max(...items.map((item) => Number(item.value || 0)), 1);
   const [hovered, setHovered] = useState(null);
   const containerRef = useRef(null);
@@ -83,12 +91,18 @@ function BarChart({ title, items, color = "#2d64d9", valueSuffix = "", multiColo
           </div>
         </div>
       ) : null}
-      <div className="mt-[0.6rem] grid gap-[0.45rem]">
+      <div
+        className={`mt-[0.6rem] grid gap-[0.45rem] ${
+          items.length > 5 ? "max-h-[162px] overflow-y-auto pr-[0.25rem]" : ""
+        }`}
+      >
         {items.length ? (
           items.map((item, index) => {
             const value = Number(item.value || 0);
             const width = Math.max((value / maxValue) * 100, value > 0 ? 6 : 0);
-            const itemColor = multiColor ? palette[index % palette.length] : color;
+            const itemColor = multiColor
+              ? palette[index % palette.length]
+              : color;
             return (
               <div
                 key={item.label}
@@ -136,7 +150,9 @@ function BarChart({ title, items, color = "#2d64d9", valueSuffix = "", multiColo
             );
           })
         ) : (
-          <p className="text-[0.82rem] text-[#6b778c]">No data for this range.</p>
+          <p className="text-[0.82rem] text-[#6b778c]">
+            No data for this range.
+          </p>
         )}
       </div>
     </section>
@@ -197,7 +213,14 @@ function DonutChart({ title, items }) {
         <div className="mt-[0.6rem] grid gap-[0.7rem] min-[1100px]:grid-cols-[220px,1fr]">
           <div className="relative grid place-items-center">
             <svg viewBox="0 0 120 120" className="h-[180px] w-[180px]">
-              <circle cx="60" cy="60" r="44" fill="none" stroke="#edf1f8" strokeWidth="14" />
+              <circle
+                cx="60"
+                cy="60"
+                r="44"
+                fill="none"
+                stroke="#edf1f8"
+                strokeWidth="14"
+              />
               {slices.map((slice) => (
                 <circle
                   key={slice.label}
@@ -214,7 +237,10 @@ function DonutChart({ title, items }) {
                   transform="rotate(-90 60 60)"
                   opacity={hovered && hovered.label !== slice.label ? 0.22 : 1}
                   style={{
-                    filter: hovered && hovered.label !== slice.label ? "blur(1px)" : "none",
+                    filter:
+                      hovered && hovered.label !== slice.label
+                        ? "blur(1px)"
+                        : "none",
                     transition: "opacity 140ms ease, filter 140ms ease",
                   }}
                   onMouseEnter={() => setHovered(slice)}
@@ -222,7 +248,9 @@ function DonutChart({ title, items }) {
               ))}
             </svg>
             <div className="absolute text-center text-[0.8rem] text-[#5e6c84]">
-              <div className="text-[1.1rem] font-semibold text-[#172b4d]">{formatNumber(total)}</div>
+              <div className="text-[1.1rem] font-semibold text-[#172b4d]">
+                {formatNumber(total)}
+              </div>
               <div>Total items</div>
             </div>
           </div>
@@ -252,7 +280,9 @@ function DonutChart({ title, items }) {
           </div>
         </div>
       ) : (
-        <p className="mt-[0.5rem] text-[0.82rem] text-[#6b778c]">No data for this range.</p>
+        <p className="mt-[0.5rem] text-[0.82rem] text-[#6b778c]">
+          No data for this range.
+        </p>
       )}
     </section>
   );
@@ -268,7 +298,9 @@ function TrendLineChart({ title, points, color = "#0b6bcb" }) {
   const path = points
     .map((point, index) => {
       const x = Math.round(index * stepX);
-      const y = Math.round(height - (Number(point.value || 0) / maxY) * (height - 20));
+      const y = Math.round(
+        height - (Number(point.value || 0) / maxY) * (height - 20),
+      );
       return `${index === 0 ? "M" : "L"}${x},${y}`;
     })
     .join(" ");
@@ -348,7 +380,9 @@ function TrendLineChart({ title, points, color = "#0b6bcb" }) {
           </div>
         </>
       ) : (
-        <p className="mt-[0.5rem] text-[0.82rem] text-[#6b778c]">No data for this range.</p>
+        <p className="mt-[0.5rem] text-[0.82rem] text-[#6b778c]">
+          No data for this range.
+        </p>
       )}
     </section>
   );
@@ -363,7 +397,9 @@ export default function SummaryView({
   onFetchWorkload,
   onExportReport,
 }) {
-  const [fromDate, setFromDate] = useState(() => getDefaultDateRange(sprints).from);
+  const [fromDate, setFromDate] = useState(
+    () => getDefaultDateRange(sprints).from,
+  );
   const [toDate, setToDate] = useState(() => getDefaultDateRange(sprints).to);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -418,7 +454,9 @@ export default function SummaryView({
 
   const sprintVelocityPoints = useMemo(
     () =>
-      Array.isArray(sprintSummary?.velocityTrend) ? sprintSummary.velocityTrend : [],
+      Array.isArray(sprintSummary?.velocityTrend)
+        ? sprintSummary.velocityTrend
+        : [],
     [sprintSummary],
   );
 
@@ -431,8 +469,12 @@ export default function SummaryView({
   const typeDistribution = Array.isArray(overview?.typeDistribution)
     ? overview.typeDistribution
     : [];
-  const throughputPoints = Array.isArray(flow?.throughput) ? flow.throughput : [];
-  const assigneeLoad = Array.isArray(workload?.assigneeLoad) ? workload.assigneeLoad : [];
+  const throughputPoints = Array.isArray(flow?.throughput)
+    ? flow.throughput
+    : [];
+  const assigneeLoad = Array.isArray(workload?.assigneeLoad)
+    ? workload.assigneeLoad
+    : [];
 
   return (
     <section className="grid gap-[0.8rem]">
@@ -459,7 +501,9 @@ export default function SummaryView({
           <div className="ml-auto flex flex-wrap gap-[0.35rem]">
             <button
               type="button"
-              onClick={() => onExportReport("overview", projectId, fromDate, toDate)}
+              onClick={() =>
+                onExportReport("overview", projectId, fromDate, toDate)
+              }
             >
               Download Report
             </button>
@@ -467,8 +511,14 @@ export default function SummaryView({
         </div>
       </div>
 
-      {error ? <p className="rounded-[10px] bg-[#fdecec] p-[0.75rem] text-[#b42318]">{error}</p> : null}
-      {loading ? <p className="text-[#5e6c84]">Loading summary analytics...</p> : null}
+      {error ? (
+        <p className="rounded-[10px] bg-[#fdecec] p-[0.75rem] text-[#b42318]">
+          {error}
+        </p>
+      ) : null}
+      {loading ? (
+        <p className="text-[#5e6c84]">Loading summary analytics...</p>
+      ) : null}
 
       {!loading ? (
         <>
@@ -491,12 +541,34 @@ export default function SummaryView({
           </div>
 
           <div className="grid gap-[0.7rem] min-[1100px]:grid-cols-2">
-            <DonutChart title="Status Distribution" items={statusDistribution} />
-            <TrendLineChart title="Sprint Velocity" points={sprintVelocityPoints} />
-            <BarChart title="Types of Work" items={typeDistribution} multiColor />
-            <BarChart title="Priority Breakdown" items={priorityDistribution} multiColor />
-            <BarChart title="Throughput Trend" items={throughputPoints} multiColor />
-            <BarChart title="Workload by Assignee" items={assigneeLoad} multiColor />
+            <DonutChart
+              title="Status Distribution"
+              items={statusDistribution}
+            />
+            <TrendLineChart
+              title="Sprint Velocity"
+              points={sprintVelocityPoints}
+            />
+            <BarChart
+              title="Types of Work"
+              items={typeDistribution}
+              multiColor
+            />
+            <BarChart
+              title="Priority Breakdown"
+              items={priorityDistribution}
+              multiColor
+            />
+            <BarChart
+              title="Throughput Trend"
+              items={throughputPoints}
+              multiColor
+            />
+            <BarChart
+              title="Workload by Assignee"
+              items={assigneeLoad}
+              multiColor
+            />
           </div>
         </>
       ) : null}

@@ -255,6 +255,21 @@ async function upsertDevLink({
   );
 }
 
+async function deleteDevLink({
+  taskId,
+  artifactType,
+  externalId,
+}) {
+  await dbQuery(
+    `DELETE FROM task_dev_links
+     WHERE task_id = $1
+       AND provider = 'github'
+       AND artifact_type = $2
+       AND external_id = $3`,
+    [taskId, artifactType, externalId],
+  );
+}
+
 function eventTypeFromWebhook(eventName, payload) {
   if (eventName === "push") {
     if (payload?.created) return "branch_created";
@@ -366,6 +381,14 @@ export async function ingestGithubWebhook(eventName, payload) {
     if (eventName === "push") {
       if (branch) {
         for (const taskId of taskIds) {
+          if (payload?.deleted) {
+            await deleteDevLink({
+              taskId,
+              artifactType: "branch",
+              externalId: `${owner}/${repo}:${branch}`,
+            });
+            continue;
+          }
           await upsertDevLink({
             taskId,
             artifactType: "branch",
@@ -374,8 +397,14 @@ export async function ingestGithubWebhook(eventName, payload) {
             repo,
             url: `https://github.com/${owner}/${repo}/tree/${encodeURIComponent(branch)}`,
             titleOrMessage: branch,
-            status: payload?.deleted ? "deleted" : payload?.created ? "created" : "active",
-            payload: { ref: payload?.ref },
+            status: payload?.created ? "created" : "active",
+            payload: {
+              ref: payload?.ref,
+              created_at: payload?.head_commit?.timestamp || null,
+              sender: payload?.sender || null,
+              pusher: payload?.pusher || null,
+              head_commit: payload?.head_commit || null,
+            },
           });
           stats.linksUpserted += 1;
         }
@@ -453,6 +482,11 @@ export async function resyncProjectLinks(projectId, accessToken) {
       client.get(`/repos/${owner}/${repo}/branches`, { params: { per_page: 20 } }),
       client.get(`/repos/${owner}/${repo}/commits`, { params: { per_page: 20 } }),
     ]);
+    const commitBySha = new Map(
+      (commitResp.data || [])
+        .filter((item) => String(item?.sha || "").trim())
+        .map((item) => [String(item.sha).trim(), item]),
+    );
     for (const pr of prResp.data || []) {
       const keys = parseTaskKeysFromPayload({
         title: pr.title,
@@ -478,6 +512,8 @@ export async function resyncProjectLinks(projectId, accessToken) {
     for (const branch of branchResp.data || []) {
       const keys = parseTaskKeysFromText(branch.name);
       const tasks = await resolveTaskIdsForKeys(projectId, keys);
+      const headSha = String(branch?.commit?.sha || "").trim();
+      const headCommit = headSha ? commitBySha.get(headSha) : null;
       for (const task of tasks) {
         await upsertDevLink({
           taskId: task.id,
@@ -488,7 +524,16 @@ export async function resyncProjectLinks(projectId, accessToken) {
           url: `https://github.com/${owner}/${repo}/tree/${encodeURIComponent(branch.name)}`,
           titleOrMessage: branch.name,
           status: "active",
-          payload: branch,
+          payload: {
+            ...branch,
+            created_at:
+              headCommit?.commit?.author?.date ||
+              headCommit?.commit?.committer?.date ||
+              null,
+            author: headCommit?.author || null,
+            commit: headCommit?.commit || null,
+            head_commit: headCommit || null,
+          },
         });
         linksUpserted += 1;
       }

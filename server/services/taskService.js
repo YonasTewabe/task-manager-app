@@ -1672,7 +1672,48 @@ export async function getTaskLinkedDev(taskId) {
     commits: [],
     pullRequests: [],
   };
+  const pickFirstText = (...values) => {
+    for (const value of values) {
+      const text = String(value || "").trim();
+      if (text) return text;
+    }
+    return "";
+  };
+  const pickFirstDate = (...values) => {
+    for (const value of values) {
+      const text = String(value || "").trim();
+      if (!text) continue;
+      const timestamp = Date.parse(text);
+      if (Number.isFinite(timestamp)) return new Date(timestamp).toISOString();
+    }
+    return "";
+  };
   for (const row of result.rows) {
+    const payload =
+      row.payload && typeof row.payload === "object" ? row.payload : {};
+    const authorName = pickFirstText(
+      payload?.author?.login,
+      payload?.author?.name,
+      payload?.user?.login,
+      payload?.user?.name,
+      payload?.sender?.login,
+      payload?.sender?.name,
+      payload?.pusher?.name,
+      payload?.commit?.author?.name,
+      payload?.commit?.author?.email,
+      payload?.head_commit?.author?.name,
+      payload?.head_commit?.author?.email,
+    );
+    const createdAt = pickFirstDate(
+      payload?.created_at,
+      payload?.updated_at,
+      payload?.committed_at,
+      payload?.authored_date,
+      payload?.author?.date,
+      payload?.commit?.author?.date,
+      payload?.head_commit?.timestamp,
+      row.updatedAt,
+    );
     const base = {
       id: row.externalId,
       owner: row.owner || "",
@@ -1682,6 +1723,8 @@ export async function getTaskLinkedDev(taskId) {
       status: row.status || "",
       defaultBranch: row.defaultBranch || "develop",
       updatedAt: row.updatedAt,
+      authorName,
+      createdAt,
     };
     if (row.artifactType === "branch") {
       grouped.branches.push(base);

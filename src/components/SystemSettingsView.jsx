@@ -1062,7 +1062,7 @@ export default function SystemSettingsView({
 
       <div className="flex flex-col gap-3">
         <div
-          className="flex flex-wrap gap-1 rounded-lg border border-[#dfe3ea] bg-[#f4f5f7] p-[0.15rem]"
+          className="flex flex-wrap items-center gap-[0.4rem] border-b border-[#dfe1e6]"
           role="tablist"
           aria-label="Settings categories"
         >
@@ -1074,7 +1074,11 @@ export default function SystemSettingsView({
               id={`settings-tab-${tab.id}`}
               aria-selected={activeTab === tab.id}
               aria-controls={`settings-panel-${tab.id}`}
-              className={`m-0 rounded-md border-none bg-transparent px-[0.85rem] py-[0.45rem] text-[0.88rem] font-medium text-[#42526e] transition-colors hover:bg-white/65 hover:text-[#172b4d] ${activeTab === tab.id ? "bg-white text-[#172b4d] shadow-[0_1px_2px_rgba(9,30,66,0.12)]" : ""}`}
+              className={`relative rounded-t-[8px] border-b-2 px-[0.75rem] py-[0.45rem] text-[0.9rem] font-semibold transition-colors ${
+                activeTab === tab.id
+                  ? "border-[#0b6bcb] text-[#0b6bcb]"
+                  : "border-transparent text-[#52627b] hover:text-[#1d4ed8]"
+              }`}
               onClick={() => setActiveTab(tab.id)}
             >
               {tab.label}

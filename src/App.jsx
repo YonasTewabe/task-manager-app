@@ -75,7 +75,7 @@ function parseRoute(pathname) {
     return { view: "dashboard", projectId: null };
   }
   if (path === "/users") return { view: "users", projectId: null };
-  if (path === "/profile" || path === "/account-security") {
+  if (path === "/profile") {
     return { view: "profile", projectId: null };
   }
   if (path === "/reset-password") {
@@ -1641,6 +1641,7 @@ function App() {
 
   const createTask = async (event) => {
     event.preventDefault();
+    if (!canManageProject) return;
     const nextErrors = {};
     if (!taskTitle.trim()) nextErrors.title = REQUIRED_FIELD_MESSAGE;
     if (!String(taskType || "").trim())
@@ -1769,9 +1770,10 @@ function App() {
     [handleNavigateProject],
   );
   const openCreateTaskModal = useCallback(() => {
+    if (!canManageProject) return;
     setCreateTaskFieldErrors({});
     setShowCreateTaskModal(true);
-  }, [setShowCreateTaskModal]);
+  }, [canManageProject, setShowCreateTaskModal]);
   const closeTaskDrawer = useCallback(
     () => setTaskBundle(null),
     [setTaskBundle],
@@ -2338,7 +2340,7 @@ function App() {
                       <button
                         key={item.id}
                         type="button"
-                        className={`h-7 w-7 rounded-full border border-[#d6dce8] bg-[#0b6bcb] p-0 text-[0.72rem] font-bold text-white focus:outline-none focus-visible:outline-none ${item.isUnassigned ? "border-[#c7cfde] bg-[#f4f5f7] text-[#5e6c84]" : ""} ${filters.assigneeId === item.id ? "shadow-[0_0_0_2px_#b9d8ff]" : ""}`}
+                        className={`h-7 w-7 rounded-full border border-[#d6dce8] bg-[#0b6bcb] p-0 text-[0.72rem] font-bold text-white focus:outline-none focus-visible:outline-none ${item.isUnassigned ? "border-[#c7cfde] bg-[#f4f5f7] text-[#5e6c84]" : ""} ${filters.assigneeId === item.id ? "ring-2 ring-[#0b6bcb] ring-offset-2 ring-offset-white" : ""}`}
                         style={
                           item.isUnassigned
                             ? undefined
@@ -2383,7 +2385,7 @@ function App() {
                           <button
                             key={`overflow-${item.id}`}
                             type="button"
-                            className={`flex items-center gap-[0.45rem] rounded-[8px] border border-transparent px-[0.4rem] py-[0.35rem] text-left text-[0.82rem] text-[#253858] hover:bg-[#f4f6fa] ${filters.assigneeId === item.id ? "bg-[#ecf3ff] text-[#1d4ed8]" : ""}`}
+                            className={`flex items-center gap-[0.45rem] rounded-[8px] border px-[0.4rem] py-[0.35rem] text-left text-[0.82rem] text-[#253858] hover:bg-[#f4f6fa] ${filters.assigneeId === item.id ? "border-[#0b6bcb] bg-[#d8e8fc] font-semibold text-[#0847a6]" : "border-transparent"}`}
                             onClick={() => {
                               setFilters((prev) => ({
                                 ...prev,
@@ -2395,7 +2397,7 @@ function App() {
                             title={item.label}
                           >
                             <span
-                              className={`grid h-6 w-6 place-items-center rounded-full border border-[#d6dce8] text-[0.66rem] font-bold ${item.isUnassigned ? "bg-[#f4f5f7] text-[#5e6c84]" : "text-white"}`}
+                              className={`grid h-6 w-6 place-items-center rounded-full border border-[#d6dce8] text-[0.66rem] font-bold ${item.isUnassigned ? "bg-[#f4f5f7] text-[#5e6c84]" : "text-white"} ${filters.assigneeId === item.id ? "ring-2 ring-[#0b6bcb] ring-offset-1 ring-offset-[#d8e8fc]" : ""}`}
                               style={
                                 item.isUnassigned
                                   ? undefined
@@ -2637,7 +2639,7 @@ function App() {
                         </div>
                       ) : null}
                     </div>
-                    {activeView === "board" ? (
+                    {activeView === "board" && canManageProject ? (
                       <button
                         type="button"
                         onClick={() => {

@@ -559,7 +559,7 @@ export default function TaskDrawer({
         source.storyPoints === "" || source.storyPoints == null
           ? null
           : Number(source.storyPoints),
-      dueDate: source.dueDate || null,
+      dueDate: normalizeDateForInput(source.dueDate) || null,
       assigneeId: source.assigneeId ? String(source.assigneeId) : null,
       priority: source.priority,
       type: source.type,
@@ -788,6 +788,34 @@ export default function TaskDrawer({
     }
     return "border-[#0c66e4] bg-[#e9f2ff] text-[#0c66e4]";
   };
+  const getDevItemAuthor = (item) =>
+    String(
+      item?.authorName ||
+        item?.author ||
+        item?.userName ||
+        item?.creator ||
+        item?.createdBy ||
+        item?.committerName ||
+        item?.committer ||
+        "",
+    ).trim();
+  const getDevItemDate = (item) => {
+    const raw =
+      item?.createdAt ||
+      item?.updatedAt ||
+      item?.committedAt ||
+      item?.authoredAt ||
+      item?.mergedAt ||
+      item?.date ||
+      "";
+    const parsed = Date.parse(String(raw));
+    if (!Number.isFinite(parsed)) return "";
+    return new Date(parsed).toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  };
 
   return (
     <div
@@ -871,7 +899,7 @@ export default function TaskDrawer({
             <section className="grid max-h-full min-h-0 content-start gap-[0.7rem] overflow-auto pr-1">
               <div className="grid gap-[0.55rem] rounded-lg border border-[#dfe1e6] bg-white p-[0.75rem]">
                 <div className="flex items-center justify-between">
-                  <h4>Description</h4>
+                  <h4 className="font-bold">Description</h4>
                 </div>
                 <MemoRichTextEditor
                   value={draft.description || ""}
@@ -906,7 +934,7 @@ export default function TaskDrawer({
               </div>
 
               <div className="grid gap-[0.55rem] rounded-lg border border-[#dfe1e6] bg-white p-[0.75rem]">
-                <h4>Acceptance criteria</h4>
+                <h4 className="font-bold">Acceptance criteria</h4>
                 <div className="grid gap-[0.4rem]">
                   {(draft.acceptanceCriteria || []).length ? (
                     (draft.acceptanceCriteria || []).map((criterion) => (
@@ -990,24 +1018,33 @@ export default function TaskDrawer({
               </div>
 
               <div className="grid gap-[0.55rem] rounded-lg border border-[#dfe1e6] bg-white p-[0.75rem]">
-                <h4>Activity</h4>
-                <div className="flex gap-2 border-b border-[#dfe1e6] pb-2">
-                  <button
-                    type="button"
-                    className={`border border-[#d0d7e2] bg-[#f7f8fa] text-[#42526e] hover:border-[#a8b3c5] hover:bg-white/65 hover:text-[#2f3d55] ${activityTab === "comments" ? "border-[#8bb1ff] bg-[#edf3ff] font-semibold text-[#0c66e4] shadow-[inset_0_0_0_1px_rgba(12,102,228,0.18)]" : ""}`}
-                    onClick={() => setActivityTab("comments")}
-                    aria-pressed={activityTab === "comments"}
-                  >
-                    Comments
-                  </button>
-                  <button
-                    type="button"
-                    className={`border border-[#d0d7e2] bg-[#f7f8fa] text-[#42526e] hover:border-[#a8b3c5] hover:bg-white/65 hover:text-[#2f3d55] ${activityTab === "history" ? "border-[#8bb1ff] bg-[#edf3ff] font-semibold text-[#0c66e4] shadow-[inset_0_0_0_1px_rgba(12,102,228,0.18)]" : ""}`}
-                    onClick={() => setActivityTab("history")}
-                    aria-pressed={activityTab === "history"}
-                  >
-                    History
-                  </button>
+                <div className="-mx-[0.75rem] -mt-[0.75rem] overflow-hidden rounded-t-lg border-b border-[#dfe1e6] bg-white px-[0.75rem] pt-[0.6rem]">
+                  <div className="pb-[0.35rem] text-[1.05rem] font-bold text-[#172b4d]">
+                    Activity
+                  </div>
+                  <div className="flex flex-wrap items-center gap-[0.4rem]">
+                    {[
+                      { key: "comments", label: "Comments" },
+                      { key: "history", label: "History" },
+                    ].map((item) => {
+                      const isActive = activityTab === item.key;
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          className={`relative rounded-t-[8px] border-b-2 px-[0.75rem] py-[0.45rem] text-[0.9rem] font-semibold transition-colors ${
+                            isActive
+                              ? "border-[#0b6bcb] text-[#0b6bcb]"
+                              : "border-transparent text-[#52627b] hover:text-[#1d4ed8]"
+                          }`}
+                          onClick={() => setActivityTab(item.key)}
+                          aria-pressed={isActive}
+                        >
+                          {item.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
                 <div className="grid gap-[0.45rem] pr-1">
                   {activityTab === "comments" ? (
@@ -1244,7 +1281,7 @@ export default function TaskDrawer({
 
             <aside className="grid max-h-full min-h-0 content-start gap-[0.7rem] overflow-auto pr-1">
               <div className="grid gap-[0.55rem] rounded-lg border border-[#dfe1e6] bg-white p-[0.75rem]">
-                <h4>Details</h4>
+                <h4 className="font-bold">Details</h4>
                 <div className="grid gap-[0.3rem] rounded-md border border-[#e5e9f0] bg-[#fbfcfe] p-[0.55rem]">
                   <div className="flex items-baseline justify-between gap-3 text-[0.85rem]">
                     <span className="text-[#5e6c84]">Reporter</span>
@@ -1386,7 +1423,7 @@ export default function TaskDrawer({
               </div>
 
               <div className="grid gap-[0.6rem] rounded-lg border border-[#dfe1e6] bg-white p-[0.75rem]">
-                <h4>Development</h4>
+                <h4 className="font-bold">Development</h4>
                 <div ref={devPanelContainerRef} className="relative grid gap-1">
                   {devPanel === "branch" ? (
                     <div className="absolute bottom-[calc(100%+0.45rem)] left-0 right-0 z-[5]">
@@ -1568,7 +1605,7 @@ export default function TaskDrawer({
           }}
         >
           <div
-            className="grid max-h-[84vh] w-[min(940px,100%)] gap-[0.7rem] overflow-hidden rounded-xl border border-[#dfe1e6] bg-white p-[0.9rem]"
+            className="flex h-[min(84vh,640px)] w-[min(940px,100%)] flex-col gap-[0.7rem] overflow-hidden rounded-xl border border-[#dfe1e6] bg-white p-[0.9rem]"
             role="dialog"
             aria-modal="true"
             aria-label={`Development ${taskRef}`}
@@ -1585,7 +1622,7 @@ export default function TaskDrawer({
                 Close
               </button>
             </div>
-            <div className="flex flex-wrap items-center gap-2 border-b border-[#dfe1e6] pb-[0.45rem] text-[0.85rem]">
+            <div className="flex flex-wrap items-center gap-[0.4rem] border-b border-[#dfe1e6] text-[0.85rem]">
               {[
                 { key: "branches", label: "Branches", count: branchLinks.length },
                 { key: "commits", label: "Commits", count: commitLinks.length },
@@ -1594,10 +1631,10 @@ export default function TaskDrawer({
                 <button
                   key={tab.key}
                   type="button"
-                  className={`rounded-[6px] px-[0.55rem] py-[0.35rem] ${
+                  className={`relative rounded-t-[8px] border-b-2 px-[0.75rem] py-[0.45rem] text-[0.9rem] font-semibold transition-colors ${
                     devLinksActiveTab === tab.key
-                      ? "bg-[#e9f2ff] text-[#0c66e4]"
-                      : "text-[#42526e] hover:bg-[#f4f5f7]"
+                      ? "border-[#0b6bcb] text-[#0b6bcb]"
+                      : "border-transparent text-[#52627b] hover:text-[#1d4ed8]"
                   }`}
                   onClick={() => setDevLinksActiveTab(tab.key)}
                 >
@@ -1605,7 +1642,7 @@ export default function TaskDrawer({
                 </button>
               ))}
             </div>
-            <div className="grid max-h-[58vh] gap-[0.6rem] overflow-auto pr-1">
+            <div className="grid min-h-0 flex-1 content-start gap-[0.6rem] overflow-auto pr-1">
               {selectedRepoBuckets.length ? (
                 selectedRepoBuckets.map((repoBucket) => (
                   <div
@@ -1616,67 +1653,131 @@ export default function TaskDrawer({
                       {repoBucket.owner}/{repoBucket.repo}
                     </div>
                     {devLinksActiveTab === "branches" ? (
-                      repoBucket.branches.map((item) => (
-                        <div
-                          key={`modal-branch-${item.id}`}
-                          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border border-[#e5e9f0] bg-[#fbfcff] px-[0.55rem] py-[0.4rem]"
-                        >
-                          <a
-                            href={item.url || "#"}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="truncate text-[0.84rem] text-[#0c66e4] underline"
-                            title={item.title || item.id}
-                          >
-                            {item.title || item.id}
-                          </a>
-                          <button
-                            type="button"
-                            className="rounded border border-[#d0d7e2] bg-white px-[0.45rem] py-[0.2rem] text-[0.75rem] font-semibold text-[#0c66e4] hover:border-[#b3bfd3] hover:bg-[#f7f8fa]"
-                            onClick={() => openCreatePullRequest(item)}
-                          >
-                            Create pull request
-                          </button>
+                      <div className="grid gap-[0.35rem]">
+                        <div className="grid grid-cols-[minmax(0,1fr)_130px_160px] gap-2 px-[0.5rem] text-[0.74rem] font-semibold uppercase tracking-[0.02em] text-[#5e6c84]">
+                          <span>Branch</span>
+                          <span>Date</span>
+                          <span className="text-right">Action</span>
                         </div>
-                      ))
+                        {repoBucket.branches.map((item) => (
+                          <div
+                            key={`modal-branch-${item.id}`}
+                            className="grid grid-cols-[minmax(0,1fr)_130px_160px] items-center gap-2 rounded-md border border-[#e5e9f0] bg-[#fbfcff] px-[0.55rem] py-[0.45rem]"
+                          >
+                            <a
+                              href={item.url || "#"}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="truncate text-[0.84rem] text-[#0c66e4] underline"
+                              title={item.title || item.id}
+                            >
+                              {item.title || item.id}
+                            </a>
+                            <span className="text-[0.8rem] text-[#5e6c84]">
+                              {getDevItemDate(item) || "Unknown date"}
+                            </span>
+                            <div className="flex justify-end">
+                              <button
+                                type="button"
+                                className="rounded border border-[#d0d7e2] bg-white px-[0.45rem] py-[0.2rem] text-[0.75rem] font-semibold text-[#0c66e4] hover:border-[#b3bfd3] hover:bg-[#f7f8fa]"
+                                onClick={() => openCreatePullRequest(item)}
+                              >
+                                Create pull request
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     ) : null}
                     {devLinksActiveTab === "commits" ? (
-                      repoBucket.commits.map((item) => (
-                        <a
-                          key={`modal-commit-${item.id}`}
-                          href={item.url || "#"}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="truncate rounded-md border border-[#e5e9f0] bg-[#fbfcff] px-[0.55rem] py-[0.4rem] text-[0.84rem] text-[#0c66e4] underline"
-                        >
-                          {(item.title || item.id || "").slice(0, 110)}
-                        </a>
-                      ))
+                      <div className="grid gap-[0.35rem]">
+                        <div className="grid grid-cols-[160px_120px_minmax(0,1fr)_130px] gap-2 px-[0.5rem] text-[0.74rem] font-semibold uppercase tracking-[0.02em] text-[#5e6c84]">
+                          <span>Author</span>
+                          <span>Commit</span>
+                          <span>Message</span>
+                          <span>Date</span>
+                        </div>
+                        {repoBucket.commits.map((item) => (
+                          <div
+                            key={`modal-commit-${item.id}`}
+                            className="grid grid-cols-[160px_120px_minmax(0,1fr)_130px] items-center gap-2 rounded-md border border-[#e5e9f0] bg-[#fbfcff] px-[0.55rem] py-[0.45rem]"
+                          >
+                            <span className="truncate text-[0.82rem] text-[#253858]">
+                              {getDevItemAuthor(item) || "Unknown author"}
+                            </span>
+                            <a
+                              href={item.url || "#"}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="truncate text-[0.84rem] text-[#0c66e4] underline"
+                              title={item.id}
+                            >
+                              {String(item.id || "").slice(0, 8)}
+                            </a>
+                            <a
+                              href={item.url || "#"}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="truncate text-[0.84rem] text-[#0c66e4] underline"
+                              title={item.title || item.id}
+                            >
+                              {(item.title || item.id || "").slice(0, 140)}
+                            </a>
+                            <span className="text-[0.8rem] text-[#5e6c84]">
+                              {getDevItemDate(item) || "Unknown date"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
                     ) : null}
                     {devLinksActiveTab === "pullRequests" ? (
-                      repoBucket.pullRequests.map((item) => (
-                        <div
-                          key={`modal-pr-${item.id}`}
-                          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border border-[#e5e9f0] bg-[#fbfcff] px-[0.55rem] py-[0.4rem]"
-                        >
-                          <a
-                            href={item.url || "#"}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="truncate text-[0.84rem] text-[#0c66e4] underline"
-                            title={item.title || item.id}
-                          >
-                            {item.title || item.id}
-                          </a>
-                          <span
-                            className={`rounded border px-[0.35rem] py-[0.08rem] text-[0.68rem] font-semibold uppercase tracking-[0.02em] ${prStatusBadgeClass(
-                              item.status,
-                            )}`}
-                          >
-                            {normalizePrStatus(item.status)}
-                          </span>
+                      <div className="grid gap-[0.35rem]">
+                        <div className="grid grid-cols-[160px_90px_minmax(0,1fr)_100px_130px] gap-2 px-[0.5rem] text-[0.74rem] font-semibold uppercase tracking-[0.02em] text-[#5e6c84]">
+                          <span>Author</span>
+                          <span>ID</span>
+                          <span>Summary</span>
+                          <span>Status</span>
+                          <span>Date</span>
                         </div>
-                      ))
+                        {repoBucket.pullRequests.map((item) => (
+                          <div
+                            key={`modal-pr-${item.id}`}
+                            className="grid grid-cols-[160px_90px_minmax(0,1fr)_100px_130px] items-center gap-2 rounded-md border border-[#e5e9f0] bg-[#fbfcff] px-[0.55rem] py-[0.45rem]"
+                          >
+                            <span className="truncate text-[0.82rem] text-[#253858]">
+                              {getDevItemAuthor(item) || "Unknown author"}
+                            </span>
+                            <a
+                              href={item.url || "#"}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="truncate text-[0.84rem] text-[#0c66e4] underline"
+                              title={item.id}
+                            >
+                              #{item.id}
+                            </a>
+                            <a
+                              href={item.url || "#"}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="truncate text-[0.84rem] text-[#0c66e4] underline"
+                              title={item.title || item.id}
+                            >
+                              {item.title || item.id}
+                            </a>
+                            <span
+                              className={`w-fit rounded border px-[0.35rem] py-[0.08rem] text-[0.68rem] font-semibold uppercase tracking-[0.02em] ${prStatusBadgeClass(
+                                item.status,
+                              )}`}
+                            >
+                              {normalizePrStatus(item.status)}
+                            </span>
+                            <span className="text-[0.8rem] text-[#5e6c84]">
+                              {getDevItemDate(item) || "Unknown date"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
                     ) : null}
                   </div>
                 ))

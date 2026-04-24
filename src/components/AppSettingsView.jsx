@@ -77,7 +77,7 @@ export default function AppSettingsView({ canManage = false, onNotify }) {
   return (
     <section className="grid gap-[0.9rem] rounded-lg border border-[#dfe1e6] bg-white p-[0.8rem]">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="font-bold">Application settings</h2>
+        <h2 className="font-bold">Application Settings</h2>
       </div>
       {!canManage ? (
         <p className="text-[#5e6c84]">

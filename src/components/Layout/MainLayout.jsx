@@ -275,10 +275,11 @@ function MainLayout({
         </header>
         {showProjectSubNav ? (
           <div className="border-b border-[#dfe1e6] bg-white px-4 pt-[0.6rem]">
-            <div className="pb-[0.35rem] text-[1.15rem] font-bold text-[#172b4d]">
+            <div className="pb-[0.35rem] text-[1.35rem] font-bold text-[#172b4d]">
               {currentProject?.name || "Project"}
             </div>
-            <div className="flex flex-wrap items-center gap-[0.4rem]">
+            <div className="mb-[0.35rem] h-px bg-[#e6ebf2]" />
+            <div className="flex flex-wrap items-center gap-[0.4rem] pt-[0.1rem]">
               {projectSubOptions.map((item) => {
                 const isActive = activeView === item.key;
                 return (
@@ -302,7 +303,7 @@ function MainLayout({
           </div>
         ) : null}
 
-        <main className={activeView === "dashboard" ? undefined : "p-4"}>
+        <main>
           {children}
         </main>
       </div>

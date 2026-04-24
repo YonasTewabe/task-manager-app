@@ -4,7 +4,7 @@ const mainNavItems = [
   { key: "dashboard", label: "Overview", icon: "◫" },
   { key: "projects", label: "Projects", icon: "☰" },
   { key: "users", label: "User management", icon: "◌" },
-  { key: "app-settings", label: "Settings", icon: "⚙" },
+  { key: "app-settings", label: "System Settings", icon: "⚙" },
 ];
 
 function Sidebar({
