@@ -337,6 +337,8 @@ export default function SummaryView({
     () => getDefaultDateRange(sprints).from,
   );
   const [toDate, setToDate] = useState(() => getDefaultDateRange(sprints).to);
+  const [debouncedFromDate, setDebouncedFromDate] = useState(fromDate);
+  const [debouncedToDate, setDebouncedToDate] = useState(toDate);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [overview, setOverview] = useState(null);
@@ -351,15 +353,44 @@ export default function SummaryView({
   }, [projectId, sprints]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedFromDate(fromDate);
+      setDebouncedToDate(toDate);
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [fromDate, toDate]);
+
+  useEffect(() => {
     if (!projectId) return;
+    const controller = new AbortController();
     let cancelled = false;
     setLoading(true);
     setError("");
     Promise.all([
-      onFetchOverview(projectId, fromDate, toDate),
-      onFetchSprint(projectId, fromDate, toDate),
-      onFetchFlow(projectId, fromDate, toDate),
-      onFetchWorkload(projectId, fromDate, toDate),
+      onFetchOverview(
+        projectId,
+        debouncedFromDate,
+        debouncedToDate,
+        controller.signal,
+      ),
+      onFetchSprint(
+        projectId,
+        debouncedFromDate,
+        debouncedToDate,
+        controller.signal,
+      ),
+      onFetchFlow(
+        projectId,
+        debouncedFromDate,
+        debouncedToDate,
+        controller.signal,
+      ),
+      onFetchWorkload(
+        projectId,
+        debouncedFromDate,
+        debouncedToDate,
+        controller.signal,
+      ),
     ])
       .then(([overviewData, sprintData, flowData, workloadData]) => {
         if (cancelled) return;
@@ -370,18 +401,20 @@ export default function SummaryView({
       })
       .catch((err) => {
         if (cancelled) return;
+        if (err?.name === "AbortError") return;
         setError(err?.message || "Failed to load summary analytics.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
     return () => {
+      controller.abort();
       cancelled = true;
     };
   }, [
     projectId,
-    fromDate,
-    toDate,
+    debouncedFromDate,
+    debouncedToDate,
     onFetchOverview,
     onFetchSprint,
     onFetchFlow,

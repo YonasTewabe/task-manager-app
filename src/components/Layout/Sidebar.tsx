@@ -22,7 +22,7 @@ function Sidebar({
     "border-[#bfd1ee] bg-[#e9f1ff] font-semibold text-[#0c66e4] shadow-[inset_0_0_0_1px_rgba(47,111,235,0.08)] hover:bg-[#e9f1ff]";
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-20 hidden w-[260px] flex-col overflow-hidden border-r border-[#d5dfec] bg-[#fbfcff] shadow-[1px_0_0_rgba(9,30,66,0.04)] md:flex max-[1100px]:w-[88px]">
+    <aside className="fixed inset-y-0 left-0 z-20 hidden w-[260px] flex-col overflow-hidden border-r border-[#d5dfec] bg-[#fbfcff] shadow-[1px_0_0_rgba(9,30,66,0.04)] md:flex max-[1280px]:w-[88px]">
       <div className="flex h-[86px] items-center gap-[0.7rem] border-b border-[#e3e9f3] px-4">
         <div className="grid h-11 w-11 place-items-center rounded-[12px] border border-[#cdd9ee] bg-[#ecf2ff] p-[0.35rem] shadow-[0_1px_2px_rgba(9,30,66,0.08)]">
           <img
@@ -31,7 +31,7 @@ function Sidebar({
             className="h-full w-full rounded-[8px]"
           />
         </div>
-        <div className="max-[1100px]:hidden">
+        <div className="max-[1280px]:hidden">
           <div className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#6f7f98]">
             Task Manager
           </div>
@@ -39,7 +39,7 @@ function Sidebar({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <div className="px-[0.95rem] py-[0.55rem] text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b889f] max-[1100px]:hidden">
+        <div className="px-[0.95rem] py-[0.55rem] text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b889f] max-[1280px]:hidden">
           Navigate
         </div>
         <nav className="grid flex-shrink-0 gap-[0.3rem] px-[0.6rem] py-[0.45rem]">
@@ -61,7 +61,7 @@ function Sidebar({
                   <span className="inline-flex min-w-6 justify-center text-[#52627b]">
                     <Icon name={item.icon} size={16} />
                   </span>
-                  <span className="max-[1100px]:hidden">{item.label}</span>
+                  <span className="max-[1280px]:hidden">{item.label}</span>
                 </span>
               </button>
             ))}
@@ -73,7 +73,7 @@ function Sidebar({
         />
 
         <div className="flex-shrink-0">
-          <div className="px-[0.95rem] py-[0.5rem] text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b889f] max-[1100px]:hidden">
+          <div className="px-[0.95rem] py-[0.5rem] text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b889f] max-[1280px]:hidden">
             Your Projects
           </div>
           <div className="flex flex-col gap-[0.2rem] px-[0.6rem] pb-[0.9rem]">
@@ -92,10 +92,10 @@ function Sidebar({
                   onClick={() => onNavigateProject(project.id, "board")}
                   title={project.name}
                 >
-                  <span className="min-w-0 flex-1 truncate max-[1100px]:hidden">
+                  <span className="min-w-0 flex-1 truncate max-[1280px]:hidden">
                     {project.name}
                   </span>
-                  <span className="min-[1101px]:hidden text-[#7b889f]">
+                  <span className="min-[1281px]:hidden text-[#7b889f]">
                     <Icon name="workspace" size={12} />
                   </span>
                 </button>

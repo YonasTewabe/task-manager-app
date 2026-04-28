@@ -124,6 +124,7 @@ export default function BacklogView({
   const blockedDropTimeoutRef = useRef(null);
   const [createSprintErrors, setCreateSprintErrors] = useState<any>({});
   const [sprintDeleteDestError, setSprintDeleteDestError] = useState("");
+  const [rowRenderLimits, setRowRenderLimits] = useState<Record<string, number>>({});
   const stageList = workflowStages?.length
     ? workflowStages
     : DEFAULT_WORKFLOW_STAGES;
@@ -272,6 +273,18 @@ export default function BacklogView({
       otherSprintRows,
     ],
   );
+
+  useEffect(() => {
+    setRowRenderLimits((prev) => {
+      const next: Record<string, number> = {};
+      (rows || []).forEach((row) => {
+        const key = String(row?.key || "");
+        if (!key) return;
+        next[key] = prev[key] || 120;
+      });
+      return next;
+    });
+  }, [rows]);
 
   const toggleExpanded = (key) => {
     setExpandedKeys((prev) => {
@@ -545,7 +558,9 @@ export default function BacklogView({
                   }}
                 >
                   {row.tasks.length ? (
-                    row.tasks.map((task) => (
+                    row.tasks
+                      .slice(0, Number(rowRenderLimits[String(row.key)] || 120))
+                      .map((task) => (
                       <div
                         key={task.id}
                         role="button"
@@ -679,6 +694,21 @@ export default function BacklogView({
                         </div>
                       ))}
                     </div>
+                  ) : null}
+                  {row.tasks.length > Number(rowRenderLimits[String(row.key)] || 120) ? (
+                    <button
+                      type="button"
+                      className="rounded-[8px] border border-[#d6dce8] bg-white px-[0.55rem] py-[0.45rem] text-left text-[0.8rem] font-semibold text-[#0c66e4] hover:bg-[#f4f6fa]"
+                      onClick={() =>
+                        setRowRenderLimits((prev) => ({
+                          ...prev,
+                          [String(row.key)]:
+                            Number(prev[String(row.key)] || 120) + 120,
+                        }))
+                      }
+                    >
+                      Show more
+                    </button>
                   ) : null}
                 </div>
               ) : null}

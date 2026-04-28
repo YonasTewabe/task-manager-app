@@ -85,15 +85,9 @@ export async function bootstrapHandler(req: Request, res: Response) {
   const scopedFilters = withUserProjectScope(req, { projectId: projectId || undefined });
   const [users, sprints, tasks, projects, userGroups] = await Promise.all([
     getUsers(),
-    getSprints(scopedFilters),
+    projectId ? getSprints(scopedFilters) : Promise.resolve([]),
     includeTasks ? getTasks(scopedFilters) : Promise.resolve([]),
-    getProjects().then((list) =>
-      req.user?.role === "admin"
-        ? list
-        : list.filter((project) =>
-            (project.members || []).some((member) => String(member.id) === String(req.user.id)),
-          ),
-    ),
+    getProjects(),
     getUserGroups(),
   ]);
   const settings = projectId ? await getProjectSettings(projectId) : getDefaultSettings();

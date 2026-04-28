@@ -144,6 +144,7 @@ export default function BoardView({
   const blockedTimeoutRef = useRef(null);
   const loadMoreSentinelRef = useRef(null);
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
+  const [columnRenderLimits, setColumnRenderLimits] = useState<Record<string, number>>({});
   const {
     boardDragState: dragState,
     setBoardDragState: setDragState,
@@ -251,6 +252,18 @@ export default function BoardView({
     mediaQuery.addListener(apply);
     return () => mediaQuery.removeListener(apply);
   }, []);
+
+  useEffect(() => {
+    setColumnRenderLimits((prev) => {
+      const next: Record<string, number> = {};
+      (columns || []).forEach((column) => {
+        const key = String(column?.status || "");
+        if (!key) return;
+        next[key] = prev[key] || 80;
+      });
+      return next;
+    });
+  }, [columns]);
 
   return (
     <section
@@ -395,7 +408,9 @@ export default function BoardView({
                     Drop allowed in this column.
                   </div>
                 ) : null}
-                {column.tasks.map((task) => (
+                {column.tasks
+                  .slice(0, Number(columnRenderLimits[String(column.status)] || 80))
+                  .map((task) => (
                   <MemoTaskCard
                     key={task.id}
                     task={task}
@@ -457,6 +472,22 @@ export default function BoardView({
                     draggableEnabled={!isCoarsePointer}
                   />
                 ))}
+                {column.tasks.length >
+                Number(columnRenderLimits[String(column.status)] || 80) ? (
+                  <button
+                    type="button"
+                    className="rounded-[8px] border border-[#d6dce8] bg-white px-[0.55rem] py-[0.45rem] text-[0.8rem] font-semibold text-[#0c66e4] hover:bg-[#f4f6fa]"
+                    onClick={() =>
+                      setColumnRenderLimits((prev) => ({
+                        ...prev,
+                        [String(column.status)]:
+                          Number(prev[String(column.status)] || 80) + 80,
+                      }))
+                    }
+                  >
+                    Show more
+                  </button>
+                ) : null}
                 {hasMore && loadingMore ? (
                   <div
                     className="grid gap-2 px-[0.2rem]"

@@ -640,6 +640,22 @@ export default function TaskDrawer({
       acceptanceCriteria: normalizedCriteria,
     });
   }, [normalizeAcceptanceCriteria]);
+  const taskPatch = useMemo(
+    () => (task ? buildPatch(task) : null),
+    [buildPatch, task],
+  );
+  const taskPatchJson = useMemo(
+    () => (taskPatch ? toComparablePatchJson(taskPatch) : ""),
+    [taskPatch, toComparablePatchJson],
+  );
+  const draftPatch = useMemo(
+    () => (draft ? buildPatch(draft) : null),
+    [buildPatch, draft],
+  );
+  const draftPatchJson = useMemo(
+    () => (draftPatch ? toComparablePatchJson(draftPatch) : ""),
+    [draftPatch, toComparablePatchJson],
+  );
 
   useEffect(() => {
     if (!task) {
@@ -652,13 +668,13 @@ export default function TaskDrawer({
     }
     const taskId = task?.id == null ? "" : String(task.id);
     if (lastSavedTaskIdRef.current !== taskId) {
-      lastSavedPatchRef.current = toComparablePatchJson(buildPatch(task));
+      lastSavedPatchRef.current = taskPatchJson;
       lastSavedTaskIdRef.current = taskId;
       lastAutoSaveAttemptRef.current = "";
       autoSaveInFlightRef.current = false;
       autoSavePromiseRef.current = null;
     }
-  }, [buildPatch, task, toComparablePatchJson]);
+  }, [task, taskPatchJson]);
 
   const waitForAutoSaveToSettle = async () => {
     const inFlight = autoSavePromiseRef.current;
@@ -695,9 +711,7 @@ export default function TaskDrawer({
   useEffect(() => {
     if (!task || !draft) return;
     if (descriptionDirty) return;
-    const draftPatch = buildPatch(draft);
-    const draftPatchJson = toComparablePatchJson(draftPatch);
-    const taskPatchJson = toComparablePatchJson(buildPatch(task));
+    if (!draftPatch) return;
     if (
       draftPatchJson === taskPatchJson ||
       draftPatchJson === lastSavedPatchRef.current ||
@@ -729,15 +743,7 @@ export default function TaskDrawer({
       }
     }, 1200);
     return () => clearTimeout(timer);
-  }, [buildPatch, descriptionDirty, draft, onNotify, onSaveTask, task, toComparablePatchJson]);
-  const taskPatchJson = useMemo(
-    () => (task ? toComparablePatchJson(buildPatch(task)) : ""),
-    [buildPatch, task, toComparablePatchJson],
-  );
-  const draftPatchJson = useMemo(
-    () => (draft ? toComparablePatchJson(buildPatch(draft)) : ""),
-    [buildPatch, draft, toComparablePatchJson],
-  );
+  }, [descriptionDirty, draft, draftPatch, draftPatchJson, onNotify, onSaveTask, task, taskPatchJson]);
   const hasUnsavedChanges = draftPatchJson !== taskPatchJson;
   const uploadImage = async (file, target) => {
     if (!file || !onUploadAsset) return;

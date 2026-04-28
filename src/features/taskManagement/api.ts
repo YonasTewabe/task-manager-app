@@ -66,37 +66,66 @@ export function fetchSprintTasksApi(sprintId, projectId) {
   );
 }
 
-export function fetchSummaryOverviewApi(projectId, fromDate, toDate) {
+export function fetchSummaryOverviewApi(
+  projectId,
+  fromDate,
+  toDate,
+  { signal }: any = {},
+) {
   const params = new URLSearchParams();
   params.set("projectId", String(projectId));
   if (fromDate) params.set("from", String(fromDate));
   if (toDate) params.set("to", String(toDate));
-  return apiRequest(`/task-management/analytics/overview?${params.toString()}`);
+  return apiRequest(`/task-management/analytics/overview?${params.toString()}`, {
+    signal,
+  });
 }
 
-export function fetchSummarySprintApi(projectId, fromDate, toDate) {
+export function fetchSummarySprintApi(
+  projectId,
+  fromDate,
+  toDate,
+  { signal }: any = {},
+) {
   const params = new URLSearchParams();
   params.set("projectId", String(projectId));
   if (fromDate) params.set("from", String(fromDate));
   if (toDate) params.set("to", String(toDate));
-  return apiRequest(`/task-management/analytics/sprint?${params.toString()}`);
+  return apiRequest(`/task-management/analytics/sprint?${params.toString()}`, {
+    signal,
+  });
 }
 
-export function fetchSummaryFlowApi(projectId, fromDate, toDate, interval = "week") {
+export function fetchSummaryFlowApi(
+  projectId,
+  fromDate,
+  toDate,
+  interval = "week",
+  { signal }: any = {},
+) {
   const params = new URLSearchParams();
   params.set("projectId", String(projectId));
   params.set("interval", String(interval));
   if (fromDate) params.set("from", String(fromDate));
   if (toDate) params.set("to", String(toDate));
-  return apiRequest(`/task-management/analytics/flow?${params.toString()}`);
+  return apiRequest(`/task-management/analytics/flow?${params.toString()}`, {
+    signal,
+  });
 }
 
-export function fetchSummaryWorkloadApi(projectId, fromDate, toDate) {
+export function fetchSummaryWorkloadApi(
+  projectId,
+  fromDate,
+  toDate,
+  { signal }: any = {},
+) {
   const params = new URLSearchParams();
   params.set("projectId", String(projectId));
   if (fromDate) params.set("from", String(fromDate));
   if (toDate) params.set("to", String(toDate));
-  return apiRequest(`/task-management/analytics/workload?${params.toString()}`);
+  return apiRequest(`/task-management/analytics/workload?${params.toString()}`, {
+    signal,
+  });
 }
 
 export function createTaskApi(payload) {
@@ -116,7 +145,8 @@ export function moveTaskApi(taskId, status) {
 export function searchTasksApi(
   query,
   {
-    limit,
+    limit = 20,
+    cursor = "",
     scope = "global",
     projectId = "",
     includeSprintId = "",
@@ -124,9 +154,8 @@ export function searchTasksApi(
 ) {
   const params = new URLSearchParams();
   params.set("search", String(query || ""));
-  if (limit !== undefined && limit !== null && String(limit).trim() !== "") {
-    params.set("limit", String(limit));
-  }
+  params.set("limit", String(limit));
+  if (cursor) params.set("cursor", String(cursor));
   params.set("scope", String(scope || "global"));
   if (projectId) params.set("projectId", String(projectId));
   if (includeSprintId) params.set("includeSprintId", String(includeSprintId));

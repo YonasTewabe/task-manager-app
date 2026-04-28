@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Modal from "./ui/Modal";
 import { useAppStore } from "../store/appStore";
 import { useShallow } from "zustand/react/shallow";
@@ -78,18 +78,30 @@ export default function ProjectManagementView({
 
   const [createFieldErrors, setCreateFieldErrors] = useState<any>({});
   const [editFieldErrors, setEditFieldErrors] = useState<any>({});
-
-  useEffect(() => {
-    if (!hasMore || loadingMore || typeof onLoadMore !== "function") return;
-    const onWindowScroll = () => {
-      const doc = document.documentElement;
-      const remaining =
-        doc.scrollHeight - (window.scrollY + window.innerHeight);
-      if (remaining < 180) onLoadMore();
-    };
-    window.addEventListener("scroll", onWindowScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onWindowScroll);
-  }, [hasMore, loadingMore, onLoadMore]);
+  const [projectScrollTop, setProjectScrollTop] = useState(0);
+  const PROJECT_ROW_HEIGHT = 124;
+  const PROJECT_OVERSCAN = 4;
+  const PROJECT_VIEWPORT_HEIGHT = 560;
+  const projectTotal = projects.length;
+  const projectVisibleCount =
+    Math.ceil(PROJECT_VIEWPORT_HEIGHT / PROJECT_ROW_HEIGHT) + PROJECT_OVERSCAN * 2;
+  const projectStartIndex = Math.max(
+    0,
+    Math.floor(projectScrollTop / PROJECT_ROW_HEIGHT) - PROJECT_OVERSCAN,
+  );
+  const projectEndIndex = Math.min(
+    projectTotal,
+    projectStartIndex + projectVisibleCount,
+  );
+  const virtualProjects = useMemo(
+    () => projects.slice(projectStartIndex, projectEndIndex),
+    [projects, projectStartIndex, projectEndIndex],
+  );
+  const projectTopSpacer = projectStartIndex * PROJECT_ROW_HEIGHT;
+  const projectBottomSpacer = Math.max(
+    0,
+    (projectTotal - projectEndIndex) * PROJECT_ROW_HEIGHT,
+  );
 
   if (isLoading) {
     return (
@@ -124,7 +136,16 @@ export default function ProjectManagementView({
         ) : null}
       </div>
 
-      <div className="grid gap-[0.7rem]">
+      <div
+        className="grid max-h-[560px] gap-[0.7rem] overflow-y-auto overflow-x-hidden pr-1"
+        onScroll={(event) => {
+          const node = event.currentTarget;
+          setProjectScrollTop(node.scrollTop);
+          if (!hasMore || loadingMore || typeof onLoadMore !== "function") return;
+          const remaining = node.scrollHeight - node.scrollTop - node.clientHeight;
+          if (remaining < 180) onLoadMore();
+        }}
+      >
         {!projects.length ? (
           <p className="text-[#5e6c84]">
             {canManageOrganization
@@ -132,7 +153,10 @@ export default function ProjectManagementView({
               : "No projects assigned to you yet."}
           </p>
         ) : null}
-        {projects.map((project) => (
+        {projectTopSpacer > 0 ? (
+          <div style={{ height: `${projectTopSpacer}px` }} aria-hidden="true" />
+        ) : null}
+        {virtualProjects.map((project) => (
           <article
             key={project.id}
             className="rounded-lg border border-[#dfe1e6] bg-white p-[0.8rem]"
@@ -209,6 +233,9 @@ export default function ProjectManagementView({
               </div>
             ))}
           </div>
+        ) : null}
+        {projectBottomSpacer > 0 ? (
+          <div style={{ height: `${projectBottomSpacer}px` }} aria-hidden="true" />
         ) : null}
       </div>
       {canManageOrganization && showCreateModal ? (

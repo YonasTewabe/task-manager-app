@@ -1,6 +1,6 @@
 import { DEFAULT_WORK_TYPE_VALUES } from "../../src/constants/workTypes.js";
 import { PRIORITY_OPTIONS } from "../../src/constants/priorities.js";
-import XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import { prisma } from "../db/prisma.js";
 import { asInt } from "../utils/validation.js";
 import { asObjectRecord } from "../utils/guards.js";
@@ -58,6 +58,7 @@ type TaskQueryFilters = {
   activeSprintOnly?: unknown;
   backlogScope?: unknown;
   includeSprintId?: unknown;
+  limit?: unknown;
 };
 
 type CursorOptions = {
@@ -240,7 +241,9 @@ function asUuid(value, fallback = null) {
 }
 
 function normalizeEmail(value) {
-  return String(value || "").trim().toLowerCase();
+  return String(value || "")
+    .trim()
+    .toLowerCase();
 }
 
 function encodeCursor(payload) {
@@ -649,10 +652,6 @@ export async function getUsersPage({
       return null;
     }
   };
-  const normalizedNameKey = (value) =>
-    String(value || "")
-      .trim()
-      .toLocaleLowerCase();
   const decoded = decodeUsersCursor(cursor);
   const users = await prisma.user.findMany({
     where: {
@@ -660,10 +659,10 @@ export async function getUsersPage({
       ...(decoded
         ? {
             OR: [
-              { name: { gt: decoded.nameKey, mode: "insensitive" } },
+              { name: { gt: decoded.nameKey } },
               {
                 AND: [
-                  { name: { equals: decoded.nameKey, mode: "insensitive" } },
+                  { name: { equals: decoded.nameKey } },
                   { id: { gt: decoded.id } },
                 ],
               },
@@ -715,7 +714,7 @@ export async function getUsersPage({
     items,
     nextCursor: hasMore
       ? encodeCursor({
-          nameKey: normalizedNameKey(tail?.name),
+          nameKey: String(tail?.name || ""),
           id: tail?.id,
         })
       : "",
@@ -1121,7 +1120,9 @@ export async function getSprints(filters: Record<string, unknown> = {}) {
   const filterObj = asObjectRecord(filters);
   const rows = await prisma.sprint.findMany({
     where: {
-      ...(filterObj.projectId ? { projectId: asUuid(filterObj.projectId) } : {}),
+      ...(filterObj.projectId
+        ? { projectId: asUuid(filterObj.projectId) }
+        : {}),
     },
     select: {
       id: true,
@@ -1180,9 +1181,7 @@ async function setProjectMembers(
       where: { projectId: pid, isProjectAdmin: true },
       select: { userId: true },
     });
-    const prevAdmin = new Set(
-      prev.map((r) => String(r.userId)),
-    );
+    const prevAdmin = new Set(prev.map((r) => String(r.userId)));
     normalized.forEach((uid) => {
       if (prevAdmin.has(String(uid))) adminSet.add(String(uid));
     });
@@ -1261,7 +1260,7 @@ export async function getProjects() {
         orderBy: [{ user: { name: "asc" } }, { userId: "asc" }],
       },
     },
-    orderBy: [{ id: "desc" }],
+    orderBy: [{ projectKey: "asc" }, { id: "asc" }],
   });
   return projects.map((project) => ({
     id: project.id,
@@ -1278,23 +1277,45 @@ export async function getProjects() {
   }));
 }
 
-export async function getProjectsPage({ limit = 30, cursor = "" }: any = {}) {
+export async function getProjectsPage({
+  limit = 30,
+  cursor = "",
+}: any = {}) {
   const pageSize = Math.max(1, Math.min(Number(limit) || 30, 200));
-  const decoded = decodeCursor(cursor);
+  const decodeProjectsCursor = (rawCursor) => {
+    const raw = String(rawCursor || "").trim();
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
+      const projectKeyKey = String(parsed?.projectKeyKey || "").trim();
+      const id = String(parsed?.id || "").trim();
+      if (!projectKeyKey || !id) return null;
+      return { projectKeyKey, id };
+    } catch {
+      return null;
+    }
+  };
+  const decoded = decodeProjectsCursor(cursor);
   const rows = await prisma.project.findMany({
-    where: decoded
-      ? {
-          OR: [
-            { createdAt: { lt: new Date(decoded.updatedAt) } },
-            {
-              AND: [
-                { createdAt: { equals: new Date(decoded.updatedAt) } },
-                { id: { lt: String(decoded.id || "") } },
-              ],
-            },
-          ],
-        }
-      : {},
+    where: {
+      ...(decoded
+        ? {
+            OR: [
+              { projectKey: { gt: decoded.projectKeyKey } },
+              {
+                AND: [
+                  {
+                    projectKey: {
+                      equals: decoded.projectKeyKey,
+                    },
+                  },
+                  { id: { gt: decoded.id } },
+                ],
+              },
+            ],
+          }
+        : {}),
+    },
     select: {
       id: true,
       name: true,
@@ -1309,9 +1330,10 @@ export async function getProjectsPage({ limit = 30, cursor = "" }: any = {}) {
             select: { id: true, name: true, email: true },
           },
         },
+        orderBy: [{ user: { name: "asc" } }, { userId: "asc" }],
       },
     },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    orderBy: [{ projectKey: "asc" }, { id: "asc" }],
     take: pageSize + 1,
   });
   const hasMore = rows.length > pageSize;
@@ -1332,7 +1354,10 @@ export async function getProjectsPage({ limit = 30, cursor = "" }: any = {}) {
   return {
     items,
     nextCursor: hasMore
-      ? encodeCursor({ updatedAt: tail?.createdAt, id: tail?.id })
+      ? encodeCursor({
+          projectKeyKey: String(tail?.projectKey || ""),
+          id: tail?.id,
+        })
       : "",
     hasMore,
   };
@@ -1649,7 +1674,10 @@ export async function updateSprint(id, patch) {
         const sprintNameConflict = await tx.sprint.findFirst({
           where: {
             projectId: nextProjectId,
-            name: { equals: String(nextName || "").trim(), mode: "insensitive" },
+            name: {
+              equals: String(nextName || "").trim(),
+              mode: "insensitive",
+            },
             id: { not: asUuid(id) },
           },
           select: { id: true },
@@ -1658,7 +1686,8 @@ export async function updateSprint(id, patch) {
       }
       const data: Record<string, any> = {};
       if (patch.name !== undefined) data.name = patch.name;
-      if (patch.projectId !== undefined) data.projectId = asUuid(patch.projectId);
+      if (patch.projectId !== undefined)
+        data.projectId = asUuid(patch.projectId);
       if (patch.startDate !== undefined) data.startDate = patch.startDate;
       if (patch.endDate !== undefined) data.endDate = patch.endDate;
       if (patch.status !== undefined) data.status = patch.status;
@@ -1810,13 +1839,19 @@ function buildTaskPrismaWhere(
   }
   if (filterObj.priority) where.priority = String(filterObj.priority);
   if (filterObj.type) where.type = String(filterObj.type).trim().toLowerCase();
-  if (filterObj.label) where.label = { equals: String(filterObj.label).trim(), mode: "insensitive" };
+  if (filterObj.label)
+    where.label = {
+      equals: String(filterObj.label).trim(),
+      mode: "insensitive",
+    };
   if (filterObj.search) {
     const search = String(filterObj.search).trim();
     const compactSearch = search.replace(/\s+/g, "");
     const numericOnlyMatch = compactSearch.match(/^\d+$/);
     const keyMatch = compactSearch.match(/^([A-Za-z0-9][A-Za-z0-9]*)-(\d+)$/);
-    const keyPrefixMatch = compactSearch.match(/^([A-Za-z0-9][A-Za-z0-9]*)-(\d*)$/);
+    const keyPrefixMatch = compactSearch.match(
+      /^([A-Za-z0-9][A-Za-z0-9]*)-(\d*)$/,
+    );
     const keyPrefixRanges: Array<{ gte: number; lte: number }> = [];
     if (keyPrefixMatch && keyPrefixMatch[2]) {
       const numericPrefixText = String(keyPrefixMatch[2]);
@@ -1824,7 +1859,11 @@ function buildTaskPrismaWhere(
       if (Number.isFinite(numericPrefix) && numericPrefix >= 0) {
         const maxDigits = 9;
         const prefixDigits = numericPrefixText.length;
-        for (let extraDigits = 0; extraDigits <= Math.max(0, maxDigits - prefixDigits); extraDigits += 1) {
+        for (
+          let extraDigits = 0;
+          extraDigits <= Math.max(0, maxDigits - prefixDigits);
+          extraDigits += 1
+        ) {
           const scale = Math.pow(10, extraDigits);
           const start = numericPrefix * scale;
           const end = extraDigits === 0 ? start : start + scale - 1;
@@ -1839,7 +1878,11 @@ function buildTaskPrismaWhere(
       if (Number.isFinite(numericPrefix) && numericPrefix >= 0) {
         const maxDigits = 9;
         const prefixDigits = numericPrefixText.length;
-        for (let extraDigits = 0; extraDigits <= Math.max(0, maxDigits - prefixDigits); extraDigits += 1) {
+        for (
+          let extraDigits = 0;
+          extraDigits <= Math.max(0, maxDigits - prefixDigits);
+          extraDigits += 1
+        ) {
           const scale = Math.pow(10, extraDigits);
           const start = numericPrefix * scale;
           const end = extraDigits === 0 ? start : start + scale - 1;
@@ -1859,7 +1902,10 @@ function buildTaskPrismaWhere(
           ? [
               {
                 project: {
-                  projectKey: { equals: keyPrefixMatch[1], mode: "insensitive" },
+                  projectKey: {
+                    equals: keyPrefixMatch[1],
+                    mode: "insensitive",
+                  },
                 },
               },
             ]
@@ -1928,24 +1974,76 @@ function buildTaskPrismaWhere(
 
 export async function getTasks(filters: TaskQueryFilters = {}) {
   const filterObj = asObjectRecord(filters);
+  const rawLimit = Number(filterObj.limit);
+  const pageSize = Number.isFinite(rawLimit)
+    ? Math.max(1, Math.min(rawLimit, 500))
+    : 200;
   const rows = await prisma.task.findMany({
     where: buildTaskPrismaWhere(filterObj),
-    include: {
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      acceptanceCriteria: true,
+      label: true,
+      versionLabel: true,
+      type: true,
+      priority: true,
+      status: true,
+      storyPoints: true,
+      dueDate: true,
+      assigneeId: true,
+      sprintId: true,
+      projectId: true,
+      taskNumber: true,
+      createdBy: true,
+      createdAt: true,
+      updatedAt: true,
+      rowVersion: true,
       project: { select: { projectKey: true } },
     },
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    take: pageSize,
   });
-  return rows.map((row) => mapTaskRow({ ...row, projectKey: row.project?.projectKey || "", version: row.versionLabel }));
+  return rows.map((row) =>
+    mapTaskRow({
+      ...row,
+      projectKey: row.project?.projectKey || "",
+      version: row.versionLabel,
+    }),
+  );
 }
 
 export async function getTasksPage(
   filters: TaskQueryFilters = {},
-  { limit = 50, cursor = "" }: { limit?: number | string; cursor?: string } = {},
+  {
+    limit = 50,
+    cursor = "",
+  }: { limit?: number | string; cursor?: string } = {},
 ) {
   const pageSize = Math.max(1, Math.min(Number(limit) || 50, 200));
   const rows = await prisma.task.findMany({
     where: buildTaskPrismaWhere(filters, { includeCursor: true, cursor }),
-    include: {
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      acceptanceCriteria: true,
+      label: true,
+      versionLabel: true,
+      type: true,
+      priority: true,
+      status: true,
+      storyPoints: true,
+      dueDate: true,
+      assigneeId: true,
+      sprintId: true,
+      projectId: true,
+      taskNumber: true,
+      createdBy: true,
+      createdAt: true,
+      updatedAt: true,
+      rowVersion: true,
       project: { select: { projectKey: true } },
     },
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
@@ -1953,7 +2051,11 @@ export async function getTasksPage(
   });
   const hasMore = rows.length > pageSize;
   const items = (hasMore ? rows.slice(0, pageSize) : rows).map((row) =>
-    mapTaskRow({ ...row, projectKey: row.project?.projectKey || "", version: row.versionLabel }),
+    mapTaskRow({
+      ...row,
+      projectKey: row.project?.projectKey || "",
+      version: row.versionLabel,
+    }),
   );
   const tail = items[items.length - 1];
   return {
@@ -1980,28 +2082,27 @@ export async function getTaskStatusTotals(filters: TaskQueryFilters = {}) {
 
 export async function searchTasks(
   filters: TaskQueryFilters = {},
-  { limit = 12 }: { limit?: number | string } = {},
+  { limit = 20, cursor = "" }: { limit?: number | string; cursor?: string } = {},
 ) {
   const rawLimit = Number(limit);
-  const pageSize =
-    String(limit || "").trim() === ""
-      ? null
-      : Number.isFinite(rawLimit)
-        ? Math.max(1, Math.min(rawLimit, 1000))
-        : 12;
+  const pageSize = Number.isFinite(rawLimit)
+    ? Math.max(1, Math.min(rawLimit, 100))
+    : 20;
   const rows = await prisma.task.findMany({
-    where: buildTaskPrismaWhere(filters),
+    where: buildTaskPrismaWhere(filters, { includeCursor: true, cursor }),
     select: {
       id: true,
       title: true,
       projectId: true,
       taskNumber: true,
       project: { select: { projectKey: true } },
+      updatedAt: true,
     },
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-    ...(pageSize != null ? { take: pageSize } : {}),
+    take: pageSize + 1,
   });
-  return rows.map((row) => ({
+  const hasMore = rows.length > pageSize;
+  const items = (hasMore ? rows.slice(0, pageSize) : rows).map((row) => ({
     id: row.id,
     title: row.title,
     projectId: row.projectId,
@@ -2011,6 +2112,15 @@ export async function searchTasks(
         ? `${row.project.projectKey}-${row.taskNumber}`
         : null,
   }));
+  const tail = hasMore ? rows[pageSize - 1] : null;
+  return {
+    items,
+    nextCursor:
+      hasMore && tail
+        ? encodeCursor({ updatedAt: tail.updatedAt, id: tail.id })
+        : "",
+    hasMore,
+  };
 }
 
 export async function getTaskById(id) {
@@ -2046,12 +2156,17 @@ export async function createTask(payload, createdBy) {
     try {
       const created = await prisma.$transaction(
         async (tx) => {
-          const taskNumber = await allocateNextTaskNumber(payload.projectId, tx);
+          const taskNumber = await allocateNextTaskNumber(
+            payload.projectId,
+            tx,
+          );
           return tx.task.create({
             data: {
               title: payload.title,
               description: payload.description || "",
-              acceptanceCriteria: normalizeAcceptanceCriteria(payload.acceptanceCriteria),
+              acceptanceCriteria: normalizeAcceptanceCriteria(
+                payload.acceptanceCriteria,
+              ),
               label: payload.label || "",
               versionLabel: payload.version || "",
               type: normalizeTaskType(payload.type),
@@ -2092,7 +2207,9 @@ export async function updateTask(taskId, patch) {
   const existing = await getTaskById(taskId);
   if (!existing) return null;
   const expectedUpdatedAt = String(patchObj.expectedUpdatedAt || "").trim();
-  const expectedRowVersion = Number.isFinite(Number(patchObj.expectedRowVersion))
+  const expectedRowVersion = Number.isFinite(
+    Number(patchObj.expectedRowVersion),
+  )
     ? Number(patchObj.expectedRowVersion)
     : null;
   if (expectedUpdatedAt) {
@@ -2113,7 +2230,9 @@ export async function updateTask(taskId, patch) {
 
   if (patchObj.status !== undefined) {
     const settings = await getProjectSettings(existing.projectId);
-    if (!isValidWorkflowStatus(normalizeTaskStatus(patchObj.status), settings)) {
+    if (
+      !isValidWorkflowStatus(normalizeTaskStatus(patchObj.status), settings)
+    ) {
       return null;
     }
   }
@@ -2223,7 +2342,10 @@ export async function updateTask(taskId, patch) {
       rowVersion: { increment: 1 },
     },
   });
-  if (!updatedCount.count && (expectedUpdatedAt || expectedRowVersion != null)) {
+  if (
+    !updatedCount.count &&
+    (expectedUpdatedAt || expectedRowVersion != null)
+  ) {
     const conflictError = new Error(
       "Task was updated by another request. Please refresh and try again.",
     );
@@ -2270,7 +2392,10 @@ export async function getTaskComments(taskId) {
 }
 
 export async function addTaskComment(taskId, userId, body) {
-  const task = await prisma.task.findUnique({ where: { id: asUuid(taskId) }, select: { id: true } });
+  const task = await prisma.task.findUnique({
+    where: { id: asUuid(taskId) },
+    select: { id: true },
+  });
   if (!task) return null;
   const row = await prisma.taskComment.create({
     data: {
@@ -2323,7 +2448,12 @@ export async function deleteTaskComment(taskId, commentId, userId) {
   return result.count > 0;
 }
 
-export async function addTaskActivity(taskId, userId, action, meta: unknown = {}) {
+export async function addTaskActivity(
+  taskId,
+  userId,
+  action,
+  meta: unknown = {},
+) {
   const task = await prisma.task.findUnique({
     where: { id: asUuid(taskId) },
     select: { id: true },
@@ -2429,7 +2559,9 @@ export async function getTaskLinkedDev(taskId) {
   };
   for (const row of links) {
     const payload =
-      row.payloadJson && typeof row.payloadJson === "object" ? row.payloadJson : {};
+      row.payloadJson && typeof row.payloadJson === "object"
+        ? row.payloadJson
+        : {};
     const repoKey = `${String(row.owner || "").toLowerCase()}::${String(row.repo || "").toLowerCase()}`;
     const authorName = pickFirstText(
       payload?.author?.login,
@@ -2477,7 +2609,11 @@ export async function getTaskLinkedDev(taskId) {
   return grouped;
 }
 
-export async function moveTaskStatusForAutomation(taskId, nextStatus, sourceMeta: any = {}) {
+export async function moveTaskStatusForAutomation(
+  taskId,
+  nextStatus,
+  sourceMeta: any = {},
+) {
   const current = await getTaskById(taskId);
   if (!current) return null;
   const target = String(nextStatus || "").trim();
@@ -2587,8 +2723,8 @@ async function resolveActiveSprintDefault(projectId: string) {
 
 function formatMetricRows(metrics = []) {
   return metrics.map((metric) => ({
-    metric: metric.label,
-    value: metric.value,
+    Metric: metric.label,
+    Value: metric.value,
     notes: metric.sublabel || "",
   }));
 }
@@ -2612,7 +2748,100 @@ async function getTaskFactsForAnalytics(filters: TaskQueryFilters = {}) {
   });
 }
 
-export async function getSummaryOverviewAnalytics(filters: SummaryFilters = {}) {
+async function buildScopedSummaryTaskWhere(filterObj: Record<string, any>) {
+  const projectId = asUuid(filterObj.projectId, null);
+  if (!projectId) return {};
+  const baseWhere = buildTaskPrismaWhere({
+    projectId,
+    limitProjectsToMemberUserId: filterObj.limitProjectsToMemberUserId,
+  });
+  const fromDate = startOfDay(filterObj.from);
+  const toDate = endOfDay(filterObj.to);
+  const hasExplicitRange = Boolean(fromDate || toDate);
+  if (hasExplicitRange) {
+    return {
+      AND: [
+        baseWhere,
+        {
+          createdAt: {
+            ...(fromDate ? { gte: fromDate } : {}),
+            ...(toDate ? { lte: toDate } : {}),
+          },
+        },
+      ],
+    };
+  }
+  const activeSprintDefault = await resolveActiveSprintDefault(projectId);
+  if (activeSprintDefault?.sprintId) {
+    return {
+      AND: [baseWhere, { sprintId: activeSprintDefault.sprintId }],
+    };
+  }
+  return baseWhere;
+}
+
+async function getOpenTaskAgingKpis({
+  projectId,
+  doneStatusList,
+  fromDate = null,
+  toDate = null,
+  activeSprintId = null,
+  limitProjectsToMemberUserId = null,
+}: {
+  projectId: string;
+  doneStatusList: string[];
+  fromDate?: Date | null;
+  toDate?: Date | null;
+  activeSprintId?: string | null;
+  limitProjectsToMemberUserId?: string | null;
+}) {
+  const conditions: string[] = [`t."project_id" = $1::uuid`];
+  const params: any[] = [projectId];
+  if (doneStatusList.length > 0) {
+    const placeholders = doneStatusList.map((_, idx) => `$${params.length + idx + 1}`);
+    conditions.push(`t."status" NOT IN (${placeholders.join(", ")})`);
+    params.push(...doneStatusList);
+  }
+  if (fromDate || toDate) {
+    if (fromDate) {
+      params.push(fromDate);
+      conditions.push(`t."created_at" >= $${params.length}`);
+    }
+    if (toDate) {
+      params.push(toDate);
+      conditions.push(`t."created_at" <= $${params.length}`);
+    }
+  } else if (activeSprintId) {
+    params.push(activeSprintId);
+    conditions.push(`t."sprint_id" = $${params.length}::uuid`);
+  }
+  if (limitProjectsToMemberUserId) {
+    params.push(limitProjectsToMemberUserId);
+    conditions.push(
+      `EXISTS (SELECT 1 FROM "project_members" pm WHERE pm."project_id" = t."project_id" AND pm."user_id" = $${params.length}::uuid)`,
+    );
+  }
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const result = (await prisma.$queryRawUnsafe(
+    `
+      SELECT
+        COALESCE(AVG(EXTRACT(EPOCH FROM (NOW() - t."created_at")) / 86400.0), 0)::double precision AS "avgOpenAgeDays",
+        COALESCE(SUM(CASE WHEN t."due_date" < NOW() THEN 1 ELSE 0 END), 0)::int AS "overdueTasks"
+      FROM "tasks" t
+      ${whereClause}
+    `,
+    ...params,
+  )) as Array<{ avgOpenAgeDays: number; overdueTasks: number }>;
+  const row = result?.[0];
+  return {
+    avgOpenAgeDays: Number(row?.avgOpenAgeDays || 0),
+    overdueTasks: Number(row?.overdueTasks || 0),
+  };
+}
+
+export async function getSummaryOverviewAnalytics(
+  filters: SummaryFilters = {},
+) {
   const filterObj = asObjectRecord(filters);
   const projectId = asUuid(filterObj.projectId, null);
   if (!projectId) throw new Error("projectId is required");
@@ -2623,50 +2852,76 @@ export async function getSummaryOverviewAnalytics(filters: SummaryFilters = {}) 
       .map((stage) => stage.key),
   );
   const statusLabels = new Map(
-    normalizeWorkflowStages(settings?.boardCardFields?.workflowStages).map((stage) => [
-      stage.key,
-      stage.name,
-    ]),
+    normalizeWorkflowStages(settings?.boardCardFields?.workflowStages).map(
+      (stage) => [stage.key, stage.name],
+    ),
   );
+  const doneStatusList = [...doneStatuses];
+  const scopedWhere = await buildScopedSummaryTaskWhere(filterObj);
   const fromDate = startOfDay(filterObj.from);
   const toDate = endOfDay(filterObj.to);
   const hasExplicitRange = Boolean(fromDate || toDate);
   const activeSprintDefault = hasExplicitRange
     ? null
     : await resolveActiveSprintDefault(projectId);
-  const tasks = await getTaskFactsForAnalytics({
-    projectId,
-    limitProjectsToMemberUserId: filterObj.limitProjectsToMemberUserId,
-  });
-  const rangeTasks = hasExplicitRange
-    ? filterByDateRange(tasks, fromDate, toDate)
-    : activeSprintDefault?.sprintId
-      ? tasks.filter(
-          (task) => String(task?.sprintId || "") === activeSprintDefault.sprintId,
-        )
-      : tasks;
-  const doneTasks = rangeTasks.filter((task) => doneStatuses.has(task.status));
-  const openTasks = rangeTasks.filter((task) => !doneStatuses.has(task.status));
-  const overdueTasks = openTasks.filter((task) => {
-    const due = parseIsoDate(task.dueDate);
-    return due && due < new Date();
-  });
-  const totalStoryPoints = rangeTasks.reduce(
-    (sum, task) => sum + Number(task.storyPoints || 0),
+  const [
+    statusRows,
+    priorityRows,
+    typeRows,
+    openAgingKpis,
+    totalTasks,
+    linkedRows,
+  ] =
+    await Promise.all([
+      prisma.task.groupBy({
+        by: ["status"],
+        where: scopedWhere,
+        _count: { _all: true },
+        _sum: { storyPoints: true },
+      }),
+      prisma.task.groupBy({
+        by: ["priority"],
+        where: scopedWhere,
+        _count: { _all: true },
+      }),
+      prisma.task.groupBy({
+        by: ["type"],
+        where: scopedWhere,
+        _count: { _all: true },
+      }),
+      getOpenTaskAgingKpis({
+        projectId,
+        doneStatusList,
+        fromDate,
+        toDate,
+        activeSprintId: activeSprintDefault?.sprintId || null,
+        limitProjectsToMemberUserId: asUuid(
+          filterObj.limitProjectsToMemberUserId,
+          null,
+        ),
+      }),
+      prisma.task.count({ where: { projectId } }),
+      prisma.taskDevLink.findMany({
+        where: { task: { projectId } },
+        distinct: ["taskId"],
+        select: { taskId: true },
+      }),
+    ]);
+  const totalTasksInRange = statusRows.reduce(
+    (sum, row) => sum + Number(row._count?._all || 0),
     0,
   );
-  const completedStoryPoints = doneTasks.reduce(
-    (sum, task) => sum + Number(task.storyPoints || 0),
+  const completedTasks = statusRows
+    .filter((row) => doneStatuses.has(String(row.status || "")))
+    .reduce((sum, row) => sum + Number(row._count?._all || 0), 0);
+  const totalStoryPoints = statusRows.reduce(
+    (sum, row) => sum + Number(row._sum?.storyPoints || 0),
     0,
   );
-  const avgOpenAgeDays =
-    openTasks.length > 0
-      ? openTasks.reduce(
-          (sum, task) => sum + (daysBetween(task.createdAt, new Date()) || 0),
-          0,
-        ) / openTasks.length
-      : 0;
-  const statusCounts = new Map();
+  const completedStoryPoints = statusRows
+    .filter((row) => doneStatuses.has(String(row.status || "")))
+    .reduce((sum, row) => sum + Number(row._sum?.storyPoints || 0), 0);
+  const avgOpenAgeDays = Number(openAgingKpis?.avgOpenAgeDays || 0);
   const priorityCounts = new Map(
     PRIORITY_OPTIONS.map((option) => [String(option.value).toLowerCase(), 0]),
   );
@@ -2678,19 +2933,20 @@ export async function getSummaryOverviewAnalytics(filters: SummaryFilters = {}) 
   const typeCounts = new Map<string, number>(
     configuredTypes.map((type) => [String(type || "").toLowerCase(), 0]),
   );
-  rangeTasks.forEach((task) => {
-    const key = String(task.status || "");
-    statusCounts.set(key, (statusCounts.get(key) || 0) + 1);
-    const priorityKey = String(task.priority || "unknown").toLowerCase();
-    priorityCounts.set(priorityKey, (priorityCounts.get(priorityKey) || 0) + 1);
-    const typeKey = String(task.type || "unknown").toLowerCase();
-    typeCounts.set(typeKey, Number(typeCounts.get(typeKey) || 0) + 1);
+  priorityRows.forEach((row) => {
+    const key = String(row.priority || "unknown").toLowerCase();
+    priorityCounts.set(key, Number(row._count?._all || 0));
   });
-  const statusDistribution = [...statusCounts.entries()]
-    .map(([status, count]) => ({
-      label: statusLabels.get(status) || status,
-      value: count,
-      status,
+  typeRows.forEach((row) => {
+    const key = String(row.type || "unknown").toLowerCase();
+    typeCounts.set(key, Number(row._count?._all || 0));
+  });
+  const statusDistribution = statusRows
+    .map((row) => ({
+      status: String(row.status || ""),
+      label:
+        statusLabels.get(String(row.status || "")) || String(row.status || ""),
+      value: Number(row._count?._all || 0),
     }))
     .sort((a, b) => b.value - a.value);
   const priorityDistribution = [...priorityCounts.entries()]
@@ -2708,22 +2964,16 @@ export async function getSummaryOverviewAnalytics(filters: SummaryFilters = {}) 
     }))
     .sort((a, b) => b.value - a.value);
 
-  const [totalTasks, linkedRows] = await Promise.all([
-    prisma.task.count({ where: { projectId } }),
-    prisma.taskDevLink.findMany({
-      where: { task: { projectId } },
-      distinct: ["taskId"],
-      select: { taskId: true },
-    }),
-  ]);
   const linkedTasks = Number(linkedRows.length || 0);
 
   return {
     kpis: {
-      totalTasks: rangeTasks.length,
-      completedTasks: doneTasks.length,
-      overdueTasks: overdueTasks.length,
-      completionRate: rangeTasks.length ? (doneTasks.length / rangeTasks.length) * 100 : 0,
+      totalTasks: totalTasksInRange,
+      completedTasks,
+      overdueTasks: Number(openAgingKpis?.overdueTasks || 0),
+      completionRate: totalTasksInRange
+        ? (completedTasks / totalTasksInRange) * 100
+        : 0,
       avgOpenAgeDays,
       totalStoryPoints,
       completedStoryPoints,
@@ -2747,17 +2997,39 @@ export async function getSummarySprintAnalytics(filters: SummaryFilters = {}) {
       .filter((stage) => stage.counterGroup === "done")
       .map((stage) => stage.key),
   );
-  const [sprints, tasks] = await Promise.all([
+  const doneStatusList = [...doneStatuses];
+  const scopedWhere = buildTaskPrismaWhere({
+    projectId,
+    limitProjectsToMemberUserId: filterObj.limitProjectsToMemberUserId,
+  });
+  const sprintRangeWhere =
+    fromDate || toDate
+      ? {
+          AND: [
+            scopedWhere,
+            {
+              createdAt: {
+                ...(fromDate ? { gte: fromDate } : {}),
+                ...(toDate ? { lte: toDate } : {}),
+              },
+            },
+          ],
+        }
+      : scopedWhere;
+  const [sprints, sprintStatusRows] = await Promise.all([
     getSprints({ projectId }),
-    getTaskFactsForAnalytics({
-      projectId,
-      limitProjectsToMemberUserId: filterObj.limitProjectsToMemberUserId,
+    prisma.task.groupBy({
+      by: ["sprintId", "status"],
+      where: {
+        AND: [sprintRangeWhere, { sprintId: { not: null } }],
+      },
+      _count: { _all: true },
+      _sum: { storyPoints: true },
     }),
   ]);
-  const rangeTasks = fromDate || toDate ? filterByDateRange(tasks, fromDate, toDate) : tasks;
   const bySprint = new Map();
-  rangeTasks.forEach((task) => {
-    const sprintId = task.sprintId ? String(task.sprintId) : "";
+  sprintStatusRows.forEach((row) => {
+    const sprintId = row.sprintId ? String(row.sprintId) : "";
     if (!sprintId) return;
     const current = bySprint.get(sprintId) || {
       plannedPoints: 0,
@@ -2765,12 +3037,13 @@ export async function getSummarySprintAnalytics(filters: SummaryFilters = {}) {
       totalTasks: 0,
       completedTasks: 0,
     };
-    const points = Number(task.storyPoints || 0);
+    const points = Number(row._sum?.storyPoints || 0);
+    const taskCount = Number(row._count?._all || 0);
     current.plannedPoints += points;
-    current.totalTasks += 1;
-    if (doneStatuses.has(task.status)) {
+    current.totalTasks += taskCount;
+    if (doneStatusList.includes(String(row.status || ""))) {
       current.completedPoints += points;
-      current.completedTasks += 1;
+      current.completedTasks += taskCount;
     }
     bySprint.set(sprintId, current);
   });
@@ -2810,12 +3083,34 @@ export async function getSummaryFlowAnalytics(filters: SummaryFilters = {}) {
       .filter((stage) => stage.counterGroup === "done")
       .map((stage) => stage.key),
   );
-  const tasks = await getTaskFactsForAnalytics({
+  const doneStatusList = [...doneStatuses];
+  const scopedWhere = buildTaskPrismaWhere({
     projectId,
     limitProjectsToMemberUserId: filterObj.limitProjectsToMemberUserId,
   });
-  const doneTasks = tasks.filter((task) => doneStatuses.has(task.status));
-  const doneInRange = fromDate || toDate ? filterByDateRange(doneTasks, fromDate, toDate, "updatedAt") : doneTasks;
+  const doneInRange = await prisma.task.findMany({
+    where: {
+      AND: [
+        scopedWhere,
+        { status: { in: doneStatusList } },
+        ...(fromDate || toDate
+          ? [
+              {
+                updatedAt: {
+                  ...(fromDate ? { gte: fromDate } : {}),
+                  ...(toDate ? { lte: toDate } : {}),
+                },
+              },
+            ]
+          : []),
+      ],
+    },
+    select: {
+      id: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
   const throughputMap = new Map();
   doneInRange.forEach((task) => {
     const key = bucketDate(task.updatedAt, interval);
@@ -2824,12 +3119,13 @@ export async function getSummaryFlowAnalytics(filters: SummaryFilters = {}) {
   const throughput = [...throughputMap.entries()]
     .map(([label, value]) => ({ label, value }))
     .sort((a, b) => String(a.label).localeCompare(String(b.label)));
-  const wipByStatusMap = new Map();
-  tasks
-    .filter((task) => !doneStatuses.has(task.status))
-    .forEach((task) => {
-      wipByStatusMap.set(task.status, (wipByStatusMap.get(task.status) || 0) + 1);
-    });
+  const wipByStatusRows = await prisma.task.groupBy({
+    by: ["status"],
+    where: {
+      AND: [scopedWhere, { status: { notIn: doneStatusList } }],
+    },
+    _count: { _all: true },
+  });
 
   const doneTaskIds = doneInRange.map((task) => task.id);
   let cycleStartByTask = new Map();
@@ -2853,15 +3149,18 @@ export async function getSummaryFlowAnalytics(filters: SummaryFilters = {}) {
     .filter((value) => value != null);
   const cycleTimes = doneInRange
     .map((task) =>
-      daysBetween(cycleStartByTask.get(String(task.id)) || task.createdAt, task.updatedAt),
+      daysBetween(
+        cycleStartByTask.get(String(task.id)) || task.createdAt,
+        task.updatedAt,
+      ),
     )
     .filter((value) => value != null);
 
   return {
     throughput,
-    wipByStatus: [...wipByStatusMap.entries()].map(([label, value]) => ({
-      label,
-      value,
+    wipByStatus: wipByStatusRows.map((row) => ({
+      label: String(row.status || ""),
+      value: Number(row._count?._all || 0),
     })),
     cycleLead: {
       avgLeadTimeDays: leadTimes.length
@@ -2874,27 +3173,26 @@ export async function getSummaryFlowAnalytics(filters: SummaryFilters = {}) {
   };
 }
 
-export async function getSummaryWorkloadAnalytics(filters: SummaryFilters = {}) {
+export async function getSummaryWorkloadAnalytics(
+  filters: SummaryFilters = {},
+) {
   const filterObj = asObjectRecord(filters);
   const projectId = asUuid(filterObj.projectId, null);
   if (!projectId) throw new Error("projectId is required");
-  const fromDate = startOfDay(filterObj.from);
-  const toDate = endOfDay(filterObj.to);
-  const hasExplicitRange = Boolean(fromDate || toDate);
-  const activeSprintDefault = hasExplicitRange
-    ? null
-    : await resolveActiveSprintDefault(projectId);
   const settings = await getProjectSettings(projectId);
   const doneStatuses = new Set(
     normalizeWorkflowStages(settings?.boardCardFields?.workflowStages)
       .filter((stage) => stage.counterGroup === "done")
       .map((stage) => stage.key),
   );
-  const [tasks, projectMembers] = await Promise.all([
-    getTaskFactsForAnalytics({
-      projectId,
-      limitProjectsToMemberUserId: filterObj.limitProjectsToMemberUserId,
-    }),
+  const doneStatusList = [...doneStatuses];
+  const scopedWhere = await buildScopedSummaryTaskWhere(filterObj);
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const [projectMembers, groupedAssigneeRows, groupedOverdueRows, agingCounts] =
+    await Promise.all([
     prisma.projectMember.findMany({
       where: { projectId },
       select: {
@@ -2908,20 +3206,70 @@ export async function getSummaryWorkloadAnalytics(filters: SummaryFilters = {}) 
         },
       },
     }),
+    prisma.task.groupBy({
+      by: ["assigneeId"],
+      where: scopedWhere,
+      _count: { _all: true },
+      _sum: { storyPoints: true },
+    }),
+    prisma.task.groupBy({
+      by: ["assigneeId"],
+      where: {
+        AND: [
+          scopedWhere,
+          { dueDate: { lt: new Date() } },
+          { status: { notIn: doneStatusList } },
+        ],
+      },
+      _count: { _all: true },
+    }),
+    Promise.all([
+      prisma.task.count({
+        where: {
+          AND: [
+            scopedWhere,
+            { status: { notIn: doneStatusList } },
+            { createdAt: { gte: sevenDaysAgo } },
+          ],
+        },
+      }),
+      prisma.task.count({
+        where: {
+          AND: [
+            scopedWhere,
+            { status: { notIn: doneStatusList } },
+            { createdAt: { lt: sevenDaysAgo, gte: fourteenDaysAgo } },
+          ],
+        },
+      }),
+      prisma.task.count({
+        where: {
+          AND: [
+            scopedWhere,
+            { status: { notIn: doneStatusList } },
+            { createdAt: { lt: fourteenDaysAgo, gte: thirtyDaysAgo } },
+          ],
+        },
+      }),
+      prisma.task.count({
+        where: {
+          AND: [
+            scopedWhere,
+            { status: { notIn: doneStatusList } },
+            { createdAt: { lt: thirtyDaysAgo } },
+          ],
+        },
+      }),
+    ]),
   ]);
   const usersById = new Map(
     projectMembers
       .filter((member) => member.user)
       .map((member) => [String(member.user.id), member.user]),
   );
-  const projectMemberIds = new Set(projectMembers.map((member) => String(member.userId)));
-  const rangeTasks = hasExplicitRange
-    ? filterByDateRange(tasks, fromDate, toDate)
-    : activeSprintDefault?.sprintId
-      ? tasks.filter(
-          (task) => String(task?.sprintId || "") === activeSprintDefault.sprintId,
-        )
-      : tasks;
+  const projectMemberIds = new Set(
+    projectMembers.map((member) => String(member.userId)),
+  );
   const byAssignee = new Map();
   projectMemberIds.forEach((memberId) => {
     const assigneeUser: any = usersById.get(memberId);
@@ -2942,9 +3290,10 @@ export async function getSummaryWorkloadAnalytics(filters: SummaryFilters = {}) 
       overdue: 0,
     });
   }
-  const now = new Date();
-  rangeTasks.forEach((task) => {
-    const assigneeKey = task.assigneeId ? String(task.assigneeId) : "unassigned";
+  groupedAssigneeRows.forEach((groupRow) => {
+    const assigneeKey = groupRow.assigneeId
+      ? String(groupRow.assigneeId)
+      : "unassigned";
     const assigneeUser: any = usersById.get(assigneeKey);
     const assigneeLabel =
       assigneeKey === "unassigned"
@@ -2952,53 +3301,154 @@ export async function getSummaryWorkloadAnalytics(filters: SummaryFilters = {}) 
         : assigneeUser
           ? `${assigneeUser.name}${assigneeUser.isActive === false ? " (Disabled)" : ""}`
           : "Unknown";
-    const row = byAssignee.get(assigneeKey) || {
+    const assigneeRow = byAssignee.get(assigneeKey) || {
       label: assigneeLabel,
       value: 0,
       storyPoints: 0,
       overdue: 0,
     };
-    row.value += 1;
-    row.storyPoints += Number(task.storyPoints || 0);
-    const due = parseIsoDate(task.dueDate);
-    if (due && due < now && !doneStatuses.has(task.status)) {
-      row.overdue += 1;
+    assigneeRow.value += Number(groupRow._count?._all || 0);
+    assigneeRow.storyPoints += Number(groupRow._sum?.storyPoints || 0);
+    byAssignee.set(assigneeKey, assigneeRow);
+  });
+  groupedOverdueRows.forEach((row) => {
+    const assigneeKey = row.assigneeId ? String(row.assigneeId) : "unassigned";
+    const existing = byAssignee.get(assigneeKey);
+    if (existing) {
+      existing.overdue += Number(row._count?._all || 0);
+      byAssignee.set(assigneeKey, existing);
     }
-    byAssignee.set(assigneeKey, row);
   });
   const agingBuckets = {
-    "0-7 days": 0,
-    "8-14 days": 0,
-    "15-30 days": 0,
-    "30+ days": 0,
+    "0-7 days": Number(agingCounts?.[0] || 0),
+    "8-14 days": Number(agingCounts?.[1] || 0),
+    "15-30 days": Number(agingCounts?.[2] || 0),
+    "30+ days": Number(agingCounts?.[3] || 0),
   };
-  rangeTasks
-    .filter((task) => !doneStatuses.has(task.status))
-    .forEach((task) => {
-      const age = daysBetween(task.createdAt, now) || 0;
-      if (age <= 7) agingBuckets["0-7 days"] += 1;
-      else if (age <= 14) agingBuckets["8-14 days"] += 1;
-      else if (age <= 30) agingBuckets["15-30 days"] += 1;
-      else agingBuckets["30+ days"] += 1;
-    });
 
   return {
     assigneeLoad: [...byAssignee.values()].sort((a, b) => b.value - a.value),
-    agingBuckets: Object.entries(agingBuckets).map(([label, value]) => ({ label, value })),
+    agingBuckets: Object.entries(agingBuckets).map(([label, value]) => ({
+      label,
+      value,
+    })),
   };
 }
 
-function buildXlsxBuffer(rows = [], sheetName = "Summary") {
-  const workbook = XLSX.utils.book_new();
-  const worksheet = XLSX.utils.json_to_sheet(rows.length ? rows : [{ note: "No data" }]);
-  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
-  return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+async function buildXlsxWorkbookBuffer(
+  sheets: Array<{ name: string; rows: Array<Record<string, any>> }> = [],
+) {
+  const workbook = new ExcelJS.Workbook();
+  (sheets || []).forEach((sheet) => {
+    const name = String(sheet?.name || "").trim() || "Sheet";
+    const rows: Array<Record<string, any>> =
+      Array.isArray(sheet?.rows) && sheet.rows.length > 0
+        ? sheet.rows
+        : [{ note: "No data" }];
+    const worksheet = workbook.addWorksheet(name.slice(0, 31));
+    const headers = Object.keys(rows[0] || {});
+    const headerRow = worksheet.addRow(headers);
+    headerRow.font = { bold: true };
+    headers.forEach((header) => {
+      const values = rows.map((row) => {
+        const value = row?.[header];
+        return value == null ? "" : String(value);
+      });
+      const maxValueLength = values.reduce(
+        (max, value) => Math.max(max, value.length),
+        String(header).length,
+      );
+      const column = worksheet.getColumn(headers.indexOf(header) + 1);
+      column.width = Math.min(60, Math.max(12, maxValueLength + 2));
+    });
+    rows.forEach((row) => {
+      worksheet.addRow(headers.map((header) => row?.[header] ?? ""));
+    });
+    worksheet.views = [{ state: "frozen", ySplit: 1 }];
+  });
+  const output = await workbook.xlsx.writeBuffer();
+  return Buffer.isBuffer(output) ? output : Buffer.from(output);
+}
+
+function formatDateDdMmYyyy(value: unknown) {
+  const date = parseIsoDate(value);
+  if (!date) return "";
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const year = String(date.getUTCFullYear());
+  return `${day}-${month}-${year}`;
+}
+
+async function getSummaryExportTaskRows(filters: SummaryFilters = {}) {
+  const filterObj = asObjectRecord(filters);
+  const projectId = asUuid(filterObj.projectId, null);
+  if (!projectId) return [];
+  const settings = await getProjectSettings(projectId);
+  const statusNameByKey = new Map(
+    normalizeWorkflowStages(settings?.boardCardFields?.workflowStages).map(
+      (stage) => [
+        String(stage.key || ""),
+        String(stage.name || stage.key || ""),
+      ],
+    ),
+  );
+  const fromDate = startOfDay(filterObj.from);
+  const toDate = endOfDay(filterObj.to);
+  const hasExplicitRange = Boolean(fromDate || toDate);
+  const activeSprintDefault = hasExplicitRange
+    ? null
+    : await resolveActiveSprintDefault(projectId);
+  const where = buildTaskPrismaWhere({
+    projectId,
+    limitProjectsToMemberUserId: filterObj.limitProjectsToMemberUserId,
+  });
+  if (hasExplicitRange) {
+    where.createdAt = {
+      ...(fromDate ? { gte: fromDate } : {}),
+      ...(toDate ? { lte: toDate } : {}),
+    };
+  } else if (activeSprintDefault?.sprintId) {
+    where.sprintId = activeSprintDefault.sprintId;
+  }
+  const rows = await prisma.task.findMany({
+    where,
+    select: {
+      id: true,
+      title: true,
+      status: true,
+      priority: true,
+      storyPoints: true,
+      createdAt: true,
+      sprintId: true,
+      taskNumber: true,
+      project: { select: { projectKey: true } },
+      assignee: { select: { name: true } },
+      creator: { select: { name: true } },
+    },
+    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+  });
+  return rows.map((row) => ({
+    "Task Key":
+      row.project?.projectKey && row.taskNumber != null
+        ? `${row.project.projectKey}-${row.taskNumber}`
+        : "",
+    Name: row.title || "",
+    "Created Date": formatDateDdMmYyyy(row.createdAt),
+    Status: statusNameByKey.get(String(row.status || "")) || row.status || "",
+    Priority: row.priority || "",
+    Assignee: row.assignee?.name || "Unassigned",
+    Reporter: row.creator?.name || "",
+    "Story Point": row.storyPoints ?? "",
+  }));
 }
 
 export async function buildSummaryReportExport(filters: SummaryFilters = {}) {
   const filterObj = asObjectRecord(filters);
-  const type = String(filterObj.type || "overview").trim().toLowerCase();
+  const type = String(filterObj.type || "overview")
+    .trim()
+    .toLowerCase();
   let rows = [];
+  let overviewForGraphic: any = null;
   if (type === "sprint") {
     const sprint = await getSummarySprintAnalytics(filterObj);
     rows = (sprint.velocityTrend || []).map((row) => ({
@@ -3017,10 +3467,8 @@ export async function buildSummaryReportExport(filters: SummaryFilters = {}) {
       overdueTasks: row.overdue,
     }));
   } else {
-    const [overview, flow] = await Promise.all([
-      getSummaryOverviewAnalytics(filterObj),
-      getSummaryFlowAnalytics(filterObj),
-    ]);
+    const overview = await getSummaryOverviewAnalytics(filterObj);
+    overviewForGraphic = overview;
     rows = formatMetricRows([
       { label: "Total tasks", value: overview.kpis.totalTasks },
       { label: "Completed tasks", value: overview.kpis.completedTasks },
@@ -3029,22 +3477,36 @@ export async function buildSummaryReportExport(filters: SummaryFilters = {}) {
         label: "Completion rate (%)",
         value: Number(overview.kpis.completionRate || 0).toFixed(2),
       },
-      {
-        label: "Avg lead time (days)",
-        value: Number(flow.cycleLead.avgLeadTimeDays || 0).toFixed(2),
-      },
-      {
-        label: "Avg cycle time (days)",
-        value: Number(flow.cycleLead.avgCycleTimeDays || 0).toFixed(2),
-      },
     ]);
   }
+
+  const taskRows = await getSummaryExportTaskRows(filterObj);
+  const statusDistributionRows =
+    type === "overview"
+      ? (overviewForGraphic?.statusDistribution || []).map((item) => ({
+          Metric: `Status: ${item.label || item.status || ""}`,
+          Value: Number(item.value || 0),
+        }))
+      : [];
+  const summaryRows = [
+    {
+      Metric: "Included Tasks",
+      Value: taskRows.length,
+    },
+    ...rows,
+    ...(statusDistributionRows.length > 0
+      ? [{ Metric: "-----", Value: "" }, ...statusDistributionRows]
+      : []),
+  ];
 
   return {
     contentType:
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     extension: "xlsx",
-    buffer: buildXlsxBuffer(rows, "Summary"),
+    buffer: await buildXlsxWorkbookBuffer([
+      { name: "Summary", rows: summaryRows },
+      { name: "All Tasks", rows: taskRows },
+    ]),
   };
 }
 
@@ -3091,40 +3553,49 @@ export async function getDashboardData({
   const scopedUserId = limitProjectsToMemberUserId
     ? asUuid(limitProjectsToMemberUserId, null)
     : null;
-  const projectsForUser =
-    scopedUserId
-      ? await prisma.project.findMany({
-          where: {
-            members: { some: { userId: scopedUserId } },
-          },
-          select: {
-            id: true,
-            name: true,
-            projectKey: true,
-          },
-        })
-      : await prisma.project.findMany({
-          select: {
-            id: true,
-            name: true,
-            projectKey: true,
-          },
-        });
+  const projectsForUser = scopedUserId
+    ? await prisma.project.findMany({
+        where: {
+          members: { some: { userId: scopedUserId } },
+        },
+        select: {
+          id: true,
+          name: true,
+          projectKey: true,
+        },
+      })
+    : await prisma.project.findMany({
+        select: {
+          id: true,
+          name: true,
+          projectKey: true,
+        },
+      });
   const allowedProjectIds = new Set(
     projectsForUser.map((project) => String(project.id || "")),
   );
-  const assignedTasks = await getTasks({
-    assigneeId: uid,
-    ...(scopedUserId
-      ? { limitProjectsToMemberUserId: scopedUserId }
-      : {}),
+  const assignedRows = await prisma.task.findMany({
+    where: buildTaskPrismaWhere({
+      assigneeId: uid,
+      activeSprintOnly: true,
+      ...(scopedUserId ? { limitProjectsToMemberUserId: scopedUserId } : {}),
+    }),
+    include: {
+      project: { select: { projectKey: true } },
+    },
+    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    take: 150,
   });
-  const sorted = [...assignedTasks]
+  const sorted = assignedRows
+    .map((row) =>
+      mapTaskRow({
+        ...row,
+        projectKey: row.project?.projectKey || "",
+        version: row.versionLabel,
+      }),
+    )
     .filter((task) =>
       scopedUserId ? allowedProjectIds.has(String(task.projectId || "")) : true,
-    )
-    .sort((a, b) =>
-      String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")),
     );
   const projectCounts = new Map();
   const bucketCounts = { upcoming: 0, active: 0, done: 0 };
@@ -3146,7 +3617,10 @@ export async function getDashboardData({
     settingsRows.forEach((row) => {
       const stageToBucket = new Map(
         normalizeWorkflowStages(row?.boardCardFields?.workflowStages).map(
-          (stage) => [String(stage.key || ""), stage.counterGroup || "upcoming"],
+          (stage) => [
+            String(stage.key || ""),
+            stage.counterGroup || "upcoming",
+          ],
         ),
       );
       projectStageToBucket.set(String(row.projectId || ""), stageToBucket);
@@ -3155,8 +3629,7 @@ export async function getDashboardData({
   sorted.forEach((task) => {
     const key = String(task.projectId || "");
     projectCounts.set(key, (projectCounts.get(key) || 0) + 1);
-    const stageToBucket =
-      projectStageToBucket.get(key) || defaultStageToBucket;
+    const stageToBucket = projectStageToBucket.get(key) || defaultStageToBucket;
     const bucket = stageToBucket.get(String(task.status || "")) || "upcoming";
     if (bucket === "active") bucketCounts.active += 1;
     else if (bucket === "done") bucketCounts.done += 1;
@@ -3169,8 +3642,8 @@ export async function getDashboardData({
     assignedCount: Number(projectCounts.get(String(project.id)) || 0),
   }));
   return {
-    assignedTasks: sorted,
-    recentTasks: sorted,
+    assignedTasks: sorted.slice(0, 80),
+    recentTasks: sorted.slice(0, 20),
     bucketCounts,
     projectCards,
   };
@@ -3224,14 +3697,52 @@ export async function getBacklogRows({
       return total + (Number(task.storyPoints) || 0);
     }, 0);
   };
+  const mapBacklogTaskLite = (row) => {
+    const taskNumber = row.taskNumber != null ? Number(row.taskNumber) : null;
+    const projectKey = String(row?.project?.projectKey || "").trim();
+    const taskKey =
+      projectKey && taskNumber != null && !Number.isNaN(taskNumber)
+        ? `${projectKey}-${taskNumber}`
+        : null;
+    return {
+      id: row.id,
+      title: row.title,
+      status: row.status,
+      storyPoints: row.storyPoints,
+      sprintId: row.sprintId,
+      assigneeId: row.assigneeId,
+      priority: row.priority,
+      taskNumber,
+      taskKey,
+      projectId: row.projectId,
+    };
+  };
   if (selectedSprintId) {
     const selectedSprintKey = String(selectedSprintId);
-    const selected = sprints.find((sprint) => String(sprint.id) === selectedSprintKey);
+    const selected = sprints.find(
+      (sprint) => String(sprint.id) === selectedSprintKey,
+    );
     if (!selected) return [];
-    const selectedTasks = await getTasks({
-      ...normalizedFilters,
-      sprintId: selectedSprintKey,
+    const selectedTaskRows = await prisma.task.findMany({
+      where: buildTaskPrismaWhere({
+        ...normalizedFilters,
+        sprintId: selectedSprintKey,
+      }),
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        storyPoints: true,
+        sprintId: true,
+        assigneeId: true,
+        priority: true,
+        taskNumber: true,
+        projectId: true,
+        project: { select: { projectKey: true } },
+      },
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
     });
+    const selectedTasks = selectedTaskRows.map(mapBacklogTaskLite);
     return [
       {
         key: String(selected.id),
@@ -3249,7 +3760,27 @@ export async function getBacklogRows({
     ];
   }
 
-  const allTasks = await getTasks(normalizedFilters);
+  const allTaskRows = await prisma.task.findMany({
+    where: buildTaskPrismaWhere({
+      ...normalizedFilters,
+      backlogScope: true,
+      includeSprintId: selectedSprintId || undefined,
+    }),
+    select: {
+      id: true,
+      title: true,
+      status: true,
+      storyPoints: true,
+      sprintId: true,
+      assigneeId: true,
+      priority: true,
+      taskNumber: true,
+      projectId: true,
+      project: { select: { projectKey: true } },
+    },
+    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+  });
+  const allTasks = allTaskRows.map(mapBacklogTaskLite);
   const backlogTasks = allTasks.filter((task) => task.sprintId == null);
   const tasksBySprint = new Map();
   allTasks.forEach((task) => {

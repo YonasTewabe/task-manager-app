@@ -37,8 +37,11 @@ function MainLayout({
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [globalSearchTerm, setGlobalSearchTerm] = useState("");
   const [globalSearchLoading, setGlobalSearchLoading] = useState(false);
+  const [globalSearchLoadingMore, setGlobalSearchLoadingMore] = useState(false);
   const [globalSearchResults, setGlobalSearchResults] = useState([]);
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  const [globalSearchNextCursor, setGlobalSearchNextCursor] = useState("");
+  const [globalSearchHasMore, setGlobalSearchHasMore] = useState(false);
   const [mobileProjectPickerOpen, setMobileProjectPickerOpen] = useState(false);
   const [showWorkspaceProjectSelector, setShowWorkspaceProjectSelector] =
     useState(false);
@@ -69,7 +72,12 @@ function MainLayout({
       ? [{ key: "app-settings", label: "Settings", icon: "settings" }]
       : []),
   ];
-  const activeProjectView = new Set(["summary", "board", "backlog", "settings"]);
+  const activeProjectView = new Set([
+    "summary",
+    "board",
+    "backlog",
+    "settings",
+  ]);
   const mobileProjectTargetView = activeProjectView.has(activeView)
     ? activeView
     : "board";
@@ -89,6 +97,7 @@ function MainLayout({
     if (activeView === "profile") return "Profile";
     return "Task Manager";
   })();
+  const globalSearchReqSeqRef = useRef(0);
 
   useEffect(() => {
     if (!notificationCenterOpen) return undefined;
@@ -99,10 +108,7 @@ function MainLayout({
       const isInsideDesktop =
         desktopNotificationWrapperRef.current &&
         desktopNotificationWrapperRef.current.contains(event.target);
-      if (
-        !isInsideMobile &&
-        !isInsideDesktop
-      ) {
+      if (!isInsideMobile && !isInsideDesktop) {
         onCloseNotificationCenter?.();
       }
     };
@@ -119,10 +125,7 @@ function MainLayout({
       const isInsideDesktop =
         desktopProfileWrapperRef.current &&
         desktopProfileWrapperRef.current.contains(event.target);
-      if (
-        !isInsideMobile &&
-        !isInsideDesktop
-      ) {
+      if (!isInsideMobile && !isInsideDesktop) {
         setProfileMenuOpen(false);
       }
     };
@@ -169,20 +172,29 @@ function MainLayout({
     if (!term) {
       setGlobalSearchResults([]);
       setGlobalSearchLoading(false);
+      setGlobalSearchLoadingMore(false);
+      setGlobalSearchNextCursor("");
+      setGlobalSearchHasMore(false);
       return undefined;
     }
     let cancelled = false;
+    const reqSeq = ++globalSearchReqSeqRef.current;
     setGlobalSearchLoading(true);
     const timeoutId = window.setTimeout(async () => {
       try {
-        const rows = await onGlobalTaskSearch?.(term);
-        if (cancelled) return;
-        setGlobalSearchResults(Array.isArray(rows) ? rows : []);
+        const payload = await onGlobalTaskSearch?.(term, "");
+        if (cancelled || reqSeq !== globalSearchReqSeqRef.current) return;
+        const nextItems = Array.isArray(payload?.items) ? payload.items : [];
+        setGlobalSearchResults(nextItems);
+        setGlobalSearchNextCursor(String(payload?.nextCursor || ""));
+        setGlobalSearchHasMore(Boolean(payload?.hasMore));
       } catch {
-        if (cancelled) return;
+        if (cancelled || reqSeq !== globalSearchReqSeqRef.current) return;
         setGlobalSearchResults([]);
+        setGlobalSearchNextCursor("");
+        setGlobalSearchHasMore(false);
       } finally {
-        if (!cancelled) {
+        if (!cancelled && reqSeq === globalSearchReqSeqRef.current) {
           setGlobalSearchLoading(false);
           setGlobalSearchOpen(true);
         }
@@ -205,11 +217,43 @@ function MainLayout({
     [onOpenGlobalTask],
   );
   const handleClearGlobalSearch = useCallback(() => {
+    globalSearchReqSeqRef.current += 1;
     setGlobalSearchTerm("");
     setGlobalSearchResults([]);
     setGlobalSearchLoading(false);
+    setGlobalSearchLoadingMore(false);
+    setGlobalSearchNextCursor("");
+    setGlobalSearchHasMore(false);
     setGlobalSearchOpen(false);
   }, []);
+  const handleLoadMoreGlobalTasks = useCallback(async () => {
+    const term = globalSearchTerm.trim();
+    const cursor = String(globalSearchNextCursor || "");
+    if (!term || !cursor || globalSearchLoadingMore) return;
+    const reqSeq = ++globalSearchReqSeqRef.current;
+    setGlobalSearchLoadingMore(true);
+    try {
+      const payload = await onGlobalTaskSearch?.(term, cursor);
+      if (reqSeq !== globalSearchReqSeqRef.current) return;
+      const nextItems = Array.isArray(payload?.items) ? payload.items : [];
+      setGlobalSearchResults((prev) => [...prev, ...nextItems]);
+      setGlobalSearchNextCursor(String(payload?.nextCursor || ""));
+      setGlobalSearchHasMore(Boolean(payload?.hasMore));
+    } catch {
+      if (reqSeq !== globalSearchReqSeqRef.current) return;
+      setGlobalSearchHasMore(false);
+    } finally {
+      if (reqSeq === globalSearchReqSeqRef.current) {
+        setGlobalSearchLoadingMore(false);
+      }
+    }
+  }, [
+    globalSearchHasMore,
+    globalSearchLoadingMore,
+    globalSearchNextCursor,
+    globalSearchTerm,
+    onGlobalTaskSearch,
+  ]);
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-transparent pb-20 md:pb-0">
@@ -222,7 +266,7 @@ function MainLayout({
         onNavigateProject={onNavigateProject}
       />
 
-      <div className="min-h-screen overflow-x-hidden md:ml-[260px] max-[1100px]:md:ml-[88px]">
+      <div className="min-h-screen overflow-x-hidden md:ml-[260px] max-[1280px]:md:ml-[88px]">
         <header className="sticky top-0 z-[15] border-b border-[#d8e2f0] bg-[#fbfdff]/95 px-3 py-2 backdrop-blur-[6px] md:flex md:h-16 md:flex-nowrap md:items-center md:justify-between md:gap-3 md:px-4 md:py-0">
           <div className="mb-2 flex items-center justify-between gap-2 md:hidden">
             <div className="min-w-0 flex-1 truncate text-[1.02rem] font-bold text-[#172b4d]">
@@ -272,7 +316,10 @@ function MainLayout({
                         onOpenProfileSecurity?.();
                       }}
                     >
-                      <span aria-hidden className="w-5 text-center text-[#4e5d78]">
+                      <span
+                        aria-hidden
+                        className="w-5 text-center text-[#4e5d78]"
+                      >
                         <Icon name="user" size={15} />
                       </span>
                       <span>Profile</span>
@@ -285,7 +332,10 @@ function MainLayout({
                         onLogout?.();
                       }}
                     >
-                      <span aria-hidden className="w-5 text-center text-[#4e5d78]">
+                      <span
+                        aria-hidden
+                        className="w-5 text-center text-[#4e5d78]"
+                      >
                         <Icon name="logout" size={15} />
                       </span>
                       <span>Logout</span>
@@ -360,19 +410,31 @@ function MainLayout({
                         </button>
                       ))
                     : null}
+                  {!globalSearchLoading && globalSearchHasMore ? (
+                    <button
+                      type="button"
+                      className="mt-1 rounded-[8px] border border-[#d6dce8] px-[0.55rem] py-[0.45rem] text-left text-[0.83rem] font-semibold text-[#0c66e4] hover:bg-[#f4f6fa]"
+                      onClick={handleLoadMoreGlobalTasks}
+                      disabled={globalSearchLoadingMore}
+                    >
+                      {globalSearchLoadingMore
+                        ? "Loading more..."
+                        : "Show more"}
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
             </div>
           </div>
           <div className="ml-3 hidden shrink-0 items-center gap-2 md:flex">
             <div className="relative" ref={desktopNotificationWrapperRef}>
-                <button
+              <button
                 type="button"
                 aria-label="Notifications"
-                  className="relative inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-[#d6deec] bg-white text-[#42526e] shadow-[0_1px_2px_rgba(9,30,66,0.08)] hover:bg-[#f7f9fd]"
+                className="relative inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-[#d6deec] bg-white text-[#42526e] shadow-[0_1px_2px_rgba(9,30,66,0.08)] hover:bg-[#f7f9fd]"
                 onClick={onToggleNotificationCenter}
               >
-                  <Icon name="bell" size={17} />
+                <Icon name="bell" size={17} />
                 {unreadCount > 0 ? (
                   <span className="absolute -right-1 -top-1 rounded-full bg-[#d92d2d] px-1.5 text-[11px] text-white">
                     {unreadCount > 99 ? "99+" : unreadCount}
@@ -397,12 +459,12 @@ function MainLayout({
                 <span className="grid h-7 w-7 place-items-center rounded-full bg-[#2d64d9] text-[0.78rem] font-semibold text-white">
                   {initials || "U"}
                 </span>
-                    <span className="font-semibold">
+                <span className="font-semibold max-[1280px]:hidden">
                   {currentUser?.name || "User"}
                 </span>
               </button>
               {profileMenuOpen ? (
-                  <div className="absolute right-0 top-[calc(100%+0.5rem)] z-30 grid w-[min(220px,calc(100vw-1rem))] max-w-[calc(100vw-1rem)] gap-1 rounded-[12px] border border-[#d6dce8] bg-white p-2 shadow-[0_10px_24px_rgba(9,30,66,0.18)]">
+                <div className="absolute right-0 top-[calc(100%+0.5rem)] z-30 grid w-[min(220px,calc(100vw-1rem))] max-w-[calc(100vw-1rem)] gap-1 rounded-[12px] border border-[#d6dce8] bg-white p-2 shadow-[0_10px_24px_rgba(9,30,66,0.18)]">
                   <button
                     type="button"
                     className="flex items-center gap-2 rounded-[8px] px-3 py-2 text-left text-[1rem] text-[#253858] hover:bg-[#f4f6fa]"
@@ -411,9 +473,12 @@ function MainLayout({
                       onOpenProfileSecurity?.();
                     }}
                   >
-                      <span aria-hidden className="w-5 text-center text-[#4e5d78]">
-                        <Icon name="user" size={15} />
-                      </span>
+                    <span
+                      aria-hidden
+                      className="w-5 text-center text-[#4e5d78]"
+                    >
+                      <Icon name="user" size={15} />
+                    </span>
                     <span>Profile</span>
                   </button>
                   <button
@@ -424,9 +489,12 @@ function MainLayout({
                       onLogout?.();
                     }}
                   >
-                      <span aria-hidden className="w-5 text-center text-[#4e5d78]">
-                        <Icon name="logout" size={15} />
-                      </span>
+                    <span
+                      aria-hidden
+                      className="w-5 text-center text-[#4e5d78]"
+                    >
+                      <Icon name="logout" size={15} />
+                    </span>
                     <span>Logout</span>
                   </button>
                 </div>
@@ -467,7 +535,9 @@ function MainLayout({
                   <button
                     type="button"
                     className="shrink-0 whitespace-nowrap rounded-[8px] border border-[#2d64d9] bg-[#2d64d9] px-3 py-[0.42rem] text-[0.82rem] font-medium text-white hover:border-[#1f4fc4] hover:bg-[#1f4fc4] md:hidden"
-                    onClick={() => onNavigateProject(currentProjectId, "settings")}
+                    onClick={() =>
+                      onNavigateProject(currentProjectId, "settings")
+                    }
                   >
                     Go to settings
                   </button>
@@ -476,8 +546,10 @@ function MainLayout({
               {canManageCurrentProject ? (
                 <button
                   type="button"
-                  className="mb-[0.5rem] hidden rounded-[8px] border border-[#2d64d9] bg-[#2d64d9] px-3 py-[0.42rem] text-[0.82rem] font-medium text-white hover:border-[#1f4fc4] hover:bg-[#1f4fc4] md:block"
-                  onClick={() => onNavigateProject(currentProjectId, "settings")}
+                  className="mb-[0.5rem] hidden rounded-[8px] border border-[#2d64d9] bg-[#2d64d9] px-3 py-[0.42rem] text-[0.82rem] font-medium text-white hover:border-[#1f4fc4] hover:bg-[#1f4fc4] lg:block"
+                  onClick={() =>
+                    onNavigateProject(currentProjectId, "settings")
+                  }
                 >
                   Go to settings
                 </button>
@@ -486,9 +558,7 @@ function MainLayout({
           </div>
         ) : null}
 
-        <main>
-          {children}
-        </main>
+        <main>{children}</main>
       </div>
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-[#dbe4f1] bg-[#fbfdff]/95 px-2 pb-[max(0.45rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(9,30,66,0.1)] md:hidden">
         {projects.length &&
@@ -555,7 +625,10 @@ function MainLayout({
                 }`}
                 onClick={() => {
                   if (isProjectSpace) {
-                    if (!activeProjectView.has(activeView) && projects.length > 1) {
+                    if (
+                      !activeProjectView.has(activeView) &&
+                      projects.length > 1
+                    ) {
                       setShowWorkspaceProjectSelector(true);
                       setMobileProjectPickerOpen(true);
                       return;
@@ -565,7 +638,10 @@ function MainLayout({
                       return;
                     }
                     if (currentProjectId) {
-                      onNavigateProject(currentProjectId, mobileProjectTargetView);
+                      onNavigateProject(
+                        currentProjectId,
+                        mobileProjectTargetView,
+                      );
                     } else {
                       setShowWorkspaceProjectSelector(true);
                       setMobileProjectPickerOpen(true);

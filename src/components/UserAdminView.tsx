@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Modal from "./ui/Modal";
 import {
   REQUIRED_FIELD_MESSAGE,
@@ -128,6 +128,51 @@ export default function UserAdminView({
   };
   const visibleUsers = users;
   const activeUsers = users.filter((user) => user.isActive !== false);
+  const [usersScrollTop, setUsersScrollTop] = useState(0);
+  const [groupsScrollTop, setGroupsScrollTop] = useState(0);
+  const USER_ROW_HEIGHT = 92;
+  const GROUP_ROW_HEIGHT = 108;
+  const OVERSCAN = 5;
+  const USERS_VIEWPORT_HEIGHT = 540;
+  const GROUPS_VIEWPORT_HEIGHT = 420;
+  const userVisibleCount =
+    Math.ceil(USERS_VIEWPORT_HEIGHT / USER_ROW_HEIGHT) + OVERSCAN * 2;
+  const userStartIndex = Math.max(
+    0,
+    Math.floor(usersScrollTop / USER_ROW_HEIGHT) - OVERSCAN,
+  );
+  const userEndIndex = Math.min(
+    visibleUsers.length,
+    userStartIndex + userVisibleCount,
+  );
+  const renderedUsers = useMemo(
+    () => visibleUsers.slice(userStartIndex, userEndIndex),
+    [visibleUsers, userStartIndex, userEndIndex],
+  );
+  const userTopSpacer = userStartIndex * USER_ROW_HEIGHT;
+  const userBottomSpacer = Math.max(
+    0,
+    (visibleUsers.length - userEndIndex) * USER_ROW_HEIGHT,
+  );
+  const groupVisibleCount =
+    Math.ceil(GROUPS_VIEWPORT_HEIGHT / GROUP_ROW_HEIGHT) + OVERSCAN * 2;
+  const groupStartIndex = Math.max(
+    0,
+    Math.floor(groupsScrollTop / GROUP_ROW_HEIGHT) - OVERSCAN,
+  );
+  const groupEndIndex = Math.min(
+    userGroups.length,
+    groupStartIndex + groupVisibleCount,
+  );
+  const renderedGroups = useMemo(
+    () => userGroups.slice(groupStartIndex, groupEndIndex),
+    [userGroups, groupStartIndex, groupEndIndex],
+  );
+  const groupTopSpacer = groupStartIndex * GROUP_ROW_HEIGHT;
+  const groupBottomSpacer = Math.max(
+    0,
+    (userGroups.length - groupEndIndex) * GROUP_ROW_HEIGHT,
+  );
 
   return (
     <section className="grid gap-[1.1rem]">
@@ -164,6 +209,7 @@ export default function UserAdminView({
         <div
           className="grid max-h-[52vh] gap-[0.6rem] overflow-y-auto overflow-x-hidden pr-1"
           onScroll={(event) => {
+            setUsersScrollTop(event.currentTarget.scrollTop);
             if (!hasMore || loadingMore || typeof onLoadMore !== "function")
               return;
             const node = event.currentTarget;
@@ -179,7 +225,10 @@ export default function UserAdminView({
                 : "No active users found."}
             </p>
           ) : null}
-          {visibleUsers.map((user) => (
+          {userTopSpacer > 0 ? (
+            <div style={{ height: `${userTopSpacer}px` }} aria-hidden="true" />
+          ) : null}
+          {renderedUsers.map((user) => (
             <article
               key={user.id}
               className="rounded-lg border border-[#dfe1e6] bg-white p-[0.7rem]"
@@ -235,6 +284,9 @@ export default function UserAdminView({
               ))}
             </div>
           ) : null}
+          {userBottomSpacer > 0 ? (
+            <div style={{ height: `${userBottomSpacer}px` }} aria-hidden="true" />
+          ) : null}
         </div>
       </div>
       <div className="grid gap-[0.5rem] rounded-[10px] border border-[#dfe1e6] bg-white p-[0.85rem] shadow-[0_1px_2px_rgba(9,30,66,0.08)]">
@@ -246,11 +298,17 @@ export default function UserAdminView({
             </button>
           ) : null}
         </div>
-        <div className="grid gap-[0.7rem]">
+        <div
+          className="grid max-h-[420px] gap-[0.7rem] overflow-y-auto overflow-x-hidden pr-1"
+          onScroll={(event) => setGroupsScrollTop(event.currentTarget.scrollTop)}
+        >
           {!userGroups.length ? (
             <p className="text-[#5e6c84]">No user groups yet.</p>
           ) : null}
-          {userGroups.map((group) => (
+          {groupTopSpacer > 0 ? (
+            <div style={{ height: `${groupTopSpacer}px` }} aria-hidden="true" />
+          ) : null}
+          {renderedGroups.map((group) => (
             <article
               key={group.id}
               className="rounded-lg border border-[#dfe1e6] bg-white p-[0.8rem]"
@@ -287,6 +345,9 @@ export default function UserAdminView({
               </div>
             </article>
           ))}
+          {groupBottomSpacer > 0 ? (
+            <div style={{ height: `${groupBottomSpacer}px` }} aria-hidden="true" />
+          ) : null}
         </div>
       </div>
       {canManage && showCreateModal ? (

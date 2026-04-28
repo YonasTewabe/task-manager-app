@@ -10,16 +10,20 @@ export async function fetchMyAssignedTasksController(
   deps: {
     token: string;
     currentUser: AnyRecord | null;
+    dashboardRequestSeqRef: { current: number };
     setDashboardData: (value: AnyRecord | null) => void;
     setDashboardAssignedTasks: (value: AnyRecord[]) => void;
   },
 ) {
   if (!deps.token || !deps.currentUser) return;
+  const requestSeq = ++deps.dashboardRequestSeqRef.current;
   try {
     const data = await fetchDashboardApi();
+    if (requestSeq !== deps.dashboardRequestSeqRef.current) return;
     deps.setDashboardData(data || null);
     deps.setDashboardAssignedTasks(data?.assignedTasks || []);
   } catch {
+    if (requestSeq !== deps.dashboardRequestSeqRef.current) return;
     deps.setDashboardData(null);
     deps.setDashboardAssignedTasks([]);
   }
@@ -82,6 +86,7 @@ export async function fetchProjectsPageController(
   { reset = false }: AnyRecord = {},
   deps: {
     token: string;
+    projectsPageRequestSeqRef: { current: number };
     projectsNextCursor: string;
     projectsHasMore: boolean;
     projectsLoadingMore: boolean;
@@ -92,17 +97,21 @@ export async function fetchProjectsPageController(
   },
 ) {
   if (!deps.token) return;
+  const requestSeq = ++deps.projectsPageRequestSeqRef.current;
   const nextCursor = reset ? "" : deps.projectsNextCursor;
   if (!reset && (!deps.projectsHasMore || deps.projectsLoadingMore)) return;
   deps.setProjectsLoadingMore(true);
   try {
     const page = await fetchProjectsPageApi(nextCursor, 20);
+    if (requestSeq !== deps.projectsPageRequestSeqRef.current) return;
     const incoming = Array.isArray(page?.items) ? page.items : [];
     deps.setProjectsPageItems((prev) => (reset ? incoming : [...prev, ...incoming]));
     deps.setProjectsNextCursor(String(page?.nextCursor || ""));
     deps.setProjectsHasMore(Boolean(page?.hasMore));
   } finally {
-    deps.setProjectsLoadingMore(false);
+    if (requestSeq === deps.projectsPageRequestSeqRef.current) {
+      deps.setProjectsLoadingMore(false);
+    }
   }
 }
 
@@ -110,6 +119,7 @@ export async function fetchUsersPageController(
   { reset = false }: AnyRecord = {},
   deps: {
     token: string;
+    usersPageRequestSeqRef: { current: number };
     usersNextCursor: string;
     usersHasMore: boolean;
     usersLoadingMore: boolean;
@@ -121,6 +131,7 @@ export async function fetchUsersPageController(
   },
 ) {
   if (!deps.token) return;
+  const requestSeq = ++deps.usersPageRequestSeqRef.current;
   const nextCursor = reset ? "" : deps.usersNextCursor;
   if (!reset && (!deps.usersHasMore || deps.usersLoadingMore)) return;
   deps.setUsersLoadingMore(true);
@@ -130,11 +141,14 @@ export async function fetchUsersPageController(
       isActive: !deps.showDisabledUsersFilter,
       limit: 25,
     });
+    if (requestSeq !== deps.usersPageRequestSeqRef.current) return;
     const incoming = Array.isArray(page?.items) ? page.items : [];
     deps.setUsersPageItems((prev) => (reset ? incoming : [...prev, ...incoming]));
     deps.setUsersNextCursor(String(page?.nextCursor || ""));
     deps.setUsersHasMore(Boolean(page?.hasMore));
   } finally {
-    deps.setUsersLoadingMore(false);
+    if (requestSeq === deps.usersPageRequestSeqRef.current) {
+      deps.setUsersLoadingMore(false);
+    }
   }
 }

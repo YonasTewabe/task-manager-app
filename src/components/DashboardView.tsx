@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import { DEFAULT_WORKFLOW_STAGES } from "../workflowDefaults.js";
 import { displayTaskRef } from "../utils/taskDisplay.js";
 
@@ -14,13 +14,16 @@ function toInitials(name) {
 function formatStatusLabel(status) {
   const text = String(status || "").trim();
   if (!text) return "Unknown";
-  return text
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return text.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
-export default function DashboardView({
+const SNAPSHOT_ITEMS = [
+  { key: "upcoming", label: "Not started", dot: "bg-[#dc2626]" },
+  { key: "active", label: "In progress", dot: "bg-[#0b6bcb]" },
+  { key: "done", label: "Done", dot: "bg-[#15803d]" },
+];
+
+function DashboardView({
   currentUser,
   projects,
   assignedTasks,
@@ -58,23 +61,40 @@ export default function DashboardView({
     active: Number(bucketCountsProp?.active || 0),
     done: Number(bucketCountsProp?.done || 0),
   };
-  const snapshotItems = [
-    { key: "upcoming", label: "Not started", dot: "bg-[#dc2626]" },
-    { key: "active", label: "In progress", dot: "bg-[#0b6bcb]" },
-    { key: "done", label: "Done", dot: "bg-[#15803d]" },
-  ];
   const projectCards = useMemo(() => {
     if (Array.isArray(projectCardsProp)) return projectCardsProp;
     return Array.isArray(projects) ? projects : [];
   }, [projectCardsProp, projects]);
   const greetingName = useMemo(
-    () => String(currentUser?.name || "there").split(" ")[0] || "there",
+    () => String(currentUser?.name || "").split(" ")[0] || "",
     [currentUser?.name],
   );
+  const greetingText = greetingName
+    ? `Welcome back, ${greetingName}.`
+    : "Welcome back";
   const recentTasks = useMemo(
-    () =>
-      Array.isArray(recentTasksProp) ? recentTasksProp : sortedTasks,
+    () => (Array.isArray(recentTasksProp) ? recentTasksProp : sortedTasks),
     [recentTasksProp, sortedTasks],
+  );
+  const recentTaskCards = useMemo(
+    () =>
+      recentTasks.map((task) => {
+        const proj = task.projectId
+          ? projectById.get(String(task.projectId))
+          : null;
+        const statusText =
+          stageMeta.get(task.status)?.label || formatStatusLabel(task.status);
+        const typeText =
+          String(task.type).charAt(0).toUpperCase() +
+          String(task.type).slice(1);
+        return {
+          id: task.id,
+          title: task.title,
+          subtitle: `${typeText} · ${displayTaskRef(task)} · ${proj?.name || ""}`,
+          statusText,
+        };
+      }),
+    [recentTasks, projectById, stageMeta],
   );
 
   return (
@@ -82,14 +102,16 @@ export default function DashboardView({
       <header className="grid gap-[0.95rem] rounded-[14px] border border-[#dbe5f6] p-[1rem_1.05rem] shadow-[0_8px_24px_rgba(14,35,78,0.08)]">
         <div className="grid gap-[0.2rem]">
           <h3 className="m-0 text-[1.45rem] font-bold leading-[1.2] text-[#123b88] min-[640px]:text-[1.84rem]">
-            Welcome back, {greetingName}.
+            {greetingText}
           </h3>
         </div>
       </header>
 
       <div className="grid grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)] items-start gap-[0.9rem] max-[1100px]:grid-cols-1">
         <section className="grid gap-[0.7rem] overflow-hidden rounded-[12px] border border-[#e5eaf3] bg-white shadow-[0_5px_14px_rgba(9,30,66,0.07)]">
-          <h3 className="m-0 border-b border-[#edf1f7] px-[0.95rem] py-[0.72rem] text-[1rem] font-bold text-[#184aa9]">My Projects</h3>
+          <h3 className="m-0 border-b border-[#edf1f7] px-[0.95rem] py-[0.72rem] text-[1rem] font-bold text-[#184aa9]">
+            My Projects
+          </h3>
           {projectCards.length ? (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-[0.75rem] px-[0.95rem] pb-[0.95rem] pt-[0.75rem] min-[640px]:grid-cols-[repeat(auto-fill,minmax(220px,1fr))]">
               {projectCards.map((project) => (
@@ -126,13 +148,17 @@ export default function DashboardView({
             My Work in a Snapshot
           </h3>
           <div className="grid gap-[0.5rem] px-[0.95rem] pb-[0.95rem] pt-[0.75rem]">
-            {snapshotItems.map((item) => (
+            {SNAPSHOT_ITEMS.map((item) => (
               <div
                 key={item.key}
                 className="grid grid-cols-[auto_1fr_auto] items-center gap-[0.45rem] rounded-[8px] border border-[#dfe1e6] bg-transparent px-[0.6rem] py-[0.45rem]"
               >
-                <span className={`inline-block h-2 w-2 rounded-full ${item.dot}`} />
-                <span className="text-[0.85rem] text-[#42526e]">{item.label}</span>
+                <span
+                  className={`inline-block h-2 w-2 rounded-full ${item.dot}`}
+                />
+                <span className="text-[0.85rem] text-[#42526e]">
+                  {item.label}
+                </span>
                 <strong>{assignedByBucket[item.key]}</strong>
               </div>
             ))}
@@ -141,17 +167,12 @@ export default function DashboardView({
       </div>
 
       <section className="overflow-hidden rounded-[12px] border border-[#e5eaf3] bg-white shadow-[0_5px_14px_rgba(9,30,66,0.07)]">
-        <h3 className="m-0 border-b border-[#edf1f7] px-[0.95rem] py-[0.72rem] text-[1rem] font-bold text-[#184aa9]">Assigned to me</h3>
+        <h3 className="m-0 border-b border-[#edf1f7] px-[0.95rem] py-[0.72rem] text-[1rem] font-bold text-[#184aa9]">
+          Assigned to me
+        </h3>
         {recentTasks.length ? (
           <div className="grid gap-[0.55rem] px-[0.95rem] pb-[0.95rem] pt-[0.75rem]">
-            {recentTasks.map((task) => {
-              const proj = task.projectId
-                ? projectById.get(String(task.projectId))
-                : null;
-              const statusText =
-                stageMeta.get(task.status)?.label || formatStatusLabel(task.status);
-              const typeText =
-                String(task.type).charAt(0).toUpperCase() + String(task.type).slice(1);
+            {recentTaskCards.map((task) => {
               return (
                 <button
                   key={task.id}
@@ -164,21 +185,24 @@ export default function DashboardView({
                       {task.title}
                     </span>
                     <span className="truncate text-[0.84rem] leading-[1.25] text-gray-500">
-                      {typeText} · {displayTaskRef(task)} ·{" "}
-                      {proj?.name}
+                      {task.subtitle}
                     </span>
                   </div>
                   <span className="rounded-full border border-[#d4e3ff] bg-[#ecf3ff] px-[0.5rem] py-[0.18rem] text-[0.69rem] font-bold text-[#1e40af]">
-                    {statusText.toUpperCase()}
+                    {task.statusText.toUpperCase()}
                   </span>
                 </button>
               );
             })}
           </div>
         ) : (
-          <p className="px-[0.95rem] pb-[0.95rem] pt-[0.75rem] text-[#5e6c84]">No tasks assigned to you yet</p>
+          <p className="px-[0.95rem] pb-[0.95rem] pt-[0.75rem] text-[#5e6c84]">
+            No tasks assigned to you yet
+          </p>
         )}
       </section>
     </section>
   );
 }
+
+export default memo(DashboardView);

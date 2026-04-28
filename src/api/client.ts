@@ -50,7 +50,7 @@ export async function apiRequest(path: string, options: RequestInit & AnyRecord 
   }
 
   const method = String(options.method || "GET").toUpperCase();
-  const canDedupe = method === "GET";
+  const canDedupe = method === "GET" && !options.signal;
   const dedupeKey = canDedupe
     ? `${method}:${path}:${JSON.stringify(options.headers || {})}`
     : "";

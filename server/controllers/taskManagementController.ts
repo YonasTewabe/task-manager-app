@@ -162,7 +162,7 @@ export async function sendEmailHandler(req: Request, res: Response) {
   }
 }
 
-export async function listProjectsHandler(_req: Request, res: Response) {
+export async function listProjectsHandler(req: Request, res: Response) {
   const projects = await getProjects();
   return res.json(projects);
 }
@@ -172,16 +172,8 @@ export async function pagedProjectsHandler(req: Request, res: Response) {
     limit: req.query.limit,
     cursor: req.query.cursor,
   });
-  const items =
-    req.user?.role === "admin"
-      ? page.items
-      : page.items.filter((project) =>
-          (project.members || []).some(
-            (member) => String(member.id) === String(req.user.id),
-          ),
-        );
   return res.json({
-    items,
+    items: page.items,
     nextCursor: page.nextCursor,
     hasMore: page.hasMore,
   });
@@ -290,6 +282,7 @@ export async function sprintTasksHandler(req: Request, res: Response) {
   const tasks = await getTasks({
     sprintId: req.params.sprintId,
     projectId: req.query.projectId,
+    limit: asString(req.query.limit) || "200",
   });
   return res.json(tasks);
 }
@@ -309,6 +302,7 @@ export async function tasksHandler(req: Request, res: Response) {
       type: req.query.type,
       label: req.query.label,
       search: req.query.search,
+      limit: asString(req.query.limit) || "200",
     }),
   );
   return res.json(tasks);
@@ -348,6 +342,7 @@ export async function backlogHandler(req: Request, res: Response) {
       type: req.query.type,
       label: req.query.label,
       search: req.query.search,
+      limit: asString(req.query.limit) || "200",
     }),
   );
   return res.json(tasks);
@@ -427,7 +422,10 @@ export async function tasksSearchHandler(req: Request, res: Response) {
   }
   const rows = await searchTasks(
     withUserProjectScope(req, scopedFilters),
-    { limit: asString(req.query.limit) },
+    {
+      limit: asString(req.query.limit),
+      cursor: asString(req.query.cursor),
+    },
   );
   return res.json(rows);
 }

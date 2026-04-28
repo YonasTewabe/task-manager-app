@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 import "sweetalert2/dist/sweetalert2.min.css";
-import { useShallow } from "zustand/react/shallow";
 import AuthView from "./components/AuthView";
 import BacklogView from "./components/BacklogView";
 import BoardView from "./components/BoardView";
@@ -29,7 +28,6 @@ import {
   getWorkTypeMeta,
 } from "./constants/workTypes.js";
 import { DEFAULT_WORKFLOW_STAGES } from "./workflowDefaults.js";
-import { useAppStore } from "./store/appStore";
 import { buildNotificationPath } from "./utils/notificationLinks";
 import { buildLabelColorMap, normalizeLabelDefinitions } from "./utils/labels.js";
 import {
@@ -118,6 +116,13 @@ import {
   refreshProjectsListController,
   refreshViewsController,
 } from "./features/taskManagement/readController.js";
+import {
+  useNotificationsSlice,
+  usePlanningDataSlice,
+  useSessionSlice,
+  useTaskDrawerSlice,
+  useTaskFormSlice,
+} from "./features/taskManagement/hooks/useAppStoreSlices";
 
 const ASSIGNEE_VISIBLE_LIMIT = 6;
 const USER_AVATAR_COLORS = [
@@ -169,6 +174,15 @@ function App() {
     setAuthLoading,
     currentUser,
     setCurrentUser,
+    loading,
+    setLoading,
+    error,
+    setError,
+    authMode,
+    setAuthMode,
+    setResetPasswordForm,
+  } = useSessionSlice();
+  const {
     users,
     setUsers,
     userGroups,
@@ -192,10 +206,16 @@ function App() {
     setSelectedSprintId,
     currentProjectId,
     setCurrentProjectId,
-    loading,
-    setLoading,
-    error,
-    setError,
+    activeView,
+    setActiveView,
+    dashboardAssignedTasks,
+    setDashboardAssignedTasks,
+    filters,
+    setFilters,
+    filterDraft,
+    setFilterDraft,
+  } = usePlanningDataSlice();
+  const {
     taskTitle,
     setTaskTitle,
     storyPoints,
@@ -218,16 +238,9 @@ function App() {
     setShowFilterModal,
     showAssigneeOverflow,
     setShowAssigneeOverflow,
-    taskBundle,
-    setTaskBundle,
-    activeView,
-    setActiveView,
-    dashboardAssignedTasks,
-    setDashboardAssignedTasks,
-    filters,
-    setFilters,
-    filterDraft,
-    setFilterDraft,
+  } = useTaskFormSlice();
+  const { taskBundle, setTaskBundle } = useTaskDrawerSlice();
+  const {
     notifications,
     setNotifications,
     unreadCount,
@@ -236,89 +249,7 @@ function App() {
     setNotificationCenterOpen,
     setNotificationStreamConnected,
     setNotificationStreamError,
-    authMode,
-    setAuthMode,
-    setResetPasswordForm,
-  } = useAppStore(
-    useShallow((state) => ({
-      token: state.token,
-      setToken: state.setToken,
-      authLoading: state.authLoading,
-      setAuthLoading: state.setAuthLoading,
-      currentUser: state.currentUser,
-      setCurrentUser: state.setCurrentUser,
-      users: state.users,
-      setUsers: state.setUsers,
-      userGroups: state.userGroups,
-      setUserGroups: state.setUserGroups,
-      sprints: state.sprints,
-      setSprints: state.setSprints,
-      projects: state.projects,
-      setProjects: state.setProjects,
-      projectSettings: state.projectSettings,
-      setProjectSettings: state.setProjectSettings,
-      columns: state.columns,
-      setColumns: state.setColumns,
-      boardTotalsByStatus: state.boardTotalsByStatus,
-      setBoardTotalsByStatus: state.setBoardTotalsByStatus,
-      backlogTasks: state.backlogTasks,
-      setBacklogTasks: state.setBacklogTasks,
-      allTasks: state.allTasks,
-      setAllTasks: state.setAllTasks,
-      setSprintTasks: state.setSprintTasks,
-      selectedSprintId: state.selectedSprintId,
-      setSelectedSprintId: state.setSelectedSprintId,
-      currentProjectId: state.currentProjectId,
-      setCurrentProjectId: state.setCurrentProjectId,
-      loading: state.loading,
-      setLoading: state.setLoading,
-      error: state.error,
-      setError: state.setError,
-      taskTitle: state.taskTitle,
-      setTaskTitle: state.setTaskTitle,
-      storyPoints: state.storyPoints,
-      setStoryPoints: state.setStoryPoints,
-      taskDueDate: state.taskDueDate,
-      setTaskDueDate: state.setTaskDueDate,
-      assigneeId: state.assigneeId,
-      setAssigneeId: state.setAssigneeId,
-      taskPriority: state.taskPriority,
-      setTaskPriority: state.setTaskPriority,
-      taskType: state.taskType,
-      setTaskType: state.setTaskType,
-      taskLabel: state.taskLabel,
-      setTaskLabel: state.setTaskLabel,
-      taskVersion: state.taskVersion,
-      setTaskVersion: state.setTaskVersion,
-      showCreateTaskModal: state.showCreateTaskModal,
-      setShowCreateTaskModal: state.setShowCreateTaskModal,
-      showFilterModal: state.showFilterModal,
-      setShowFilterModal: state.setShowFilterModal,
-      showAssigneeOverflow: state.showAssigneeOverflow,
-      setShowAssigneeOverflow: state.setShowAssigneeOverflow,
-      taskBundle: state.taskBundle,
-      setTaskBundle: state.setTaskBundle,
-      activeView: state.activeView,
-      setActiveView: state.setActiveView,
-      dashboardAssignedTasks: state.dashboardAssignedTasks,
-      setDashboardAssignedTasks: state.setDashboardAssignedTasks,
-      filters: state.filters,
-      setFilters: state.setFilters,
-      filterDraft: state.filterDraft,
-      setFilterDraft: state.setFilterDraft,
-      notifications: state.notifications,
-      setNotifications: state.setNotifications,
-      unreadCount: state.unreadCount,
-      setUnreadCount: state.setUnreadCount,
-      notificationCenterOpen: state.notificationCenterOpen,
-      setNotificationCenterOpen: state.setNotificationCenterOpen,
-      setNotificationStreamConnected: state.setNotificationStreamConnected,
-      setNotificationStreamError: state.setNotificationStreamError,
-      authMode: state.authMode,
-      setAuthMode: state.setAuthMode,
-      setResetPasswordForm: state.setResetPasswordForm,
-    })),
-  );
+  } = useNotificationsSlice();
   const filterPopoverRef = useRef(null);
   const assigneeOverflowRef = useRef(null);
   const createTaskDescriptionRef = useRef(null);
@@ -329,6 +260,9 @@ function App() {
   const backlogRowsRequestSeqRef = useRef(0);
   const allTasksRequestSeqRef = useRef(0);
   const sprintsRequestSeqRef = useRef(0);
+  const projectsPageRequestSeqRef = useRef(0);
+  const usersPageRequestSeqRef = useRef(0);
+  const dashboardRequestSeqRef = useRef(0);
   const lastReadinessBlockRef = useRef("");
   const notificationStreamRef = useRef(null);
   const [debouncedFilters, setDebouncedFilters] = useState(filters);
@@ -474,18 +408,28 @@ function App() {
       (item) => String(item.id) === String(currentProjectId),
     );
     if (project?.name) {
-      setProjectNameHintById((prev) => ({
-        ...prev,
-        [String(currentProjectId)]: String(project.name),
-      }));
+      const projectKey = String(currentProjectId);
+      const projectName = String(project.name);
+      setProjectNameHintById((prev) => {
+        if (String(prev?.[projectKey] || "") === projectName) return prev;
+        return {
+          ...prev,
+          [projectKey]: projectName,
+        };
+      });
     }
   }, [projects, currentProjectId]);
   useEffect(() => {
     if (!currentProjectId || !activeSprintName) return;
-    setActiveSprintNameHintByProjectId((prev) => ({
-      ...prev,
-      [String(currentProjectId)]: String(activeSprintName),
-    }));
+    const projectKey = String(currentProjectId);
+    const sprintName = String(activeSprintName);
+    setActiveSprintNameHintByProjectId((prev) => {
+      if (String(prev?.[projectKey] || "") === sprintName) return prev;
+      return {
+        ...prev,
+        [projectKey]: sprintName,
+      };
+    });
   }, [currentProjectId, activeSprintName]);
   const workflowStages = useMemo(
     () =>
@@ -508,27 +452,15 @@ function App() {
   }, [workflowStages]);
 
   const visibleProjects = useMemo(() => {
+    return projects;
+  }, [projects]);
+  const sidebarProjects = useMemo(() => {
     if (!currentUser) return [];
-    if (currentUser.role === "admin") return projects;
     return projects.filter((project) =>
       (project.members || []).some(
         (member) => String(member.id) === String(currentUser.id),
       ),
     );
-  }, [projects, currentUser]);
-  const sidebarProjects = useMemo(() => {
-    if (!currentUser) return [];
-    return projects
-      .filter((project) =>
-        (project.members || []).some(
-          (member) => String(member.id) === String(currentUser.id),
-        ),
-      )
-      .sort((a, b) =>
-        String(a?.name || "").localeCompare(String(b?.name || ""), undefined, {
-          sensitivity: "base",
-        }),
-      );
   }, [projects, currentUser]);
   const displayProjects =
     activeView === "projects" && projectsPageItems.length
@@ -760,6 +692,7 @@ function App() {
     await fetchMyAssignedTasksController({
       token,
       currentUser,
+      dashboardRequestSeqRef,
       setDashboardData,
       setDashboardAssignedTasks,
     });
@@ -788,6 +721,7 @@ function App() {
         { reset },
         {
           token,
+          projectsPageRequestSeqRef,
           projectsNextCursor,
           projectsHasMore,
           projectsLoadingMore,
@@ -807,6 +741,7 @@ function App() {
         { reset },
         {
           token,
+          usersPageRequestSeqRef,
           usersNextCursor,
           usersHasMore,
           usersLoadingMore,
@@ -902,29 +837,29 @@ function App() {
   };
 
   const fetchSummaryOverview = useCallback(
-    async (projectId, fromDate, toDate) => {
-      return fetchSummaryOverviewController(projectId, fromDate, toDate);
+    async (projectId, fromDate, toDate, signal?: AbortSignal) => {
+      return fetchSummaryOverviewController(projectId, fromDate, toDate, signal);
     },
     [],
   );
 
   const fetchSummarySprint = useCallback(
-    async (projectId, fromDate, toDate) => {
-      return fetchSummarySprintController(projectId, fromDate, toDate);
+    async (projectId, fromDate, toDate, signal?: AbortSignal) => {
+      return fetchSummarySprintController(projectId, fromDate, toDate, signal);
     },
     [],
   );
 
   const fetchSummaryFlow = useCallback(
-    async (projectId, fromDate, toDate, interval = "week") => {
-      return fetchSummaryFlowController(projectId, fromDate, toDate, interval);
+    async (projectId, fromDate, toDate, signal?: AbortSignal, interval = "week") => {
+      return fetchSummaryFlowController(projectId, fromDate, toDate, interval, signal);
     },
     [],
   );
 
   const fetchSummaryWorkload = useCallback(
-    async (projectId, fromDate, toDate) => {
-      return fetchSummaryWorkloadController(projectId, fromDate, toDate);
+    async (projectId, fromDate, toDate, signal?: AbortSignal) => {
+      return fetchSummaryWorkloadController(projectId, fromDate, toDate, signal);
     },
     [],
   );
@@ -1435,32 +1370,27 @@ function App() {
   const handleNavigateMain = useCallback(
     (key) => {
       if (key === "dashboard") {
-        setActiveView("dashboard");
         navigate("/dashboard");
         return;
       }
       if (key === "projects") {
-        setActiveView("projects");
         navigate("/projects");
         return;
       }
       if (key === "users") {
-        setActiveView("users");
         navigate("/users");
         return;
       }
       if (key === "profile") {
-        setActiveView("profile");
         navigate("/profile");
         return;
       }
       if (key === "app-settings") {
-        setActiveView("app-settings");
         navigate("/settings");
         return;
       }
     },
-    [navigate, setActiveView],
+    [navigate],
   );
 
   const handleNavigateProject = useCallback(
@@ -1469,7 +1399,11 @@ function App() {
       const targetSubview = String(subview || "board");
       const nextProject = projects.find((project) => String(project.id) === id);
       if (nextProject?.name) {
-        setProjectNameHintById((prev) => ({ ...prev, [id]: nextProject.name }));
+        const nextName = String(nextProject.name);
+        setProjectNameHintById((prev) => {
+          if (String(prev?.[id] || "") === nextName) return prev;
+          return { ...prev, [id]: nextName };
+        });
       }
       if (
         targetSubview === "board" ||
@@ -1489,7 +1423,6 @@ function App() {
         lastReadinessBlockRef.current = "";
         setCurrentProjectId(id);
         setSelectedSprintId("");
-        setActiveView("board");
         navigate(`/project/${id}/board`);
         return;
       }
@@ -1498,7 +1431,6 @@ function App() {
           lastReadinessBlockRef.current = "";
           setCurrentProjectId(id);
           setSelectedSprintId("");
-          setActiveView(targetSubview);
           navigate(`/project/${id}/${targetSubview}`);
           return;
         }
@@ -1506,7 +1438,6 @@ function App() {
       lastReadinessBlockRef.current = "";
       setCurrentProjectId(id);
       setSelectedSprintId("");
-      setActiveView(targetSubview);
       navigate(`/project/${id}/${targetSubview}`);
     },
     [
@@ -1518,7 +1449,6 @@ function App() {
       setBoardTotalsByStatus,
       setBoardNextCursor,
       setBoardHasMore,
-      setActiveView,
       setCurrentProjectId,
       setSelectedSprintId,
       setProjectNameHintById,
@@ -1542,7 +1472,6 @@ function App() {
           );
           lastReadinessBlockRef.current = key;
         }
-        setActiveView("settings");
         navigate(`/project/${encodeURIComponent(currentProjectId)}/settings`, {
           replace: true,
         });
@@ -1770,11 +1699,15 @@ function App() {
     ],
   );
 
-  const searchGlobalTasks = useCallback(async (query) => {
+  const searchGlobalTasks = useCallback(async (query, cursor = "") => {
     const term = String(query || "").trim();
-    if (!term) return [];
-    const data = await searchTasksApi(term, { scope: "global" });
-    return Array.isArray(data) ? data : [];
+    if (!term) return { items: [], nextCursor: "", hasMore: false };
+    const data = await searchTasksApi(term, { scope: "global", cursor, limit: 20 });
+    return {
+      items: Array.isArray(data?.items) ? data.items : [],
+      nextCursor: String(data?.nextCursor || ""),
+      hasMore: Boolean(data?.hasMore),
+    };
   }, []);
 
   const openTaskFromGlobalSearch = useCallback(
@@ -2038,6 +1971,20 @@ function App() {
       fetchBoard,
     });
   };
+  const dashboardRecentTasks = useMemo(
+    () =>
+      Array.isArray(dashboardData?.recentTasks) ? dashboardData.recentTasks : null,
+    [dashboardData?.recentTasks],
+  );
+  const dashboardBucketCounts = useMemo(
+    () => (dashboardData?.bucketCounts ? dashboardData.bucketCounts : null),
+    [dashboardData?.bucketCounts],
+  );
+  const dashboardProjectCards = useMemo(
+    () =>
+      Array.isArray(dashboardData?.projectCards) ? dashboardData.projectCards : null,
+    [dashboardData?.projectCards],
+  );
 
   if (!token || mustChangePassword) {
     return (
@@ -2056,24 +2003,27 @@ function App() {
     );
   }
 
-  const safeColumns = (
-    columns.length
-      ? columns
+  const safeColumns = useMemo(() => {
+    const source = columns.length
+      ? [...columns]
       : workflowStages.map((s) => ({
           status: s.key,
           name: s.name,
           description: s.description,
           counterGroup: s.counterGroup,
           tasks: [],
-        }))
-  ).sort((a, b) => {
-    const rank = { upcoming: 0, active: 1, done: 2 };
-    const aRank = rank[a.counterGroup] ?? 1;
-    const bRank = rank[b.counterGroup] ?? 1;
-    if (aRank !== bRank) return aRank - bRank;
-    return 0;
-  });
-
+        }));
+    return source.sort((a, b) => {
+      const rank = { upcoming: 0, active: 1, done: 2 };
+      const aRank = rank[a.counterGroup] ?? 1;
+      const bRank = rank[b.counterGroup] ?? 1;
+      if (aRank !== bRank) return aRank - bRank;
+      return 0;
+    });
+  }, [columns, workflowStages]);
+  const scopedSearchLabel = activeView === "backlog" ? "Search backlog" : "Search board";
+  const scopedClearSearchLabel =
+    activeView === "backlog" ? "Clear backlog search" : "Clear board search";
   return (
     <div className="min-h-screen bg-[#f7f8fa] text-[#172b4d]">
       <MainLayout
@@ -2115,14 +2065,14 @@ function App() {
               className={`mb-3 grid gap-2 rounded-lg border border-[#dfe1e6] bg-white p-[0.8rem] ${activeView === "board" ? "border-[#e2e6ee] bg-white" : ""}`}
             >
               <div className="grid gap-[0.6rem]">
-                <div className="flex flex-wrap items-center gap-[0.6rem] max-[1280px]:flex-col max-[1280px]:items-stretch">
-                  <div className="flex min-w-0 flex-1 basis-[800px] items-center gap-[0.4rem] rounded border border-[#d6dce8] bg-[#f7f8fa] px-2 py-[0.3rem] max-[1280px]:min-w-[250px] max-[1280px]:basis-[320px] max-[640px]:w-full max-[640px]:basis-auto">
+                <div className="flex flex-wrap items-center gap-[0.6rem] max-[1024px]:flex-col max-[1024px]:items-stretch">
+                  <div className="flex min-w-0 flex-1 basis-[800px] items-center gap-[0.4rem] rounded border border-[#d6dce8] bg-[#f7f8fa] px-2 py-[0.3rem] max-[1024px]:min-w-[250px] max-[1024px]:basis-auto max-[640px]:w-full">
                     <span className="text-[#6b778c]">
                       <Icon name="search" size={15} />
                     </span>
                     <input
                       className="w-full border-none bg-transparent p-0 shadow-none focus:border-transparent focus:shadow-none focus:outline-none focus:ring-0 focus-visible:outline-none"
-                      placeholder="Search board"
+                      placeholder={scopedSearchLabel}
                       value={filters.search}
                       onChange={(event) =>
                         setFilters((prev) => ({
@@ -2139,7 +2089,7 @@ function App() {
                     {String(filters.search || "").trim() ? (
                       <button
                         type="button"
-                        aria-label="Clear board search"
+                        aria-label={scopedClearSearchLabel}
                         className="grid h-5 w-5 place-items-center rounded text-[0.72rem] font-semibold text-[#6b778c] hover:bg-[#e9edf3] hover:text-[#253858]"
                         onClick={() =>
                           setFilters((prev) => ({
@@ -2153,7 +2103,7 @@ function App() {
                     ) : null}
                   </div>
                   <div
-                    className="relative min-w-0 shrink-0 max-w-[min(46vw,360px)] max-[640px]:order-2 max-[640px]:w-full max-[640px]:max-w-none"
+                    className="relative min-w-0 shrink-0 max-w-[min(46vw,360px)] max-[1024px]:max-w-none max-[640px]:order-2 max-[640px]:w-full"
                     title="Team members"
                     ref={assigneeOverflowRef}
                   >
@@ -2238,7 +2188,7 @@ function App() {
                       </div>
                     ) : null}
                   </div>
-                  <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2 max-[1280px]:ml-0 max-[640px]:order-3 max-[640px]:w-full max-[640px]:justify-end">
+                  <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2 max-[1024px]:ml-0 max-[640px]:order-3 max-[640px]:w-full max-[640px]:justify-end">
                     <div className="relative" ref={filterPopoverRef}>
                       <button
                         type="button"
@@ -2471,9 +2421,9 @@ function App() {
               currentUser={currentUser}
               projects={sidebarProjects}
               assignedTasks={dashboardAssignedTasks}
-              recentTasks={dashboardData?.recentTasks || []}
-              bucketCounts={dashboardData?.bucketCounts || null}
-              projectCards={dashboardData?.projectCards || null}
+              recentTasks={dashboardRecentTasks}
+              bucketCounts={dashboardBucketCounts}
+              projectCards={dashboardProjectCards}
               projectById={projectById}
               workflowStages={workflowStages}
               onOpenProject={openProjectBoard}

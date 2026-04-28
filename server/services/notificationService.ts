@@ -34,42 +34,56 @@ export async function createAndDispatchNotifications({
     (id) => id !== String(actorUserId || ""),
   );
   if (!recipients.length) return [];
-  const created = [];
-  for (const userId of recipients) {
-    let row = null;
-    try {
-      row = await prisma.notification.create({
-        data: {
-          userId,
-          type: String(type || "general"),
-          title: String(title || "Notification"),
-          body: String(body || ""),
-          entityType: String(entityType || ""),
-          entityId: entityId || null,
-          metadata: asObjectRecord(metadata),
-          dedupeKey: dedupeKey ? `${String(dedupeKey)}:${userId}` : null,
-        },
+  const created = (
+    await Promise.all(
+      recipients.map(async (userId) => {
+        try {
+          return await prisma.notification.create({
+            data: {
+              userId,
+              type: String(type || "general"),
+              title: String(title || "Notification"),
+              body: String(body || ""),
+              entityType: String(entityType || ""),
+              entityId: entityId || null,
+              metadata: asObjectRecord(metadata),
+              dedupeKey: dedupeKey ? `${String(dedupeKey)}:${userId}` : null,
+            },
+          });
+        } catch (error) {
+          if (error?.code !== "P2002") throw error;
+          return null;
+        }
+      }),
+    )
+  ).filter(Boolean);
+  if (!created.length) return [];
+  const unreadRows = await prisma.notification.groupBy({
+    by: ["userId"],
+    where: {
+      userId: { in: created.map((row) => String(row.userId)) },
+      readAt: null,
+    },
+    _count: { _all: true },
+  });
+  const unreadByUserId = new Map(
+    unreadRows.map((row) => [String(row.userId), Number(row._count?._all || 0)]),
+  );
+  await Promise.all(
+    created.map(async (row) => {
+      const userId = String(row.userId || "");
+      publishNotificationEvent(userId, "notification:new", row);
+      publishNotificationEvent(userId, "notification:unread_count", {
+        unreadCount: Number(unreadByUserId.get(userId) || 0),
       });
-    } catch (error) {
-      if (error?.code !== "P2002") throw error;
-    }
-    if (!row) continue;
-    created.push(row);
-    const unread = await getUnreadCount(userId);
-    publishNotificationEvent(userId, "notification:new", row);
-    publishNotificationEvent(userId, "notification:unread_count", {
-      unreadCount: unread,
-    });
-    await sendPushToUser(
-      userId,
-      {
+      await sendPushToUser(userId, {
         title: row.title,
         body: row.body,
         notificationId: row.id,
         metadata: asObjectRecord(row.metadata),
-      },
-    );
-  }
+      });
+    }),
+  );
   return created;
 }
 
