@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    text-transform: capitalize;
+  }
+
+  button {
+    @apply rounded-[10px] px-3;
+    min-height: 32px;
+    line-height: 1.2;
+  }
+
+  button:not([class*="w-"]) {
+    min-width: 40px;
+  }
+
+  button:not([class]),
+  button[class=""] {
+    @apply border border-[#0b63c5] bg-[#0b6bcb] text-white transition-[background-color,border-color,box-shadow] duration-150;
+  }
+
+  button:not([class]):hover:not(:disabled),
+  button[class=""]:hover:not(:disabled) {
+    @apply border-[#0957a3] bg-[#095db2];
+  }
+
+  button:focus-visible {
+    @apply outline-none ring-2 ring-[#8ec1ff] ring-offset-1;
+  }
+
+  button:disabled {
+    @apply cursor-not-allowed opacity-60;
+  }
+}
+
+/* Scoped fallback: keep automation branch radios compact/inline. */
+.branch-filter-options {
+  display: grid;
+  gap: 8px;
+}
+
+.branch-scope-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  color: #42526e;
+  font-size: 0.88rem;
+}
+
+.branch-scope-option > input[type="radio"] {
+  width: 16px !important;
+  min-width: 16px !important;
+  height: 16px !important;
+  min-height: 16px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  flex: 0 0 auto !important;
+  display: inline-block !important;
+  accent-color: #0c66e4;
+}
+
+[contenteditable="true"][data-placeholder]:empty::before {
+  content: attr(data-placeholder);
+  color: #7a869a;
+  pointer-events: none;
+}
