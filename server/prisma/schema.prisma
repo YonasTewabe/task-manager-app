@@ -1,0 +1,334 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String    @id @default(uuid()) @db.Uuid
+  name              String
+  email             String
+  passwordHash      String    @map("password_hash")
+  role              String    @default("member")
+  isActive          Boolean   @default(true) @map("is_active")
+  disabledAt        DateTime? @map("disabled_at") @db.Timestamptz(6)
+  disabledBy        String?   @map("disabled_by") @db.Uuid
+  disableReason     String    @default("") @map("disable_reason")
+  mustChangePassword Boolean  @default(false) @map("must_change_password")
+  passwordChangedAt DateTime? @map("password_changed_at") @db.Timestamptz(6)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  disabledByUser User?             @relation("user_disabled_by", fields: [disabledBy], references: [id], onDelete: SetNull)
+  disabledUsers  User[]            @relation("user_disabled_by")
+  groupMembers   UserGroupMember[]
+  projectMembers ProjectMember[]
+  assignedTasks  Task[]            @relation("task_assignee")
+  createdTasks   Task[]            @relation("task_creator")
+  comments       TaskComment[]
+  activities     TaskActivity[]
+  notifications  Notification[]
+  subscriptions  PushSubscription[]
+  passwordResetTokens PasswordResetToken[]
+
+  @@unique([email])
+  @@index([updatedAt(sort: Desc), id])
+  @@map("users")
+}
+
+model UserGroup {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  members UserGroupMember[]
+
+  @@unique([name])
+  @@map("user_groups")
+}
+
+model UserGroupMember {
+  groupId String @map("group_id") @db.Uuid
+  userId  String @map("user_id") @db.Uuid
+
+  group UserGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, userId])
+  @@map("user_group_members")
+}
+
+model Project {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  projectKey  String   @map("project_key")
+  description String   @default("")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  sprints         Sprint[]
+  members         ProjectMember[]
+  tasks           Task[]
+  settings        ProjectSettings?
+  githubRepos     ProjectGithubRepo[]
+  automationRules ProjectAutomationRule[]
+
+  @@unique([projectKey])
+  @@map("projects")
+}
+
+model Sprint {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String
+  projectId String    @map("project_id") @db.Uuid
+  startDate DateTime? @map("start_date") @db.Date
+  endDate   DateTime? @map("end_date") @db.Date
+  status    String    @default("planned")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks   Task[]
+
+  @@index([projectId, startDate, endDate, name])
+  @@index([projectId, status])
+  @@map("sprints")
+}
+
+model ProjectMember {
+  projectId      String  @map("project_id") @db.Uuid
+  userId         String  @map("user_id") @db.Uuid
+  isProjectAdmin Boolean @default(false) @map("is_project_admin")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
+  @@index([userId, projectId])
+  @@map("project_members")
+}
+
+model Task {
+  id                 String    @id @default(uuid()) @db.Uuid
+  title              String
+  description        String    @default("")
+  acceptanceCriteria Json      @default("[]") @map("acceptance_criteria")
+  label              String    @default("")
+  versionLabel       String    @default("") @map("version")
+  type               String    @default("task")
+  priority           String    @default("medium")
+  status             String    @default("todo")
+  storyPoints        Int?      @map("story_points")
+  dueDate            DateTime? @map("due_date") @db.Date
+  projectId          String    @map("project_id") @db.Uuid
+  assigneeId         String?   @map("assignee_id") @db.Uuid
+  sprintId           String?   @map("sprint_id") @db.Uuid
+  createdBy          String?   @map("created_by") @db.Uuid
+  taskNumber         Int       @map("task_number")
+  rowVersion         Int       @default(1) @map("row_version")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignee  User?   @relation("task_assignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  sprint    Sprint? @relation(fields: [sprintId], references: [id], onDelete: SetNull)
+  creator   User?   @relation("task_creator", fields: [createdBy], references: [id], onDelete: SetNull)
+  comments  TaskComment[]
+  activity  TaskActivity[]
+  devLinks  TaskDevLink[]
+
+  @@unique([projectId, taskNumber])
+  @@index([projectId, sprintId, status, updatedAt(sort: Desc)])
+  @@index([projectId, assigneeId, status])
+  @@index([assigneeId, sprintId, status, updatedAt(sort: Desc)])
+  @@index([projectId, updatedAt(sort: Desc), id])
+  @@index([projectId, priority])
+  @@index([projectId, type])
+  @@map("tasks")
+}
+
+model TaskComment {
+  id        String   @id @default(uuid()) @db.Uuid
+  taskId    String   @map("task_id") @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  body      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([taskId, createdAt])
+  @@map("task_comments")
+}
+
+model TaskActivity {
+  id        String   @id @default(uuid()) @db.Uuid
+  taskId    String   @map("task_id") @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  action    String
+  meta      Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([taskId, createdAt(sort: Desc)])
+  @@map("task_activity")
+}
+
+model Notification {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  type       String
+  title      String
+  body       String    @default("")
+  entityType String    @default("") @map("entity_type")
+  entityId   String?   @map("entity_id") @db.Uuid
+  metadata   Json      @default("{}") @map("metadata_json")
+  dedupeKey  String?   @map("dedupe_key")
+  readAt     DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupeKey], map: "idx_notifications_scope_user_dedupe_key")
+  @@index([userId, readAt, createdAt(sort: Desc)])
+  @@index([entityType, entityId])
+  @@map("notifications")
+}
+
+model PushSubscription {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  endpoint   String
+  p256dh     String
+  auth       String
+  userAgent  String   @default("") @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastUsedAt DateTime @default(now()) @map("last_used_at") @db.Timestamptz(6)
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([endpoint])
+  @@map("push_subscriptions")
+}
+
+model PasswordResetToken {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  tokenHash   String    @map("token_hash")
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt      DateTime? @map("used_at") @db.Timestamptz(6)
+  createdByIp String    @default("") @map("created_by_ip")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+model UserAuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  actorUserId  String?  @map("actor_user_id") @db.Uuid
+  targetUserId String?  @map("target_user_id") @db.Uuid
+  action       String
+  metadata     Json     @default("{}") @map("metadata_json")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("user_audit_log")
+}
+
+model SystemSettings {
+  id              String   @id @default(uuid()) @db.Uuid
+  boardCardFields Json     @default("{}") @map("board_card_fields")
+  workflowRules   Json     @default("{}") @map("workflow_rules")
+  generalRules    Json     @default("{\"labels\": []}") @map("general_rules")
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("system_settings")
+}
+
+model ProjectSettings {
+  projectId       String   @id @map("project_id") @db.Uuid
+  boardCardFields Json     @default("{}") @map("board_card_fields")
+  workflowRules   Json     @default("{}") @map("workflow_rules")
+  generalRules    Json     @default("{}") @map("general_rules")
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("project_settings")
+}
+
+model AppIntegrationSettings {
+  id                  Int      @id @default(1)
+  githubOrg           String   @default("") @map("github_org")
+  githubToken         String   @default("") @map("github_token")
+  githubWebhookSecret String   @default("") @map("github_webhook_secret")
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("app_integration_settings")
+}
+
+model ProjectGithubRepo {
+  id                   String   @id @default(uuid()) @db.Uuid
+  projectId            String   @map("project_id") @db.Uuid
+  githubInstallationId BigInt?  @map("github_installation_id")
+  owner                String
+  repo                 String
+  defaultBranch        String   @default("main") @map("default_branch")
+  isEnabled            Boolean  @default(true) @map("is_enabled")
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, owner, repo])
+  @@index([projectId])
+  @@index([owner, repo])
+  @@map("project_github_repos")
+}
+
+model ProjectAutomationRule {
+  id            String   @id @default(uuid()) @db.Uuid
+  projectId     String   @map("project_id") @db.Uuid
+  eventType     String   @map("event_type")
+  isEnabled     Boolean  @default(true) @map("is_enabled")
+  priority      Int      @default(100)
+  conditionsJson Json    @default("{}") @map("conditions_json")
+  actionsJson   Json     @default("{}") @map("actions_json")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([projectId, eventType, isEnabled, priority])
+  @@map("project_automation_rules")
+}
+
+model TaskDevLink {
+  id             String   @id @default(uuid()) @db.Uuid
+  taskId         String   @map("task_id") @db.Uuid
+  provider       String   @default("github")
+  artifactType   String   @map("artifact_type")
+  externalId     String   @map("external_id")
+  owner          String   @default("")
+  repo           String   @default("")
+  url            String   @default("")
+  titleOrMessage String   @default("") @map("title_or_message")
+  status         String   @default("")
+  payloadJson    Json     @default("{}") @map("payload_json")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, artifactType, externalId, taskId])
+  @@index([taskId])
+  @@index([owner, repo])
+  @@map("task_dev_links")
+}

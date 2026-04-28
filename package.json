@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "preview": "vite preview",
     "server": "cd server && npm run dev",
@@ -24,6 +25,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.29.0",
+    "@types/node": "^25.6.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.5.2",
@@ -35,6 +37,7 @@
     "globals": "^16.2.0",
     "postcss": "^8.5.10",
     "tailwindcss": "^3.4.19",
+    "typescript": "^5.9.3",
     "vite": "^7.0.0"
   }
 }

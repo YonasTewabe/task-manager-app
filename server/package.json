@@ -2,22 +2,22 @@
   "name": "server",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "index.ts",
   "type": "module",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js",
-    "seed": "node scripts/seed.js",
-    "import:jira-csv": "node scripts/importJiraCsv.js",
-    "import:jira-excel": "node scripts/importJiraExcel.js",
-    "import:users-excel": "node scripts/importUsersExcel.js",
-    "fix:richtext-links": "node scripts/linkifyTaskDescriptions.js",
-    "test": "node --test"
+    "start": "tsx index.ts",
+    "dev": "tsx watch index.ts",
+    "typecheck": "tsc --noEmit",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate:dev": "prisma migrate dev",
+    "seed": "tsx scripts/seed.ts",
+    "test": "node --import tsx --test"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@prisma/client": "^6.19.3",
     "axios": "^1.10.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
@@ -26,12 +26,17 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.1.1",
     "nodemailer": "^8.0.5",
-    "pg": "^8.20.0",
+    "prisma": "^6.19.3",
     "web-push": "^3.6.7",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^25.6.0",
     "nodemon": "^3.1.10",
-    "supertest": "^7.2.2"
+    "supertest": "^7.2.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
   }
 }
