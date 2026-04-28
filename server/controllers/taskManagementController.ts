@@ -405,18 +405,28 @@ export async function tasksSearchHandler(req: Request, res: Response) {
   const term = asString(req.query.search).trim();
   if (!term) return res.json([]);
   const assigneeFilter = readAssigneeFilter(req);
+  const scope = String(req.query.scope || "global").trim().toLowerCase();
+  const scopedFilters: Record<string, any> = {
+    assigneeId: assigneeFilter.assigneeId,
+    assigneeIds: assigneeFilter.assigneeIds,
+    status: req.query.status,
+    priority: req.query.priority,
+    type: req.query.type,
+    label: req.query.label,
+    search: term,
+  };
+  if (scope === "board") {
+    scopedFilters.projectId = req.query.projectId;
+    scopedFilters.activeSprintOnly = true;
+  } else if (scope === "backlog") {
+    scopedFilters.projectId = req.query.projectId;
+    scopedFilters.backlogScope = true;
+    scopedFilters.includeSprintId = req.query.includeSprintId;
+  } else {
+    // Global search intentionally ignores project/sprint constraints.
+  }
   const rows = await searchTasks(
-    withUserProjectScope(req, {
-      sprintId: req.query.sprintId,
-      projectId: req.query.projectId,
-      assigneeId: assigneeFilter.assigneeId,
-      assigneeIds: assigneeFilter.assigneeIds,
-      status: req.query.status,
-      priority: req.query.priority,
-      type: req.query.type,
-      label: req.query.label,
-      search: term,
-    }),
+    withUserProjectScope(req, scopedFilters),
     { limit: asString(req.query.limit) },
   );
   return res.json(rows);

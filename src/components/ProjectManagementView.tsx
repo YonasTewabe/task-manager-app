@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Skeleton } from "boneyard-js/react";
 import Modal from "./ui/Modal";
 import { useAppStore } from "../store/appStore";
 import { useShallow } from "zustand/react/shallow";
@@ -92,9 +91,30 @@ export default function ProjectManagementView({
     return () => window.removeEventListener("scroll", onWindowScroll);
   }, [hasMore, loadingMore, onLoadMore]);
 
-  return (
-    <Skeleton name="projects-management-view" loading={isLoading}>
+  if (isLoading) {
+    return (
       <section className="grid gap-[0.9rem] rounded-lg border border-[#dfe1e6] bg-white p-[0.8rem]">
+        <div className="flex items-center justify-between">
+          <div className="h-6 w-32 animate-pulse rounded bg-[#e8ecf3]" />
+          <div className="h-9 w-28 animate-pulse rounded bg-[#e3ebf8]" />
+        </div>
+        <div className="grid gap-[0.7rem]">
+          {Array.from({ length: 4 }).map((_, idx) => (
+            <div
+              key={`projects-view-skeleton-${idx}`}
+              className="animate-pulse rounded-lg border border-[#dfe1e6] bg-white p-[0.8rem]"
+            >
+              <div className="mb-2 h-4 w-2/5 rounded bg-[#e8ebf0]" />
+              <div className="h-3 w-4/5 rounded bg-[#eef1f5]" />
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="grid gap-[0.9rem] rounded-lg border border-[#dfe1e6] bg-white p-[0.8rem]">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-bold">Projects</h2>
         {canManageOrganization ? (
@@ -109,7 +129,7 @@ export default function ProjectManagementView({
           <p className="text-[#5e6c84]">
             {canManageOrganization
               ? "No projects yet. Use Add Project to create one."
-              : "No projects assigned to you yet. Ask an administrator to add you to a project."}
+              : "No projects assigned to you yet."}
           </p>
         ) : null}
         {projects.map((project) => (
@@ -450,7 +470,6 @@ export default function ProjectManagementView({
           </div>
         </Modal>
       ) : null}
-      </section>
-    </Skeleton>
+    </section>
   );
 }

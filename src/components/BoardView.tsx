@@ -40,12 +40,12 @@ function TaskCard({
   return (
     <div
       draggable={draggableEnabled}
-      className={`cursor-pointer rounded-[8px] border border-[#dfe4ee] bg-white p-2 shadow-[0_1px_0_rgba(9,30,66,0.08)] transition-[transform,box-shadow,opacity,border-color,background-color] duration-200 ease-out ${isDragging ? "scale-[0.98] opacity-50" : ""} ${isRecentlyMoved ? "animate-pulse" : ""}`}
+      className={`cursor-pointer rounded-[10px] border border-[#d7e0ee] bg-white p-2 shadow-[0_1px_2px_rgba(9,30,66,0.1)] transition-[transform,box-shadow,opacity,border-color,background-color] duration-150 ease-out hover:-translate-y-px hover:border-[#b9c9e1] hover:shadow-[0_6px_14px_rgba(9,30,66,0.11)] ${isDragging ? "scale-[0.98] opacity-50" : ""} ${isRecentlyMoved ? "animate-pulse" : ""}`}
       onDragStart={dragStart}
       onDragEnd={() => onDragTaskEnd?.()}
       onClick={() => onOpen(task.id)}
     >
-      <div className="mb-[0.45rem] font-semibold">{task.title}</div>
+      <div className="mb-[0.45rem] font-semibold text-[#172b4d]">{task.title}</div>
       {labelName ? (
         <div className="mb-[0.36rem] flex items-center">
           <span
@@ -57,7 +57,7 @@ function TaskCard({
           </span>
         </div>
       ) : null}
-      <div className="mt-[0.4rem] flex items-center justify-between gap-[0.45rem] text-[0.75rem] text-[#667289]">
+      <div className="mt-[0.45rem] flex items-center justify-between gap-[0.45rem] text-[0.75rem] text-[#667289]">
         <span className="inline-flex min-w-0 items-center gap-[0.35rem] text-[0.84rem] text-[#697386]">
           <span className="rounded-full border border-[#dbe3ef] bg-[#f5f7fb] px-[0.4rem] py-[0.06rem] text-[0.7rem] font-semibold uppercase text-[#42526e]">
             {workTypeMeta.label}
@@ -71,7 +71,7 @@ function TaskCard({
               : task.storyPoints}
           </span>
           <span
-            className={`rounded-full border border-[#e3e7ef] bg-[#f7f9fc] px-[0.42rem] py-[0.1rem] text-[0.7rem] font-semibold uppercase leading-none tracking-[0.02em] ${
+            className={`rounded-full border border-[#dfe5ef] bg-[#f7f9fc] px-[0.44rem] py-[0.12rem] text-[0.7rem] font-semibold uppercase leading-none tracking-[0.02em] ${
               priorityMeta?.tone === "high"
                 ? "text-[#db4f4f]"
                 : priorityMeta?.tone === "low"
@@ -254,7 +254,7 @@ export default function BoardView({
 
   return (
     <section
-      className="flex items-stretch gap-[0.8rem] overflow-x-auto pb-[0.45rem] max-[640px]:snap-x max-[640px]:snap-mandatory"
+      className="flex items-stretch gap-[0.9rem] overflow-x-auto rounded-[12px] pb-[0.45rem] max-[640px]:snap-x max-[640px]:snap-mandatory"
       style={{ WebkitOverflowScrolling: "touch" }}
       onWheel={(event) => {
         // Prevent scroll trapping inside horizontal board container on some
@@ -273,10 +273,11 @@ export default function BoardView({
             Boolean(dragState.taskId) &&
             allowedStatusesDuringDrag.has(column.status);
           const showBlockedHint = isBlockedByRules || blockedStatus === column.status;
+          const taskCount = boardTotalsByStatus[column.status] ?? column.tasks.length;
           return (
             <article
               key={column.status}
-              className={`flex w-[280px] min-w-[280px] flex-col rounded-[8px] border border-[#e0e5ee] bg-[#f0f2f5] p-2 transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out max-[1100px]:w-[min(90vw,320px)] max-[1100px]:min-w-[min(90vw,320px)] max-[640px]:w-[83vw] max-[640px]:min-w-[83vw] max-[640px]:snap-start ${
+              className={`flex w-[280px] min-w-[280px] flex-col rounded-[10px] border border-[#d8e2ef] bg-[#f7f9fc] p-2 shadow-[0_1px_2px_rgba(9,30,66,0.06)] transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out hover:border-[#c3d3ea] hover:shadow-[0_6px_14px_rgba(9,30,66,0.09)] max-[1100px]:w-[min(90vw,320px)] max-[1100px]:min-w-[min(90vw,320px)] max-[640px]:w-[83vw] max-[640px]:min-w-[83vw] max-[640px]:snap-start ${
                 dragState.overStatus === column.status
                   ? "border-[#2f6feb] bg-[#eaf1ff] shadow-[inset_0_0_0_1px_rgba(47,111,235,0.22)]"
                   : ""
@@ -367,17 +368,22 @@ export default function BoardView({
                 }
               }}
             >
-              <header className="mb-2 flex flex-col items-stretch gap-[0.15rem] border-b border-[#dde3ee] px-[0.2rem] pb-[0.45rem] pt-[0.2rem]">
+              <header className="mb-2 flex flex-col items-stretch gap-[0.15rem] border-b border-[#dee6f2] px-[0.2rem] pb-[0.45rem] pt-[0.2rem]">
                 <div className="flex flex-wrap items-center gap-[0.45rem]">
                   <h3 className="min-w-0 flex-1 text-[0.92rem] text-[#172b4d]">
                     {column.name || column.status}
                   </h3>
-                  <span className="rounded-full border border-[#d1d5db] bg-[#f3f4f6] px-[0.45rem] py-[0.08rem] text-[0.8rem] font-semibold text-[#4b5563]">
-                    {boardTotalsByStatus[column.status] ?? column.tasks.length}
+                  <span className="rounded-full border border-[#d0d9e8] bg-[#eef3fb] px-[0.5rem] py-[0.1rem] text-[0.78rem] font-semibold text-[#304766]">
+                    {taskCount}
                   </span>
                 </div>
               </header>
               <div className="grid flex-1 content-start gap-2">
+                {!column.tasks.length && !showBlockedHint && !isAllowedTarget ? (
+                  <div className="rounded-[8px] border border-dashed border-[#ccd7ea] bg-[#fafdff] px-[0.6rem] py-[0.65rem] text-[0.78rem] text-[#607089]">
+                    No tasks in this column yet.
+                  </div>
+                ) : null}
                 {showBlockedHint ? (
                   <div className="rounded-[8px] border border-dashed border-[#dc2626] bg-[#fff6f6] px-[0.6rem] py-[0.65rem] text-[0.78rem] leading-[1.35] text-[#7f1d1d]">
                     This task cannot be moved to this column due to workflow or

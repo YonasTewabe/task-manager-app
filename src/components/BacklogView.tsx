@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Skeleton } from "boneyard-js/react";
 import { DEFAULT_WORKFLOW_STAGES } from "../workflowDefaults.js";
 import { displayTaskRef } from "../utils/taskDisplay.js";
 import Modal from "./ui/Modal";
@@ -302,9 +301,32 @@ export default function BacklogView({
     setExpandedKeys(new Set([sprintKey]));
   }, [selectedSprintId, setExpandedKeys]);
 
+  if (isLoading) {
+    return (
+      <section className="grid gap-[0.55rem] rounded-[12px] border border-[#d8e2ef] bg-white p-[0.9rem] shadow-[0_1px_3px_rgba(9,30,66,0.08)]">
+        <div className="flex items-center justify-between">
+          <div className="h-6 w-36 animate-pulse rounded bg-[#e8ecf3]" />
+          <div className="h-9 w-28 animate-pulse rounded bg-[#e3ebf8]" />
+        </div>
+        <div className="grid gap-[0.5rem]">
+          {Array.from({ length: 4 }).map((_, idx) => (
+            <div
+              key={`backlog-row-skeleton-${idx}`}
+              className="animate-pulse rounded-[10px] border border-[#dbe4f1] bg-[#f8fafd] px-[0.7rem] py-[0.65rem]"
+            >
+              <div className="flex items-center justify-between">
+                <div className="h-4 w-44 rounded bg-[#e7ecf4]" />
+                <div className="h-4 w-24 rounded bg-[#edf2f8]" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
   return (
-    <Skeleton name="backlog-view" loading={isLoading}>
-      <section className="grid gap-2 rounded-lg border border-[#dfe1e6] bg-white p-[0.8rem]">
+    <section className="grid gap-[0.55rem] rounded-[12px] border border-[#d8e2ef] bg-white p-[0.9rem] shadow-[0_1px_3px_rgba(9,30,66,0.08)]">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2></h2>
         <div className="flex flex-wrap gap-2">
@@ -319,7 +341,7 @@ export default function BacklogView({
           ) : null}
         </div>
       </div>
-      <div className="grid gap-[0.45rem]">
+      <div className="grid gap-[0.5rem]">
         {rows.map((row) => {
           const redPoints = Number(row.storyPoints?.upcoming || 0);
           const bluePoints = Number(row.storyPoints?.active || 0);
@@ -336,7 +358,7 @@ export default function BacklogView({
           return (
             <article key={row.key} className="grid gap-1">
               <div
-                className={`flex flex-wrap cursor-pointer items-center justify-between gap-2 rounded border border-[#e3e7ef] bg-[#fbfcfe] px-[0.7rem] py-[0.6rem] transition-[border-color,background-color,box-shadow] duration-150 ${isSelected ? "border-[#b8c9e8] bg-[#f2f6ff]" : ""} ${dragState.sourceKey === row.key ? "border-dashed" : ""} ${dragState.overKey === row.key ? "border-[#2f6feb] bg-[#eaf1ff] shadow-[inset_0_0_0_1px_rgba(47,111,235,0.18)]" : ""} ${blockedDropKey === row.key ? "border-red-600 bg-[#fff2f2] ring-1 ring-red-300" : ""}`}
+                className={`flex flex-wrap cursor-pointer items-center justify-between gap-2 rounded-[10px] border border-[#dbe4f1] bg-[#f8fafd] px-[0.7rem] py-[0.6rem] transition-[border-color,background-color,box-shadow,transform] duration-150 ease-out hover:-translate-y-px hover:border-[#bfd0e8] hover:shadow-[0_4px_10px_rgba(9,30,66,0.09)] ${isSelected ? "border-[#b8c9e8] bg-[#f2f6ff]" : ""} ${dragState.sourceKey === row.key ? "border-dashed" : ""} ${dragState.overKey === row.key ? "border-[#2f6feb] bg-[#eaf1ff] shadow-[inset_0_0_0_1px_rgba(47,111,235,0.18)]" : ""} ${blockedDropKey === row.key ? "border-red-600 bg-[#fff2f2] ring-1 ring-red-300" : ""}`}
                 onDragOver={(event) => {
                   if (!canManage) return;
                   event.preventDefault();
@@ -398,20 +420,20 @@ export default function BacklogView({
                     ▾
                   </span>
                   <strong className="truncate">{row.name}</strong>
-                  <span className="break-words text-[#5e6c84]">
+                  <span className="break-words text-[0.9rem] text-[#5e6c84]">
                     ({row.totalTasks ?? row.tasks.length} work items )
                     {sprintDateRange ? ` ${sprintDateRange}` : ""}
                   </span>
                 </div>
                 <div className="flex w-full flex-wrap items-center justify-end gap-2 min-[720px]:w-auto">
                   <div className="flex items-center gap-[0.3rem]">
-                    <span className="min-w-6 rounded border border-[#f3c6c3] bg-[#fdeceb] px-[0.28rem] py-[0.08rem] text-center text-[0.7rem] text-[#b42318]">
+                    <span className="min-w-6 rounded border border-[#f4cdca] bg-[#fff1f0] px-[0.32rem] py-[0.1rem] text-center text-[0.7rem] font-semibold text-[#b42318]">
                       {redPoints}
                     </span>
-                    <span className="min-w-6 rounded border border-[#c6d9ff] bg-[#e9f2ff] px-[0.28rem] py-[0.08rem] text-center text-[0.7rem] text-[#114fba]">
+                    <span className="min-w-6 rounded border border-[#cddcff] bg-[#edf4ff] px-[0.32rem] py-[0.1rem] text-center text-[0.7rem] font-semibold text-[#114fba]">
                       {bluePoints}
                     </span>
-                    <span className="min-w-6 rounded border border-[#bde7ca] bg-[#e8f7ed] px-[0.28rem] py-[0.08rem] text-center text-[0.7rem] text-[#1a7f37]">
+                    <span className="min-w-6 rounded border border-[#c6eace] bg-[#eefaf2] px-[0.32rem] py-[0.1rem] text-center text-[0.7rem] font-semibold text-[#1a7f37]">
                       {greenPoints}
                     </span>
                   </div>
@@ -508,7 +530,7 @@ export default function BacklogView({
               </div>
               {isExpanded ? (
                 <div
-                  className="grid max-h-[56vh] gap-[0.35rem] overflow-y-auto rounded border border-[#e3e7ef] bg-white p-[0.4rem]"
+                  className="grid max-h-[56vh] gap-[0.35rem] overflow-y-auto rounded-[10px] border border-[#dbe4f1] bg-white p-[0.45rem]"
                   onScroll={(event) => {
                     if (
                       !hasMore ||
@@ -528,7 +550,7 @@ export default function BacklogView({
                         key={task.id}
                         role="button"
                         tabIndex={0}
-                        className={`flex w-full flex-wrap justify-between gap-3 rounded-md border border-[#dfe1e6] bg-white px-[0.5rem] py-[0.45rem] text-left text-[#172b4d] transition-[transform,box-shadow,opacity,border-color,background-color] duration-200 ${dragState.taskId === String(task.id) ? "scale-[0.98] opacity-50" : ""} ${recentlyMovedTaskId === String(task.id) ? "animate-pulse" : ""}`}
+                        className={`flex w-full flex-wrap justify-between gap-3 rounded-[8px] border border-[#d8e2ef] bg-white px-[0.58rem] py-[0.48rem] text-left text-[#172b4d] shadow-[0_1px_2px_rgba(9,30,66,0.08)] transition-[transform,box-shadow,opacity,border-color,background-color] duration-200 hover:border-[#b9c9e1] hover:shadow-[0_4px_10px_rgba(9,30,66,0.1)] ${dragState.taskId === String(task.id) ? "scale-[0.98] opacity-50" : ""} ${recentlyMovedTaskId === String(task.id) ? "animate-pulse" : ""}`}
                         draggable={canManage}
                         onDragStart={(event) => {
                           event.dataTransfer.setData(
@@ -635,7 +657,7 @@ export default function BacklogView({
                       </div>
                     ))
                   ) : (
-                    <div className="text-[#5e6c84]">
+                    <div className="rounded-[8px] border border-dashed border-[#ccd7ea] bg-[#fafdff] px-[0.6rem] py-[0.7rem] text-[0.86rem] text-[#5e6c84]">
                       {row.key === "backlog"
                         ? "No backlog tasks."
                         : "No tasks in this sprint."}
@@ -1005,7 +1027,6 @@ export default function BacklogView({
           </div>
         </Modal>
       ) : null}
-      </section>
-    </Skeleton>
+    </section>
   );
 }

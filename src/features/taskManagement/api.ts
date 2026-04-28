@@ -113,10 +113,23 @@ export function moveTaskApi(taskId, status) {
   });
 }
 
-export function searchTasksApi(query, limit = 12) {
+export function searchTasksApi(
+  query,
+  {
+    limit,
+    scope = "global",
+    projectId = "",
+    includeSprintId = "",
+  }: any = {},
+) {
   const params = new URLSearchParams();
   params.set("search", String(query || ""));
-  params.set("limit", String(limit));
+  if (limit !== undefined && limit !== null && String(limit).trim() !== "") {
+    params.set("limit", String(limit));
+  }
+  params.set("scope", String(scope || "global"));
+  if (projectId) params.set("projectId", String(projectId));
+  if (includeSprintId) params.set("includeSprintId", String(includeSprintId));
   return apiRequest(`/task-management/tasks/search?${params.toString()}`);
 }
 

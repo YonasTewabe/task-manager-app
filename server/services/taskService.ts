@@ -1813,10 +1813,57 @@ function buildTaskPrismaWhere(
   if (filterObj.label) where.label = { equals: String(filterObj.label).trim(), mode: "insensitive" };
   if (filterObj.search) {
     const search = String(filterObj.search).trim();
-    const keyMatch = search.match(/^([A-Za-z][A-Za-z0-9]*)-(\d+)$/);
+    const compactSearch = search.replace(/\s+/g, "");
+    const numericOnlyMatch = compactSearch.match(/^\d+$/);
+    const keyMatch = compactSearch.match(/^([A-Za-z0-9][A-Za-z0-9]*)-(\d+)$/);
+    const keyPrefixMatch = compactSearch.match(/^([A-Za-z0-9][A-Za-z0-9]*)-(\d*)$/);
+    const keyPrefixRanges: Array<{ gte: number; lte: number }> = [];
+    if (keyPrefixMatch && keyPrefixMatch[2]) {
+      const numericPrefixText = String(keyPrefixMatch[2]);
+      const numericPrefix = Number(numericPrefixText);
+      if (Number.isFinite(numericPrefix) && numericPrefix >= 0) {
+        const maxDigits = 9;
+        const prefixDigits = numericPrefixText.length;
+        for (let extraDigits = 0; extraDigits <= Math.max(0, maxDigits - prefixDigits); extraDigits += 1) {
+          const scale = Math.pow(10, extraDigits);
+          const start = numericPrefix * scale;
+          const end = extraDigits === 0 ? start : start + scale - 1;
+          keyPrefixRanges.push({ gte: start, lte: end });
+        }
+      }
+    }
+    const numericPrefixRanges: Array<{ gte: number; lte: number }> = [];
+    if (numericOnlyMatch) {
+      const numericPrefixText = compactSearch;
+      const numericPrefix = Number(numericPrefixText);
+      if (Number.isFinite(numericPrefix) && numericPrefix >= 0) {
+        const maxDigits = 9;
+        const prefixDigits = numericPrefixText.length;
+        for (let extraDigits = 0; extraDigits <= Math.max(0, maxDigits - prefixDigits); extraDigits += 1) {
+          const scale = Math.pow(10, extraDigits);
+          const start = numericPrefix * scale;
+          const end = extraDigits === 0 ? start : start + scale - 1;
+          numericPrefixRanges.push({ gte: start, lte: end });
+        }
+      }
+    }
     and.push({
       OR: [
         { title: { contains: search, mode: "insensitive" } },
+        ...(numericPrefixRanges.length > 0
+          ? numericPrefixRanges.map((range) => ({
+              taskNumber: range,
+            }))
+          : []),
+        ...(keyPrefixMatch
+          ? [
+              {
+                project: {
+                  projectKey: { equals: keyPrefixMatch[1], mode: "insensitive" },
+                },
+              },
+            ]
+          : []),
         ...(keyMatch
           ? [
               {
@@ -1826,6 +1873,14 @@ function buildTaskPrismaWhere(
                 taskNumber: Number(keyMatch[2]),
               },
             ]
+          : []),
+        ...(keyPrefixMatch && keyPrefixRanges.length > 0
+          ? keyPrefixRanges.map((range) => ({
+              project: {
+                projectKey: { equals: keyPrefixMatch[1], mode: "insensitive" },
+              },
+              taskNumber: range,
+            }))
           : []),
       ],
     });
@@ -1927,7 +1982,13 @@ export async function searchTasks(
   filters: TaskQueryFilters = {},
   { limit = 12 }: { limit?: number | string } = {},
 ) {
-  const pageSize = Math.max(1, Math.min(Number(limit) || 12, 50));
+  const rawLimit = Number(limit);
+  const pageSize =
+    String(limit || "").trim() === ""
+      ? null
+      : Number.isFinite(rawLimit)
+        ? Math.max(1, Math.min(rawLimit, 1000))
+        : 12;
   const rows = await prisma.task.findMany({
     where: buildTaskPrismaWhere(filters),
     select: {
@@ -1938,7 +1999,7 @@ export async function searchTasks(
       project: { select: { projectKey: true } },
     },
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-    take: pageSize,
+    ...(pageSize != null ? { take: pageSize } : {}),
   });
   return rows.map((row) => ({
     id: row.id,
@@ -2508,6 +2569,22 @@ function filterByDateRange(tasks, fromDate, toDate, field = "createdAt") {
   });
 }
 
+async function resolveActiveSprintDefault(projectId: string) {
+  const pid = asUuid(projectId, null);
+  if (!pid) return null;
+  const activeSprint = await prisma.sprint.findFirst({
+    where: { projectId: pid, status: "active" },
+    select: { id: true, startDate: true, endDate: true },
+    orderBy: [{ startDate: "asc" }, { createdAt: "asc" }],
+  });
+  if (!activeSprint) return null;
+  return {
+    sprintId: String(activeSprint.id),
+    fromDate: startOfDay(activeSprint.startDate),
+    toDate: endOfDay(activeSprint.endDate),
+  };
+}
+
 function formatMetricRows(metrics = []) {
   return metrics.map((metric) => ({
     metric: metric.label,
@@ -2553,11 +2630,21 @@ export async function getSummaryOverviewAnalytics(filters: SummaryFilters = {}) 
   );
   const fromDate = startOfDay(filterObj.from);
   const toDate = endOfDay(filterObj.to);
+  const hasExplicitRange = Boolean(fromDate || toDate);
+  const activeSprintDefault = hasExplicitRange
+    ? null
+    : await resolveActiveSprintDefault(projectId);
   const tasks = await getTaskFactsForAnalytics({
     projectId,
     limitProjectsToMemberUserId: filterObj.limitProjectsToMemberUserId,
   });
-  const rangeTasks = fromDate || toDate ? filterByDateRange(tasks, fromDate, toDate) : tasks;
+  const rangeTasks = hasExplicitRange
+    ? filterByDateRange(tasks, fromDate, toDate)
+    : activeSprintDefault?.sprintId
+      ? tasks.filter(
+          (task) => String(task?.sprintId || "") === activeSprintDefault.sprintId,
+        )
+      : tasks;
   const doneTasks = rangeTasks.filter((task) => doneStatuses.has(task.status));
   const openTasks = rangeTasks.filter((task) => !doneStatuses.has(task.status));
   const overdueTasks = openTasks.filter((task) => {
@@ -2793,6 +2880,10 @@ export async function getSummaryWorkloadAnalytics(filters: SummaryFilters = {}) 
   if (!projectId) throw new Error("projectId is required");
   const fromDate = startOfDay(filterObj.from);
   const toDate = endOfDay(filterObj.to);
+  const hasExplicitRange = Boolean(fromDate || toDate);
+  const activeSprintDefault = hasExplicitRange
+    ? null
+    : await resolveActiveSprintDefault(projectId);
   const settings = await getProjectSettings(projectId);
   const doneStatuses = new Set(
     normalizeWorkflowStages(settings?.boardCardFields?.workflowStages)
@@ -2824,7 +2915,13 @@ export async function getSummaryWorkloadAnalytics(filters: SummaryFilters = {}) 
       .map((member) => [String(member.user.id), member.user]),
   );
   const projectMemberIds = new Set(projectMembers.map((member) => String(member.userId)));
-  const rangeTasks = fromDate || toDate ? filterByDateRange(tasks, fromDate, toDate) : tasks;
+  const rangeTasks = hasExplicitRange
+    ? filterByDateRange(tasks, fromDate, toDate)
+    : activeSprintDefault?.sprintId
+      ? tasks.filter(
+          (task) => String(task?.sprintId || "") === activeSprintDefault.sprintId,
+        )
+      : tasks;
   const byAssignee = new Map();
   projectMemberIds.forEach((memberId) => {
     const assigneeUser: any = usersById.get(memberId);
@@ -3018,7 +3115,6 @@ export async function getDashboardData({
   );
   const assignedTasks = await getTasks({
     assigneeId: uid,
-    activeSprintOnly: true,
     ...(scopedUserId
       ? { limitProjectsToMemberUserId: scopedUserId }
       : {}),

@@ -12,9 +12,6 @@ export function parseRoute(pathname) {
   if (path === "/reset-password") {
     return { view: "reset-password", projectId: null };
   }
-  if (path === "/__boneyard") {
-    return { view: "__boneyard", projectId: null };
-  }
   if (path === "/settings") return { view: "app-settings", projectId: null };
   if (path === "/projects") return { view: "projects", projectId: null };
 
@@ -31,7 +28,7 @@ export function parseRoute(pathname) {
 
 export function initialActiveView(pathname) {
   const p = parseRoute(pathname);
-  if (p.view === "_legacy" || p.unknown || p.view === "__boneyard") {
+  if (p.view === "_legacy" || p.unknown) {
     return "dashboard";
   }
   return p.view;

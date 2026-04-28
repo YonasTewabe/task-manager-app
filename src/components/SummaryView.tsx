@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Skeleton } from "boneyard-js/react";
 
 function formatNumber(value) {
   const number = Number(value || 0);
@@ -11,29 +10,17 @@ function formatPercent(value) {
   return `${number.toFixed(1)}%`;
 }
 
-function toInputDate(value) {
-  const d = value ? new Date(value) : new Date();
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toISOString().slice(0, 10);
-}
-
 function getDefaultDateRange(sprints = []) {
-  const today = toInputDate(new Date());
-  const activeSprint = Array.isArray(sprints)
-    ? sprints.find((sprint) => sprint?.status === "active")
-    : null;
-  const activeSprintStart = activeSprint?.startDate
-    ? toInputDate(activeSprint.startDate)
-    : "";
+  void sprints;
   return {
-    from: activeSprintStart || today,
-    to: today,
+    from: "",
+    to: "",
   };
 }
 
 function StatCard({ label, value, sublabel = "" }) {
   return (
-    <div className="rounded-[12px] border border-[#dfe1e6] bg-white p-[0.85rem]">
+    <div className="rounded-[12px] border border-[#d8e2ef] bg-white p-[0.9rem] shadow-[0_1px_3px_rgba(9,30,66,0.08)] transition-[border-color,box-shadow,transform] duration-150 ease-out hover:-translate-y-px hover:border-[#bfd0e8] hover:shadow-[0_6px_14px_rgba(9,30,66,0.1)]">
       <div className="text-[0.75rem] uppercase tracking-[0.08em] text-[#6b778c]">
         {label}
       </div>
@@ -70,7 +57,7 @@ function BarChart({
   return (
     <section
       ref={containerRef}
-      className="relative rounded-[12px] border border-[#dfe1e6] bg-white p-[0.9rem]"
+      className="relative rounded-[12px] border border-[#d8e2ef] bg-white p-[0.9rem] shadow-[0_1px_3px_rgba(9,30,66,0.08)] transition-[border-color,box-shadow,transform] duration-150 ease-out hover:-translate-y-px hover:border-[#bfd0e8] hover:shadow-[0_8px_18px_rgba(9,30,66,0.12)]"
       onMouseLeave={() => setHovered(null)}
     >
       <h3 className="text-[0.95rem] font-semibold text-[#172b4d]">{title}</h3>
@@ -192,7 +179,7 @@ function DonutChart({ title, items }) {
 
   return (
     <section
-      className="relative rounded-[12px] border border-[#dfe1e6] bg-white p-[0.9rem]"
+      className="relative rounded-[12px] border border-[#d8e2ef] bg-white p-[0.9rem] shadow-[0_1px_3px_rgba(9,30,66,0.08)] transition-[border-color,box-shadow,transform] duration-150 ease-out hover:-translate-y-px hover:border-[#bfd0e8] hover:shadow-[0_8px_18px_rgba(9,30,66,0.12)]"
       onMouseLeave={() => setHovered(null)}
     >
       <h3 className="text-[0.95rem] font-semibold text-[#172b4d]">{title}</h3>
@@ -289,97 +276,45 @@ function DonutChart({ title, items }) {
   );
 }
 
-function TrendLineChart({ title, points, color = "#0b6bcb" }) {
-  const width = 520;
-  const height = 180;
-  const [hovered, setHovered] = useState(null);
-  const containerRef = useRef(null);
-  const maxY = Math.max(...points.map((point) => Number(point.value || 0)), 1);
-  const stepX = points.length > 1 ? width / (points.length - 1) : width;
-  const path = points
-    .map((point, index) => {
-      const x = Math.round(index * stepX);
-      const y = Math.round(
-        height - (Number(point.value || 0) / maxY) * (height - 20),
-      );
-      return `${index === 0 ? "M" : "L"}${x},${y}`;
-    })
-    .join(" ");
-
+function VelocityBarChart({ title, points }) {
+  const maxValue = Math.max(...points.map((point) => Number(point.value || 0)), 1);
   return (
-    <section
-      ref={containerRef}
-      className="relative rounded-[12px] border border-[#dfe1e6] bg-white p-[0.9rem]"
-      onMouseLeave={() => setHovered(null)}
-    >
+    <section className="relative rounded-[12px] border border-[#d8e2ef] bg-white p-[0.9rem] shadow-[0_1px_3px_rgba(9,30,66,0.08)] transition-[border-color,box-shadow,transform] duration-150 ease-out hover:-translate-y-px hover:border-[#bfd0e8] hover:shadow-[0_8px_18px_rgba(9,30,66,0.12)]">
       <h3 className="text-[0.95rem] font-semibold text-[#172b4d]">{title}</h3>
-      {hovered ? (
-        <div
-          className="pointer-events-none absolute z-10 rounded-[8px] border border-[#dfe1e6] bg-white px-[0.55rem] py-[0.4rem] text-[0.78rem] shadow-[0_8px_18px_rgba(9,30,66,0.16)]"
-          style={{ left: hovered.x, top: hovered.y }}
-        >
-          <div className="text-[#42526e]">{hovered.label}</div>
-          <div className="flex items-center gap-[0.35rem] text-[#172b4d]">
-            <span
-              className="inline-block h-[9px] w-[9px] rounded-[2px]"
-              style={{ backgroundColor: color }}
-            />
-            <span className="font-semibold">{formatNumber(hovered.value)}</span>
-          </div>
-        </div>
-      ) : null}
       {points.length ? (
-        <>
-          <svg
-            className="mt-[0.6rem] h-[190px] w-full rounded-[8px] bg-[#f8fafe] p-[0.25rem]"
-            viewBox={`0 0 ${width} ${height}`}
-            preserveAspectRatio="none"
-            role="img"
-            aria-label={title}
+        <div className="mt-[0.65rem] overflow-x-auto pb-1">
+          <div
+            className="grid min-w-max items-end gap-2"
+            style={{
+              gridTemplateColumns: `repeat(${Math.max(points.length, 1)}, minmax(72px, 1fr))`,
+            }}
           >
-            <path d={path} fill="none" stroke={color} strokeWidth="3" />
-            {points.map((point, index) => {
-              const x = Math.round(index * stepX);
-              const y = Math.round(
-                height - (Number(point.value || 0) / maxY) * (height - 20),
-              );
+            {points.map((point) => {
+              const value = Number(point.value || 0);
+              const height = Math.max((value / maxValue) * 160, value > 0 ? 10 : 2);
               return (
-                <circle
-                  key={point.label}
-                  cx={x}
-                  cy={y}
-                  r="4"
-                  fill={color}
-                  onMouseMove={(event) => {
-                    const rect = containerRef.current?.getBoundingClientRect();
-                    if (!rect) return;
-                    const x = Math.min(
-                      Math.max(event.clientX - rect.left + 12, 10),
-                      rect.width - 150,
-                    );
-                    const y = Math.min(
-                      Math.max(event.clientY - rect.top - 30, 10),
-                      rect.height - 56,
-                    );
-                    setHovered({
-                      label: point.label,
-                      value: point.value,
-                      x,
-                      y,
-                    });
-                  }}
-                />
+                <div key={point.label} className="grid gap-1 text-center">
+                  <div className="text-[0.7rem] font-semibold text-[#42526e]">
+                    {formatNumber(value)}
+                  </div>
+                  <div className="relative h-[170px] rounded-[8px] bg-[#f3f7fd] p-1">
+                    <div
+                      className="absolute bottom-1 left-1 right-1 rounded-[6px] bg-[linear-gradient(180deg,#4c8df0_0%,#0c66e4_100%)]"
+                      style={{ height: `${height}px` }}
+                      title={`${point.label}: ${formatNumber(value)}`}
+                    />
+                  </div>
+                  <div
+                    className="truncate text-[0.72rem] text-[#6b778c]"
+                    title={point.label}
+                  >
+                    {point.label}
+                  </div>
+                </div>
               );
             })}
-          </svg>
-          <div className="mt-[0.45rem] grid grid-cols-1 gap-[0.3rem] text-[0.74rem] text-[#6b778c] min-[480px]:grid-cols-2 min-[1100px]:grid-cols-4">
-            {points.map((point) => (
-              <div key={`legend-${point.label}`} className="truncate">
-                {point.label}: {formatNumber(point.value)}
-              </div>
-            ))}
           </div>
-        </>
+        </div>
       ) : (
         <p className="mt-[0.5rem] text-[0.82rem] text-[#6b778c]">
           No data for this range.
@@ -461,7 +396,7 @@ export default function SummaryView({
     [sprintSummary],
   );
   const sprintVelocityChartPoints = useMemo(
-    () => sprintVelocityPoints.slice(-5),
+    () => sprintVelocityPoints.slice(-10),
     [sprintVelocityPoints],
   );
 
@@ -474,38 +409,74 @@ export default function SummaryView({
   const typeDistribution = Array.isArray(overview?.typeDistribution)
     ? overview.typeDistribution
     : [];
-  const throughputPoints = Array.isArray(flow?.throughput)
-    ? flow.throughput
-    : [];
   const assigneeLoad = Array.isArray(workload?.assigneeLoad)
     ? workload.assigneeLoad
     : [];
 
+  if (loading) {
+    return (
+      <section className="grid gap-[0.85rem]">
+        <div className="animate-pulse rounded-[12px] border border-[#d8e2ef] bg-white p-[0.95rem]">
+          <div className="h-4 w-48 rounded bg-[#e9edf4]" />
+          <div className="mt-3 flex gap-3">
+            <div className="h-10 w-36 rounded bg-[#eef2f8]" />
+            <div className="h-10 w-36 rounded bg-[#eef2f8]" />
+            <div className="ml-auto h-10 w-36 rounded bg-[#e3ebf8]" />
+          </div>
+        </div>
+        <div className="grid gap-[0.6rem] min-[760px]:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, idx) => (
+            <div
+              key={`summary-kpi-skeleton-${idx}`}
+              className="animate-pulse rounded-[12px] border border-[#d8e2ef] bg-white p-[0.9rem]"
+            >
+              <div className="h-3 w-24 rounded bg-[#e8ecf3]" />
+              <div className="mt-2 h-6 w-20 rounded bg-[#e1e7f2]" />
+              <div className="mt-2 h-3 w-32 rounded bg-[#eef2f8]" />
+            </div>
+          ))}
+        </div>
+        <div className="grid gap-[0.7rem] min-[900px]:grid-cols-2">
+          {Array.from({ length: 6 }).map((_, idx) => (
+            <div
+              key={`summary-chart-skeleton-${idx}`}
+              className="animate-pulse rounded-[12px] border border-[#d8e2ef] bg-white p-[0.9rem]"
+            >
+              <div className="h-4 w-36 rounded bg-[#e8ecf3]" />
+              <div className="mt-4 h-[170px] rounded bg-[#eef3fa]" />
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
   return (
-    <section className="grid gap-[0.8rem]">
-      <div className="rounded-[12px] border border-[#dfe1e6] bg-white p-[0.9rem]">
-        <div className="flex flex-wrap items-center gap-[0.6rem]">
-          <label className="grid gap-[0.3rem] text-[0.82rem] text-[#42526e]">
+    <section className="grid gap-[0.85rem]">
+      <div className="rounded-[12px] border border-[#d8e2ef] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-[0.95rem] shadow-[0_1px_3px_rgba(9,30,66,0.08)] transition-[border-color,box-shadow] duration-150 ease-out hover:border-[#bfd0e8] hover:shadow-[0_6px_14px_rgba(9,30,66,0.1)]">
+        <div className="flex flex-wrap items-end gap-[0.65rem]">
+          <label className="grid gap-[0.3rem] text-[0.82rem] font-medium text-[#42526e]">
             From
             <input
               type="date"
               value={fromDate}
               onChange={(event) => setFromDate(event.target.value)}
-              className="rounded-[8px] border border-[#c9d2e3] px-[0.5rem] py-[0.35rem]"
+              className="rounded-[10px] border border-[#c9d5ea] bg-white px-[0.62rem] py-[0.45rem]"
             />
           </label>
-          <label className="grid gap-[0.3rem] text-[0.82rem] text-[#42526e]">
+          <label className="grid gap-[0.3rem] text-[0.82rem] font-medium text-[#42526e]">
             To
             <input
               type="date"
               value={toDate}
               onChange={(event) => setToDate(event.target.value)}
-              className="rounded-[8px] border border-[#c9d2e3] px-[0.5rem] py-[0.35rem]"
+              className="rounded-[10px] border border-[#c9d5ea] bg-white px-[0.62rem] py-[0.45rem]"
             />
           </label>
           <div className="ml-auto flex flex-wrap gap-[0.35rem]">
             <button
               type="button"
+              className="border border-[#0c66e4] bg-[#0c66e4] text-white hover:border-[#0055cc] hover:bg-[#0055cc]"
               onClick={() =>
                 onExportReport("overview", projectId, fromDate, toDate)
               }
@@ -517,62 +488,55 @@ export default function SummaryView({
       </div>
 
       {error ? (
-        <p className="rounded-[10px] bg-[#fdecec] p-[0.75rem] text-[#b42318]">
+        <p className="rounded-[10px] border border-[#fecaca] bg-[#fff1f1] p-[0.75rem] text-[#b42318]">
           {error}
         </p>
       ) : null}
-      <Skeleton name="summary-view" loading={loading}>
-        <>
-          <div className="grid gap-[0.6rem] min-[760px]:grid-cols-3">
-            <StatCard
-              label="Total Tasks"
-              value={formatNumber(overview?.kpis?.totalTasks)}
-              sublabel={`Done ${formatNumber(overview?.kpis?.completedTasks)} / Overdue ${formatNumber(overview?.kpis?.overdueTasks)}`}
-            />
-            <StatCard
-              label="Completion Rate"
-              value={formatPercent(overview?.kpis?.completionRate)}
-              sublabel={`Avg age ${formatNumber(overview?.kpis?.avgOpenAgeDays)} days`}
-            />
-            <StatCard
-              label="Story Points"
-              value={formatNumber(overview?.kpis?.totalStoryPoints)}
-              sublabel={`Completed ${formatNumber(overview?.kpis?.completedStoryPoints)}`}
-            />
-          </div>
+      <div className="grid gap-[0.6rem] min-[760px]:grid-cols-3">
+        <StatCard
+          label="Total Tasks"
+          value={formatNumber(overview?.kpis?.totalTasks)}
+          sublabel={`Done ${formatNumber(overview?.kpis?.completedTasks)} / Overdue ${formatNumber(overview?.kpis?.overdueTasks)}`}
+        />
+        <StatCard
+          label="Completion Rate"
+          value={formatPercent(overview?.kpis?.completionRate)}
+          sublabel={`Avg age ${formatNumber(overview?.kpis?.avgOpenAgeDays)} days`}
+        />
+        <StatCard
+          label="Story Points"
+          value={formatNumber(overview?.kpis?.totalStoryPoints)}
+          sublabel={`Completed ${formatNumber(overview?.kpis?.completedStoryPoints)}`}
+        />
+      </div>
 
-          <div className="grid gap-[0.7rem] min-[900px]:grid-cols-2">
-            <DonutChart
-              title="Status Distribution"
-              items={statusDistribution}
-            />
-            <TrendLineChart
-              title="Sprint Velocity"
-              points={sprintVelocityChartPoints}
-            />
-            <BarChart
-              title="Types of Work"
-              items={typeDistribution}
-              multiColor
-            />
-            <BarChart
-              title="Priority Breakdown"
-              items={priorityDistribution}
-              multiColor
-            />
-            <BarChart
-              title="Throughput Trend"
-              items={throughputPoints}
-              multiColor
-            />
-            <BarChart
-              title="Workload by Assignee"
-              items={assigneeLoad}
-              multiColor
-            />
-          </div>
-        </>
-      </Skeleton>
+      <div className="grid gap-[0.7rem] min-[900px]:grid-cols-2">
+        <DonutChart
+          title="Status Distribution"
+          items={statusDistribution}
+        />
+        <BarChart
+          title="Workload by Assignee"
+          items={assigneeLoad}
+          multiColor
+        />
+        <BarChart
+          title="Types of Work"
+          items={typeDistribution}
+          multiColor
+        />
+        <BarChart
+          title="Priority Breakdown"
+          items={priorityDistribution}
+          multiColor
+        />
+        <div className="min-[900px]:col-span-2">
+          <VelocityBarChart
+            title="Sprint Velocity"
+            points={sprintVelocityChartPoints}
+          />
+        </div>
+      </div>
     </section>
   );
 }

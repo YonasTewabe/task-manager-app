@@ -3,7 +3,6 @@ import { useLocation, useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 import "sweetalert2/dist/sweetalert2.min.css";
 import { useShallow } from "zustand/react/shallow";
-import "./bones/registry";
 import AuthView from "./components/AuthView";
 import BacklogView from "./components/BacklogView";
 import BoardView from "./components/BoardView";
@@ -155,143 +154,6 @@ function toMentionToken(value) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
-}
-
-function BoneyardCapturePage() {
-  const mockUsersById = new Map([["1", "Demo User"], ["2", "Alex Morgan"]]);
-  const mockNoop = async () => {};
-  return (
-    <main className="grid gap-4 bg-[#f7f8fa] p-4">
-      <BacklogView
-        tasks={[
-          {
-            id: "t1",
-            title: "Prepare skeleton capture seed",
-            status: "todo",
-            sprintId: null,
-            priority: "Medium",
-            storyPoints: 3,
-            assigneeId: "1",
-            projectKey: "DEMO",
-            projectCode: "DEMO",
-            projectId: "p1",
-          },
-        ]}
-        sprints={[]}
-        allTasks={[
-          {
-            id: "t1",
-            title: "Prepare skeleton capture seed",
-            status: "todo",
-            sprintId: null,
-            priority: "Medium",
-            storyPoints: 3,
-            assigneeId: "1",
-            projectKey: "DEMO",
-            projectCode: "DEMO",
-            projectId: "p1",
-          },
-        ]}
-        rowsData={null}
-        usersById={mockUsersById}
-        userAvatarColor={() => "#2d64d9"}
-        workflowStages={DEFAULT_WORKFLOW_STAGES}
-        selectedSprintId={null}
-        onSelectSprint={() => {}}
-        canManage
-        onStartSprint={mockNoop}
-        onCompleteSprint={mockNoop}
-        onDeleteSprint={mockNoop}
-        onAssignTaskToSprint={mockNoop}
-        onCreateSprint={mockNoop}
-        onAddTask={() => {}}
-        onOpenTask={() => {}}
-        onDeleteTask={mockNoop}
-        onNotify={() => {}}
-        hasMore={false}
-        loadingMore={false}
-        onLoadMore={() => {}}
-        isLoading={false}
-      />
-      <ProjectManagementView
-        projects={[
-          {
-            id: "p1",
-            name: "Demo Project",
-            projectKey: "DEMO",
-            description: "Fixture project for boneyard capture.",
-            members: [
-              { id: "1", name: "Demo User", isProjectAdmin: true },
-              { id: "2", name: "Alex Morgan", isProjectAdmin: false },
-            ],
-          },
-        ]}
-        isLoading={false}
-        canManageOrganization
-        canOpenProjectSettings={() => true}
-        onCreateProject={mockNoop}
-        onUpdateProject={mockNoop}
-        onDeleteProject={mockNoop}
-        onConfigureProject={() => {}}
-        onNotify={() => {}}
-        hasMore={false}
-        loadingMore={false}
-        onLoadMore={() => {}}
-      />
-      <AppSettingsView canManage onNotify={() => {}} />
-      <SummaryView
-        projectId="p1"
-        sprints={[]}
-        onFetchOverview={async () => ({
-          kpis: {
-            totalTasks: 12,
-            completedTasks: 7,
-            overdueTasks: 1,
-            completionRate: 58.3,
-            avgOpenAgeDays: 4.2,
-            totalStoryPoints: 36,
-            completedStoryPoints: 20,
-          },
-          statusDistribution: [
-            { label: "To Do", value: 5 },
-            { label: "In Progress", value: 4 },
-            { label: "Done", value: 3 },
-          ],
-          priorityDistribution: [
-            { label: "Low", value: 2 },
-            { label: "Medium", value: 6 },
-            { label: "High", value: 4 },
-          ],
-          typeDistribution: [
-            { label: "Feature", value: 6 },
-            { label: "Bug", value: 3 },
-            { label: "Task", value: 3 },
-          ],
-        })}
-        onFetchSprint={async () => ({
-          velocityTrend: [
-            { label: "Sprint 1", value: 8 },
-            { label: "Sprint 2", value: 10 },
-            { label: "Sprint 3", value: 12 },
-          ],
-        })}
-        onFetchFlow={async () => ({
-          throughput: [
-            { label: "Week 1", value: 4 },
-            { label: "Week 2", value: 5 },
-            { label: "Week 3", value: 3 },
-          ],
-        })}
-        onFetchWorkload={async () => ({
-          assigneeLoad: [
-            { label: "Demo User", value: 5 },
-            { label: "Alex Morgan", value: 4 },
-          ],
-        })}
-        onExportReport={() => {}}
-      />
-    </main>
-  );
 }
 
 function App() {
@@ -1525,8 +1387,7 @@ function App() {
     if (
       parsed.unknown &&
       location.pathname !== "/dashboard" &&
-      location.pathname !== "/" &&
-      location.pathname !== "/__boneyard"
+      location.pathname !== "/"
     ) {
       navigate("/dashboard", { replace: true });
       return;
@@ -1912,7 +1773,7 @@ function App() {
   const searchGlobalTasks = useCallback(async (query) => {
     const term = String(query || "").trim();
     if (!term) return [];
-    const data = await searchTasksApi(term, 12);
+    const data = await searchTasksApi(term, { scope: "global" });
     return Array.isArray(data) ? data : [];
   }, []);
 
@@ -2178,10 +2039,6 @@ function App() {
     });
   };
 
-  if (location.pathname === "/__boneyard") {
-    return <BoneyardCapturePage />;
-  }
-
   if (!token || mustChangePassword) {
     return (
       <div className="min-h-screen bg-[#f7f8fa] text-[#172b4d]">
@@ -2264,7 +2121,7 @@ function App() {
                       <Icon name="search" size={15} />
                     </span>
                     <input
-                      className="w-full border-none bg-transparent p-0 shadow-none focus:outline-none focus-visible:outline-none"
+                      className="w-full border-none bg-transparent p-0 shadow-none focus:border-transparent focus:shadow-none focus:outline-none focus:ring-0 focus-visible:outline-none"
                       placeholder="Search board"
                       value={filters.search}
                       onChange={(event) =>
@@ -2273,7 +2130,27 @@ function App() {
                           search: event.target.value,
                         }))
                       }
+                      onKeyDown={(event) => {
+                        if (event.key !== "Escape") return;
+                        event.preventDefault();
+                        setFilters((prev) => ({ ...prev, search: "" }));
+                      }}
                     />
+                    {String(filters.search || "").trim() ? (
+                      <button
+                        type="button"
+                        aria-label="Clear board search"
+                        className="grid h-5 w-5 place-items-center rounded text-[0.72rem] font-semibold text-[#6b778c] hover:bg-[#e9edf3] hover:text-[#253858]"
+                        onClick={() =>
+                          setFilters((prev) => ({
+                            ...prev,
+                            search: "",
+                          }))
+                        }
+                      >
+                        x
+                      </button>
+                    ) : null}
                   </div>
                   <div
                     className="relative min-w-0 shrink-0 max-w-[min(46vw,360px)] max-[640px]:order-2 max-[640px]:w-full max-[640px]:max-w-none"

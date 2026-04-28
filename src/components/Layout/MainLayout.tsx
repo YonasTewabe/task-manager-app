@@ -204,9 +204,15 @@ function MainLayout({
     },
     [onOpenGlobalTask],
   );
+  const handleClearGlobalSearch = useCallback(() => {
+    setGlobalSearchTerm("");
+    setGlobalSearchResults([]);
+    setGlobalSearchLoading(false);
+    setGlobalSearchOpen(false);
+  }, []);
 
   return (
-    <div className="min-h-screen overflow-x-hidden pb-20 md:pb-0">
+    <div className="min-h-screen overflow-x-hidden bg-transparent pb-20 md:pb-0">
       <Sidebar
         activeView={activeView}
         currentProjectId={currentProjectId}
@@ -217,7 +223,7 @@ function MainLayout({
       />
 
       <div className="min-h-screen overflow-x-hidden md:ml-[260px] max-[1100px]:md:ml-[88px]">
-        <header className="sticky top-0 z-[15] border-b border-[#dfe1e6] bg-white/90 px-3 py-2 backdrop-blur-[4px] md:flex md:h-16 md:flex-nowrap md:items-center md:justify-between md:gap-3 md:px-4 md:py-0">
+        <header className="sticky top-0 z-[15] border-b border-[#d8e2f0] bg-[#fbfdff]/95 px-3 py-2 backdrop-blur-[6px] md:flex md:h-16 md:flex-nowrap md:items-center md:justify-between md:gap-3 md:px-4 md:py-0">
           <div className="mb-2 flex items-center justify-between gap-2 md:hidden">
             <div className="min-w-0 flex-1 truncate text-[1.02rem] font-bold text-[#172b4d]">
               {mobilePageTitle}
@@ -227,7 +233,7 @@ function MainLayout({
                 <button
                   type="button"
                   aria-label="Notifications"
-                  className="relative inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-[#d6dce8] bg-white text-[#42526e] hover:bg-[#f4f6fa]"
+                  className="relative inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-[#d6deec] bg-white text-[#42526e] shadow-[0_1px_2px_rgba(9,30,66,0.08)] hover:bg-[#f7f9fd]"
                   onClick={onToggleNotificationCenter}
                 >
                   <Icon name="bell" size={17} />
@@ -249,7 +255,7 @@ function MainLayout({
               <div className="relative" ref={mobileProfileWrapperRef}>
                 <button
                   type="button"
-                  className="flex items-center gap-2 rounded-[12px] border border-[#cdd8ef] bg-[#dfe8fb] px-3 py-2 text-left text-[0.95rem] text-[#253858] hover:bg-[#d3dff7]"
+                  className="flex items-center gap-2 rounded-[12px] border border-[#c7d6ef] bg-[#eaf0fd] px-3 py-2 text-left text-[0.95rem] text-[#253858] shadow-[0_1px_2px_rgba(9,30,66,0.08)] hover:bg-[#dfe8fb]"
                   onClick={() => setProfileMenuOpen((prev) => !prev)}
                 >
                   <span className="grid h-7 w-7 place-items-center rounded-full bg-[#2d64d9] text-[0.78rem] font-semibold text-white">
@@ -294,21 +300,40 @@ function MainLayout({
               className="relative w-full min-w-0 flex-1"
               ref={globalSearchWrapperRef}
             >
-              <div className="flex items-center gap-[0.4rem] rounded-[10px] border border-[#d6dce8] bg-[#f7f8fa] px-[0.7rem] py-[0.45rem]">
+              <div className="flex items-center gap-[0.4rem] rounded-[10px] border border-[#ccd8ea] bg-white px-[0.7rem] py-[0.45rem] shadow-[0_1px_2px_rgba(9,30,66,0.08)]">
                 <span className="text-[#6b778c]">
                   <Icon name="search" size={15} />
                 </span>
                 <input
-                  className="w-full border-none bg-transparent p-0 shadow-none focus:outline-none focus-visible:outline-none"
+                  className="w-full border-none bg-transparent p-0 shadow-none focus:border-transparent focus:shadow-none focus:outline-none focus:ring-0 focus-visible:outline-none"
                   value={globalSearchTerm}
-                  placeholder="Search"
+                  placeholder="Search Everywhere"
                   onFocus={() => {
                     if (globalSearchResults.length || globalSearchTerm.trim()) {
                       setGlobalSearchOpen(true);
                     }
                   }}
                   onChange={(event) => setGlobalSearchTerm(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Escape") return;
+                    event.preventDefault();
+                    if (globalSearchTerm.trim()) {
+                      handleClearGlobalSearch();
+                    } else {
+                      setGlobalSearchOpen(false);
+                    }
+                  }}
                 />
+                {globalSearchTerm.trim() ? (
+                  <button
+                    type="button"
+                    aria-label="Clear search"
+                    className="grid h-5 w-5 place-items-center rounded text-[0.72rem] font-semibold text-[#6b778c] hover:bg-[#f1f3f7] hover:text-[#253858]"
+                    onClick={handleClearGlobalSearch}
+                  >
+                    x
+                  </button>
+                ) : null}
               </div>
               {globalSearchOpen ? (
                 <div className="absolute left-0 top-[calc(100%+0.35rem)] z-40 grid max-h-[320px] w-full overflow-auto rounded-[10px] border border-[#d6dce8] bg-white p-[0.35rem] shadow-[0_12px_28px_rgba(9,30,66,0.16)]">
@@ -341,10 +366,10 @@ function MainLayout({
           </div>
           <div className="ml-3 hidden shrink-0 items-center gap-2 md:flex">
             <div className="relative" ref={desktopNotificationWrapperRef}>
-              <button
+                <button
                 type="button"
                 aria-label="Notifications"
-                className="relative inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-[#d6dce8] bg-white text-[#42526e] hover:bg-[#f4f6fa]"
+                  className="relative inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-[#d6deec] bg-white text-[#42526e] shadow-[0_1px_2px_rgba(9,30,66,0.08)] hover:bg-[#f7f9fd]"
                 onClick={onToggleNotificationCenter}
               >
                   <Icon name="bell" size={17} />
@@ -366,7 +391,7 @@ function MainLayout({
             <div className="relative" ref={desktopProfileWrapperRef}>
               <button
                 type="button"
-                className="flex items-center gap-2 rounded-[12px] border border-[#cdd8ef] bg-[#dfe8fb] px-3 py-2 text-left text-[0.95rem] text-[#253858] hover:bg-[#d3dff7]"
+                className="flex items-center gap-2 rounded-[12px] border border-[#c7d6ef] bg-[#eaf0fd] px-3 py-2 text-left text-[0.95rem] text-[#253858] shadow-[0_1px_2px_rgba(9,30,66,0.08)] hover:bg-[#dfe8fb]"
                 onClick={() => setProfileMenuOpen((prev) => !prev)}
               >
                 <span className="grid h-7 w-7 place-items-center rounded-full bg-[#2d64d9] text-[0.78rem] font-semibold text-white">
@@ -410,13 +435,13 @@ function MainLayout({
           </div>
         </header>
         {showProjectSubNav ? (
-          <div className="border-b border-[#dfe1e6] bg-white px-3 pt-[0.6rem] md:px-4">
+          <div className="border-b border-[#dbe4f1] bg-[#fbfdff] px-3 pt-[0.6rem] md:px-4">
             <div className="hidden pb-[0.35rem] text-[1.35rem] font-bold text-[#172b4d] md:block">
               {activeView === "board" && activeSprintName
                 ? `${currentProjectName || currentProject?.name || "Project"} - ${activeSprintName}`
                 : currentProjectName || currentProject?.name || "Project"}
             </div>
-            <div className="mb-[0.35rem] h-px bg-[#e6ebf2]" />
+            <div className="mb-[0.35rem] h-px bg-[#e5eaf4]" />
             <div className="flex flex-wrap items-center justify-between gap-[0.4rem] pt-[0.1rem]">
               <div className="flex w-full flex-nowrap items-center gap-[0.4rem] overflow-x-auto pb-1 md:w-auto md:flex-wrap md:overflow-visible md:pb-0">
                 {projectSubOptions.map((item) => {
@@ -465,7 +490,7 @@ function MainLayout({
           {children}
         </main>
       </div>
-      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-[#dfe1e6] bg-white/95 px-2 pb-[max(0.45rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-6px_20px_rgba(9,30,66,0.08)] md:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-[#dbe4f1] bg-[#fbfdff]/95 px-2 pb-[max(0.45rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(9,30,66,0.1)] md:hidden">
         {projects.length &&
         (activeProjectView.has(activeView) || showWorkspaceProjectSelector) ? (
           <div className="relative mb-2" ref={mobileProjectPickerRef}>

@@ -3,6 +3,29 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --tm-bg: #f4f5f7;
+    --tm-bg-soft: #f8fafc;
+    --tm-surface: #ffffff;
+    --tm-border: #d9e1ee;
+    --tm-text: #172b4d;
+    --tm-text-soft: #5e6c84;
+    --tm-primary: #0c66e4;
+    --tm-primary-strong: #0055cc;
+  }
+
+  html,
+  body {
+    background: radial-gradient(circle at top, #f7faff 0%, var(--tm-bg) 42%);
+    color: var(--tm-text);
+  }
+
+  body {
+    font-feature-settings:
+      "cv11" 1,
+      "ss01" 1;
+  }
+
   h1,
   h2,
   h3,
@@ -24,12 +47,16 @@
 
   button:not([class]),
   button[class=""] {
-    @apply border border-[#0b63c5] bg-[#0b6bcb] text-white transition-[background-color,border-color,box-shadow] duration-150;
+    @apply border text-white transition-[background-color,border-color,box-shadow] duration-150;
+    border-color: var(--tm-primary-strong);
+    background: var(--tm-primary);
+    box-shadow: 0 1px 0 rgba(9, 30, 66, 0.15);
   }
 
   button:not([class]):hover:not(:disabled),
   button[class=""]:hover:not(:disabled) {
-    @apply border-[#0957a3] bg-[#095db2];
+    background: var(--tm-primary-strong);
+    border-color: #0047b3;
   }
 
   button:focus-visible {
@@ -38,6 +65,30 @@
 
   button:disabled {
     @apply cursor-not-allowed opacity-60;
+  }
+
+  input,
+  select,
+  textarea {
+    @apply rounded-[10px] border border-[#c9d5ea] bg-white px-[0.72rem] py-[0.52rem] text-[0.92rem] text-[#172b4d] outline-none transition-[box-shadow,border-color] duration-150;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: #7a869a;
+  }
+
+  input:hover,
+  select:hover,
+  textarea:hover {
+    border-color: #afc3e6;
+  }
+
+  input:focus,
+  select:focus,
+  textarea:focus {
+    border-color: #2f6feb;
+    box-shadow: 0 0 0 3px rgba(47, 111, 235, 0.2);
   }
 }
 

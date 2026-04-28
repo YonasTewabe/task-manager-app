@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Skeleton } from "boneyard-js/react";
 import { apiRequest } from "../api/client";
 import Modal from "./ui/Modal";
 import {
@@ -22,6 +21,8 @@ export default function AppSettingsView({ canManage = false, onNotify }) {
   const [showEnableEditModal, setShowEnableEditModal] = useState(false);
   const [showSaveConfirmModal, setShowSaveConfirmModal] = useState(false);
   const canEdit = canManage && isEditMode;
+  const showLoadingSkeleton = canManage && loading;
+
 
   useEffect(() => {
     let cancelled = false;
@@ -114,9 +115,24 @@ export default function AppSettingsView({ canManage = false, onNotify }) {
         <p className="text-[#5e6c84]">
           Only administrators can configure app-level GitHub credentials.
         </p>
+      ) : showLoadingSkeleton ? (
+        <div className="grid max-w-[780px] gap-[0.8rem] rounded-lg border border-[#dfe3ea] bg-[#fbfcfe] p-[0.85rem]">
+          <div className="animate-pulse">
+            <div className="h-5 w-52 rounded bg-[#e7ecf4]" />
+            <div className="mt-2 h-3 w-4/5 rounded bg-[#edf2f9]" />
+          </div>
+          {Array.from({ length: 3 }).map((_, idx) => (
+            <div key={`app-settings-skeleton-field-${idx}`} className="grid gap-2 animate-pulse">
+              <div className="h-3 w-40 rounded bg-[#e8ecf3]" />
+              <div className="h-10 w-full rounded bg-[#edf2f8]" />
+            </div>
+          ))}
+          <div className="flex justify-end pt-1">
+            <div className="h-9 w-32 animate-pulse rounded bg-[#e3ebf8]" />
+          </div>
+        </div>
       ) : (
-        <Skeleton name="app-settings-view" loading={loading}>
-          <div className="grid max-w-[780px] gap-[0.8rem] rounded-lg border border-[#dfe3ea] bg-[#fbfcfe] p-[0.85rem]">
+        <div className="grid max-w-[780px] gap-[0.8rem] rounded-lg border border-[#dfe3ea] bg-[#fbfcfe] p-[0.85rem]">
             <div className="grid gap-1">
               <h3 className="text-[1rem] font-bold text-[#172b4d]">
                 GitHub integration credentials
@@ -248,8 +264,7 @@ export default function AppSettingsView({ canManage = false, onNotify }) {
                 {saving ? "Saving..." : "Save settings"}
               </button>
             </div>
-          </div>
-        </Skeleton>
+        </div>
       )}
       {showEnableEditModal ? (
         <Modal
