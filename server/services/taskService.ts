@@ -47,6 +47,7 @@ export const SPRINT_NAME_CONFLICT_MESSAGE =
 type TaskQueryFilters = {
   sprintId?: unknown;
   projectId?: unknown;
+  projectIds?: unknown;
   status?: unknown;
   assigneeId?: unknown;
   assigneeIds?: unknown;
@@ -1832,6 +1833,18 @@ function buildTaskPrismaWhere(
     where.sprintId = asUuid(filterObj.sprintId, null);
   }
   if (filterObj.projectId) where.projectId = asUuid(filterObj.projectId, null);
+  const projectIds = Array.isArray(filterObj.projectIds)
+    ? [
+        ...new Set(
+          filterObj.projectIds
+            .map((value) => asUuid(value, null))
+            .filter(Boolean),
+        ),
+      ]
+    : [];
+  if (!where.projectId && projectIds.length > 0) {
+    where.projectId = { in: projectIds };
+  }
   if (filterObj.status) where.status = String(filterObj.status);
   const assigneeFilters = normalizeAssigneeFilterValues(filterObj);
   if (assigneeFilters.length > 0) {
@@ -1870,6 +1883,7 @@ function buildTaskPrismaWhere(
     const search = String(filterObj.search).trim();
     const compactSearch = search.replace(/\s+/g, "");
     const numericOnlyMatch = compactSearch.match(/^\d+$/);
+    const plainKeyMatch = compactSearch.match(/^([A-Za-z0-9][A-Za-z0-9]*)$/);
     const keyMatch = compactSearch.match(/^([A-Za-z0-9][A-Za-z0-9]*)-(\d+)$/);
     const keyPrefixMatch = compactSearch.match(
       /^([A-Za-z0-9][A-Za-z0-9]*)-(\d*)$/,
@@ -1920,13 +1934,29 @@ function buildTaskPrismaWhere(
               taskNumber: range,
             }))
           : []),
+        ...(plainKeyMatch
+          ? [
+              {
+                project: {
+                  is: {
+                    projectKey: {
+                      startsWith: plainKeyMatch[1],
+                      mode: "insensitive",
+                    },
+                  },
+                },
+              },
+            ]
+          : []),
         ...(keyPrefixMatch
           ? [
               {
                 project: {
-                  projectKey: {
-                    equals: keyPrefixMatch[1],
-                    mode: "insensitive",
+                  is: {
+                    projectKey: {
+                      equals: keyPrefixMatch[1],
+                      mode: "insensitive",
+                    },
                   },
                 },
               },
@@ -1936,7 +1966,9 @@ function buildTaskPrismaWhere(
           ? [
               {
                 project: {
-                  projectKey: { equals: keyMatch[1], mode: "insensitive" },
+                  is: {
+                    projectKey: { equals: keyMatch[1], mode: "insensitive" },
+                  },
                 },
                 taskNumber: Number(keyMatch[2]),
               },
@@ -1945,7 +1977,12 @@ function buildTaskPrismaWhere(
         ...(keyPrefixMatch && keyPrefixRanges.length > 0
           ? keyPrefixRanges.map((range) => ({
               project: {
-                projectKey: { equals: keyPrefixMatch[1], mode: "insensitive" },
+                is: {
+                  projectKey: {
+                    equals: keyPrefixMatch[1],
+                    mode: "insensitive",
+                  },
+                },
               },
               taskNumber: range,
             }))
@@ -3596,11 +3633,20 @@ export async function getDashboardData({
   const allowedProjectIds = new Set(
     projectsForUser.map((project) => String(project.id || "")),
   );
+  const allowedProjectIdList = [...allowedProjectIds];
+  if (scopedUserId && allowedProjectIdList.length === 0) {
+    return {
+      assignedTasks: [],
+      recentTasks: [],
+      bucketCounts: { upcoming: 0, active: 0, done: 0 },
+      projectCards: [],
+    };
+  }
   const assignedRows = await prisma.task.findMany({
     where: buildTaskPrismaWhere({
       assigneeId: uid,
       activeSprintOnly: true,
-      ...(scopedUserId ? { limitProjectsToMemberUserId: scopedUserId } : {}),
+      ...(scopedUserId ? { projectIds: allowedProjectIdList } : {}),
     }),
     include: {
       project: { select: { projectKey: true } },

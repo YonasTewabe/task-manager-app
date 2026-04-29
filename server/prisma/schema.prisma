@@ -145,6 +145,8 @@ model Task {
   @@index([projectId, assigneeId, status])
   @@index([assigneeId, sprintId, status, updatedAt(sort: Desc)])
   @@index([projectId, updatedAt(sort: Desc), id])
+  @@index([projectId, status, createdAt(sort: Desc)])
+  @@index([projectId, status, dueDate])
   @@index([projectId, priority])
   @@index([projectId, type])
   @@map("tasks")
