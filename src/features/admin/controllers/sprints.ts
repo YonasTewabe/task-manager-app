@@ -122,7 +122,11 @@ export async function completeSprintController(
 ) {
   await completeSprintApi(sprintId, moveIncompleteToSprintId);
   deps.setSprints(await fetchSprintsApi(deps.currentProjectId));
-  await deps.refetchAfterCrud({ includeProject: true, includeDashboard: true });
+  await deps.refetchAfterCrud({
+    includeBootstrap: true,
+    includeProject: true,
+    includeDashboard: true,
+  });
 }
 
 export async function deleteSprintController(

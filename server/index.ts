@@ -12,6 +12,15 @@ import { prisma } from "./db/prisma.js";
 
 dotenv.config({ quiet: true });
 
+function getCorsOriginAllowlist() {
+  const raw = String(process.env.CORS_ORIGIN || "").trim();
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
 export function createApp() {
 const app = express();
 
@@ -31,7 +40,22 @@ res.setHeader(
 next();
 });
 
+const corsAllowlist = getCorsOriginAllowlist();
+const isProd = String(process.env.NODE_ENV || "").toLowerCase() === "production";
+if (!isProd && corsAllowlist.length === 0) {
 app.use(cors());
+} else {
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow non-browser requests that do not send the Origin header.
+      if (!origin) return callback(null, true);
+      if (corsAllowlist.includes(origin)) return callback(null, true);
+      return callback(new Error("Origin is not allowed by CORS"));
+    },
+  })
+);
+}
 app.use(
 express.json({
 verify: (req, _res, buf) => {

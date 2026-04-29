@@ -470,7 +470,8 @@ export default function BacklogView({
                         const destinations = rows.filter(
                           (candidate) =>
                             candidate.key !== row.key &&
-                            candidate.status !== "completed",
+                            candidate.status !== "completed" &&
+                            candidate.key !== "backlog",
                         );
                         setSprintCompleteDialog({
                           sprintKey: row.key,

@@ -59,6 +59,10 @@ export async function createTaskController(
 
   const noActiveSprint =
     deps.activeView === "board" && !deps.activeSprintId && !deps.createTaskSprintId;
+  if (noActiveSprint) {
+    deps.notify("No active sprint found. Start a sprint before creating tasks from board.", "error");
+    return;
+  }
   const targetSprintId =
     deps.createTaskSprintId || (deps.activeView === "board" ? deps.activeSprintId : "") || null;
   const taskDescription = deps.createTaskDescriptionRef.current?.innerHTML || "";
@@ -88,7 +92,6 @@ export async function createTaskController(
   deps.setCreateTaskSprintId("");
   if (deps.createTaskDescriptionRef.current) deps.createTaskDescriptionRef.current.innerHTML = "";
   deps.setShowCreateTaskModal(false);
-  if (noActiveSprint) deps.notify("No active sprint found. Task was added to the backlog.");
   await deps.refetchAfterCrud({ includeProject: true, includeDashboard: true });
 }
 

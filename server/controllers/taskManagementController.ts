@@ -91,8 +91,6 @@ export async function getGithubSettingsHandler(_req: Request, res: Response) {
       githubOrg: settings.githubOrg,
       hasGithubToken: Boolean(settings.githubToken),
       hasGithubWebhookSecret: Boolean(settings.githubWebhookSecret),
-      githubToken: settings.githubToken,
-      githubWebhookSecret: settings.githubWebhookSecret,
       updatedAt: settings.updatedAt,
     });
   } catch {
@@ -120,8 +118,6 @@ export async function patchGithubSettingsHandler(req: Request, res: Response) {
       githubOrg: updated.githubOrg,
       hasGithubToken: Boolean(updated.githubToken),
       hasGithubWebhookSecret: Boolean(updated.githubWebhookSecret),
-      githubToken: updated.githubToken,
-      githubWebhookSecret: updated.githubWebhookSecret,
       updatedAt: updated.updatedAt,
     });
   } catch (error) {
