@@ -526,6 +526,7 @@ export default function TaskDrawer({
 
   useEffect(() => {
     if (!isEditingTitle || !titleEditorRef.current) return;
+    titleEditorRef.current.textContent = String(draft?.title || task?.title || "");
     titleEditorRef.current.focus();
     const selection = window.getSelection();
     const range = document.createRange();
@@ -1016,7 +1017,7 @@ export default function TaskDrawer({
               }}
               title="Click to edit title"
             >
-              {draft.title}
+              {isEditingTitle ? null : draft.title}
             </h3>
           </div>
           <div className="flex items-center gap-2">

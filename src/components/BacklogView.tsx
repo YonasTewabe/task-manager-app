@@ -50,6 +50,10 @@ function formatSprintDateRange(startDate, endDate) {
   return startText || endText || "";
 }
 
+function normalizeSprintKey(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 export default function BacklogView({
   tasks,
   sprints,
@@ -272,6 +276,14 @@ export default function BacklogView({
       plannedSprintRows,
       otherSprintRows,
     ],
+  );
+  const selectableSprintDestinations = useMemo(
+    () =>
+      (rows || []).filter(
+        (candidate) =>
+          candidate.key !== "backlog" && candidate.status !== "completed",
+      ),
+    [rows],
   );
 
   useEffect(() => {
@@ -500,9 +512,10 @@ export default function BacklogView({
                             name: "Backlog",
                             status: "backlog",
                           },
-                          ...sprintRows.filter(
+                          ...selectableSprintDestinations.filter(
                             (candidate) =>
-                              candidate.key !== row.key &&
+                              normalizeSprintKey(candidate.key) !==
+                                normalizeSprintKey(row.key) &&
                               candidate.status !== "completed",
                           ),
                         ];
@@ -928,7 +941,13 @@ export default function BacklogView({
               }}
             >
               <option value="">Select destination sprint</option>
-              {sprintDeleteDialog.destinationOptions.map((item) => (
+              {sprintDeleteDialog.destinationOptions
+                .filter(
+                  (item) =>
+                    normalizeSprintKey(item.key) !==
+                    normalizeSprintKey(sprintDeleteDialog.sprintKey),
+                )
+                .map((item) => (
                 <option key={item.key} value={item.key}>
                   {item.name} ({item.status})
                 </option>
@@ -960,6 +979,15 @@ export default function BacklogView({
                 onClick={async () => {
                   if (!sprintDeleteDialog.destinationSprintId) {
                     setSprintDeleteDestError(REQUIRED_FIELD_MESSAGE);
+                    return;
+                  }
+                  if (
+                    normalizeSprintKey(sprintDeleteDialog.destinationSprintId) ===
+                    normalizeSprintKey(sprintDeleteDialog.sprintKey)
+                  ) {
+                    setSprintDeleteDestError(
+                      "Select a different destination sprint.",
+                    );
                     return;
                   }
                   setSprintDeleteDestError("");

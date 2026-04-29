@@ -79,6 +79,21 @@ function generateTemporaryPassword() {
   return `${crypto.randomBytes(6).toString("base64url")}!aA1`;
 }
 
+function safeRequestErrorMessage(error: any, fallback: string) {
+  const message = String(error?.message || "").trim();
+  if (!message) return fallback;
+  const lowered = message.toLowerCase();
+  if (
+    lowered.includes("invalid `") ||
+    lowered.includes("prismaclient") ||
+    lowered.includes("invocation in") ||
+    lowered.includes("at ")
+  ) {
+    return fallback;
+  }
+  return message;
+}
+
 export async function bootstrapHandler(req: Request, res: Response) {
   const projectId = req.query.projectId ? String(req.query.projectId) : "";
   const includeTasks = String(req.query.includeTasks || "false") === "true";
@@ -353,31 +368,40 @@ export async function createUserHandler(req: Request, res: Response) {
     const frontendUrl = String(process.env.FRONTEND_URL).trim().replace(/\/+$/, "");
     const requestBaseUrl = `${req.protocol}://${req.get("host")}`.replace(/\/+$/, "");
     const loginUrl = `${(frontendUrl || requestBaseUrl).replace(/\/+$/, "")}/`;
+    const supportEmail = String(process.env.SMTP_USER || "support@taskmanager.local").trim();
+    const plainTextBody =
+      `Hello,\n\n` +
+      `Welcome to Task Manager. Your account is ready.\n\n` +
+      `Account details:\n` +
+      `- Email: ${created.email}\n` +
+      `- Temporary password: ${temporaryPassword}\n` +
+      `- Login URL: ${loginUrl}\n\n` +
+      `Security note: you will be asked to set your display name and create a new password on first sign in.\n\n` +
+      `Need help? Contact ${supportEmail}.\n\n` +
+      `Regards,\nTask Manager Team`;
+    const htmlBody =
+      `<div style="margin:0;padding:24px;background:#f3f6fd;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#172b4d;">` +
+      `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:620px;margin:0 auto;background:#ffffff;border:1px solid #dbe4fb;border-radius:16px;overflow:hidden;">` +
+      `<tr><td style="padding:18px 24px;background:linear-gradient(90deg,#1d4ed8,#3b82f6);color:#ffffff;font-size:18px;font-weight:700;">Task Manager</td></tr>` +
+      `<tr><td style="padding:24px;">` +
+      `<p style="margin:0 0 12px;font-size:15px;line-height:1.6;">Hello,</p>` +
+      `<p style="margin:0 0 16px;font-size:15px;line-height:1.6;">Welcome to Task Manager. Your account is ready and you can sign in immediately using the details below.</p>` +
+      `<div style="margin:0 0 18px;padding:14px 16px;background:#f8faff;border:1px solid #d9e4ff;border-radius:12px;">` +
+      `<p style="margin:0 0 8px;font-size:14px;"><strong>Email:</strong> ${created.email}</p>` +
+      `<p style="margin:0 0 8px;font-size:14px;"><strong>Temporary password:</strong> ${temporaryPassword}</p>` +
+      `<p style="margin:0;font-size:14px;"><strong>Login URL:</strong> <a href="${loginUrl}" style="color:#1d4ed8;text-decoration:none;">${loginUrl}</a></p>` +
+      `</div>` +
+      `<p style="margin:0 0 14px;font-size:14px;line-height:1.6;">For security, you will be prompted to set your display name and create a new password during your first sign in.</p>` +
+      `<p style="margin:0;font-size:13px;color:#526079;">If you did not expect this email, please contact your administrator or reach out to <a href="mailto:${supportEmail}" style="color:#1d4ed8;text-decoration:none;">${supportEmail}</a>.</p>` +
+      `</td></tr>` +
+      `<tr><td style="padding:14px 24px;background:#f8faff;border-top:1px solid #e6edff;color:#5e6c84;font-size:12px;">Task Manager Team</td></tr>` +
+      `</table>` +
+      `</div>`;
     await sendEmail({
       to: created.email,
       subject: "Welcome to Task Manager - Account Access Details",
-      text:
-        `Hello,\n\n` +
-        `This email was sent from the Task Manager app.\n\n` +
-        `Your Task Manager account has been successfully created.\n\n` +
-        `Account details:\n` +
-        `- Email: ${created.email}\n` +
-        `- Temporary password: ${temporaryPassword}\n` +
-        `- Login URL: ${loginUrl}\n\n` +
-        `For security, you will be prompted to set your display name and change your password on first sign-in.\n\n` +
-        `If you did not expect this email, please contact your administrator.\n\n` +
-        `Regards,\nTask Manager Team`,
-      html:
-        `Hello,<br/><br/>` +
-        `This email was sent from the Task Manager app.<br/><br/>` +
-        `Your Task Manager account has been successfully created.<br/><br/>` +
-        `Account details:<br/>` +
-        `- Email: ${created.email}<br/>` +
-        `- Temporary password: ${temporaryPassword}<br/>` +
-        `- Login URL: ${loginUrl}<br/><br/>` +
-        `For security, you will be prompted to set your display name and change your password on first sign-in.<br/><br/>` +
-        `If you did not expect this email, please contact your administrator.<br/><br/>` +
-        `Regards,<br/>Task Manager Team`,
+      text: plainTextBody,
+      html: htmlBody,
     });
     await logUserAudit({
       actorUserId: req.user.id,
@@ -469,7 +493,9 @@ export async function createSprintHandler(req: Request, res: Response) {
     return res.status(201).json(sprint);
   } catch (error) {
     if (error.message === ACTIVE_SPRINT_CONFLICT_MESSAGE) return res.status(409).json({ error: error.message });
-    return res.status(400).json({ error: error.message || "Failed to create sprint" });
+    return res.status(400).json({
+      error: safeRequestErrorMessage(error, "Failed to create sprint"),
+    });
   }
 }
 
@@ -481,7 +507,9 @@ export async function patchSprintHandler(req: Request, res: Response) {
     return res.json(sprint);
   } catch (error) {
     if (error.message === ACTIVE_SPRINT_CONFLICT_MESSAGE) return res.status(409).json({ error: error.message });
-    return res.status(400).json({ error: error.message || "Failed to update sprint" });
+    return res.status(400).json({
+      error: safeRequestErrorMessage(error, "Failed to update sprint"),
+    });
   }
 }
 
@@ -493,7 +521,9 @@ export async function startSprintHandler(req: Request, res: Response) {
     return res.json(sprint);
   } catch (error) {
     if (error.message === ACTIVE_SPRINT_CONFLICT_MESSAGE) return res.status(409).json({ error: error.message });
-    return res.status(400).json({ error: error.message || "Failed to start sprint" });
+    return res.status(400).json({
+      error: safeRequestErrorMessage(error, "Failed to start sprint"),
+    });
   }
 }
 
@@ -508,7 +538,9 @@ export async function completeSprintHandler(req: Request, res: Response) {
     if (!sprint) return res.status(404).json({ error: "Sprint not found" });
     return res.json(sprint);
   } catch (error) {
-    return res.status(400).json({ error: error.message || "Failed to complete sprint" });
+    return res.status(400).json({
+      error: safeRequestErrorMessage(error, "Failed to complete sprint"),
+    });
   }
 }
 
@@ -537,6 +569,8 @@ export async function deleteSprintHandler(req: Request, res: Response) {
     return res.status(204).send();
   } catch (error) {
     if (error.message === SPRINT_DELETE_NOT_EMPTY_MESSAGE) return res.status(409).json({ error: error.message });
-    return res.status(400).json({ error: error.message || "Failed to delete sprint" });
+    return res.status(400).json({
+      error: safeRequestErrorMessage(error, "Failed to delete sprint"),
+    });
   }
 }

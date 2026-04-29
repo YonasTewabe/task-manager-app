@@ -246,6 +246,20 @@ function normalizeEmail(value) {
     .toLowerCase();
 }
 
+function toDateOnlyValue(value, fieldName) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/;
+  if (dateOnly.test(raw)) {
+    return new Date(`${raw}T00:00:00.000Z`);
+  }
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`${fieldName} must be a valid date in YYYY-MM-DD format.`);
+  }
+  return parsed;
+}
+
 function encodeCursor(payload) {
   if (!payload) return "";
   return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
@@ -852,14 +866,18 @@ export async function createUser({
   role,
   mustChangePassword = false,
 }) {
+  const normalizedEmail = normalizeEmail(email);
+  const nextRole = role || "member";
+  const nextMustChangePassword = mustChangePassword === true;
+  const nextPasswordChangedAt = nextMustChangePassword ? null : new Date();
   return prisma.user.create({
     data: {
       name,
-      email: normalizeEmail(email),
+      email: normalizedEmail,
       passwordHash,
-      role: role || "member",
-      mustChangePassword: mustChangePassword === true,
-      passwordChangedAt: mustChangePassword === true ? null : new Date(),
+      role: nextRole,
+      mustChangePassword: nextMustChangePassword,
+      passwordChangedAt: nextMustChangePassword ? null : nextPasswordChangedAt,
     },
     select: {
       id: true,
@@ -1603,6 +1621,8 @@ export async function createSprint({
   const normalizedName = String(name || "").trim();
   const normalizedProjectId = asUuid(projectId);
   const normalizedStatus = status || "planned";
+  const normalizedStartDate = toDateOnlyValue(startDate, "startDate");
+  const normalizedEndDate = toDateOnlyValue(endDate, "endDate");
   return prisma.$transaction(
     async (tx) => {
       const existingSprintByName = await tx.sprint.findFirst({
@@ -1624,8 +1644,8 @@ export async function createSprint({
         data: {
           name: normalizedName,
           projectId: normalizedProjectId,
-          startDate: startDate || null,
-          endDate: endDate || null,
+          startDate: normalizedStartDate,
+          endDate: normalizedEndDate,
           status: normalizedStatus,
         },
         select: {
@@ -1688,8 +1708,10 @@ export async function updateSprint(id, patch) {
       if (patch.name !== undefined) data.name = patch.name;
       if (patch.projectId !== undefined)
         data.projectId = asUuid(patch.projectId);
-      if (patch.startDate !== undefined) data.startDate = patch.startDate;
-      if (patch.endDate !== undefined) data.endDate = patch.endDate;
+      if (patch.startDate !== undefined)
+        data.startDate = toDateOnlyValue(patch.startDate, "startDate");
+      if (patch.endDate !== undefined)
+        data.endDate = toDateOnlyValue(patch.endDate, "endDate");
       if (patch.status !== undefined) data.status = patch.status;
       if (Object.keys(data).length === 0) return null;
       return tx.sprint.update({

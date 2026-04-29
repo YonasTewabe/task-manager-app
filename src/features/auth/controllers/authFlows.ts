@@ -12,6 +12,7 @@ export async function handleLogin(
   payload: { email: string; password: string },
   deps: {
     setAuthLoading: (v: boolean) => void;
+    setLoading: (v: boolean) => void;
     setError: (v: string) => void;
     setToken: (v: string) => void;
     setCurrentUser: (v: any) => void;
@@ -31,6 +32,7 @@ export async function handleLogin(
     const requiresChange = data.mustChangePassword === true;
     deps.setMustChangePassword(requiresChange);
     if (!requiresChange) {
+      deps.setLoading(false);
       deps.setActiveView("dashboard");
       deps.navigate("/dashboard", { replace: true });
     }
@@ -45,6 +47,7 @@ export async function handleRegister(
   payload: { name: string; email: string; password: string },
   deps: {
     setAuthLoading: (v: boolean) => void;
+    setLoading: (v: boolean) => void;
     setError: (v: string) => void;
     setToken: (v: string) => void;
     setCurrentUser: (v: any) => void;
@@ -62,6 +65,7 @@ export async function handleRegister(
     deps.setToken(data.token);
     deps.setCurrentUser(data.user);
     deps.setMustChangePassword(false);
+    deps.setLoading(false);
     deps.setActiveView("dashboard");
     deps.navigate("/dashboard", { replace: true });
   } catch (err: any) {

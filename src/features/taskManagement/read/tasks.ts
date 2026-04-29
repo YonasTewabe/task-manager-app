@@ -45,6 +45,9 @@ export async function fetchBoardController(
     setActiveSprintNameHintByProjectId: (
       updater: (prev: AnyRecord) => AnyRecord,
     ) => void;
+    setActiveSprintIdHintByProjectId: (
+      updater: (prev: AnyRecord) => AnyRecord,
+    ) => void;
   },
 ) {
   if (!projectId) {
@@ -80,6 +83,12 @@ export async function fetchBoardController(
     deps.setActiveSprintNameHintByProjectId((prev: AnyRecord) => ({
       ...prev,
       [String(projectId)]: String(data.activeSprintName),
+    }));
+  }
+  if (data?.activeSprintId) {
+    deps.setActiveSprintIdHintByProjectId((prev: AnyRecord) => ({
+      ...prev,
+      [String(projectId)]: String(data.activeSprintId),
     }));
   }
   return data;

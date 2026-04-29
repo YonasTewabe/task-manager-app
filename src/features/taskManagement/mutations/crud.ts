@@ -68,6 +68,7 @@ export async function saveTaskController(
     openTask: (taskId: string) => Promise<void>;
     refetchAfterCrud: (opts: AnyRecord) => Promise<void>;
     notify: (message: string, kind?: string) => void;
+    applyTaskPatchLocally?: (taskId: string, patch: AnyRecord) => void;
   },
 ) {
   const lightweight = options?.lightweight === true;
@@ -102,6 +103,7 @@ export async function saveTaskController(
     if (lightweight) throw error;
     await patchTask(patch);
   }
+  deps.applyTaskPatchLocally?.(String(taskId), patch);
   await deps.openTask(taskId);
   if (!lightweight) {
     await deps

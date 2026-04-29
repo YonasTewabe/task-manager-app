@@ -43,7 +43,10 @@ export async function handleLogout(
     navigate: (to: string, opts?: AnyRecord) => void;
   },
 ) {
-  await deps.unregisterPushNotifications().catch(() => {});
+  // Do not block logout UI transitions on browser push APIs.
+  Promise.resolve()
+    .then(() => deps.unregisterPushNotifications())
+    .catch(() => {});
   deps.setStoredToken("");
   deps.setToken("");
   deps.setCurrentUser(null);
@@ -91,5 +94,5 @@ export async function handleLogout(
   deps.setError("");
   deps.setTaskBundle(null);
   deps.setMustChangePassword(false);
-  deps.navigate("/dashboard", { replace: true });
+  deps.navigate("/", { replace: true });
 }

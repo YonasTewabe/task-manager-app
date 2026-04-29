@@ -115,11 +115,14 @@ export default function AuthView({
   };
 
   return (
-    <main className="grid min-h-screen place-items-center bg-[#f4f5f7] p-4">
+    <main className="grid min-h-screen place-items-center bg-[radial-gradient(circle_at_top,_#e8efff_0%,_#f6f8fc_45%,_#eef2f8_100%)] p-4">
       <form
-        className="grid w-full max-w-[430px] gap-4 rounded-2xl border border-[#dfe1e6] bg-white p-6 shadow-[0_12px_34px_rgba(9,30,66,0.12)]"
+        className="grid w-full max-w-[440px] gap-4 rounded-3xl border border-[#dbe4fb] bg-white p-7 shadow-[0_18px_48px_rgba(30,64,175,0.16)]"
         onSubmit={submit}
       >
+        <span className="inline-flex w-fit items-center rounded-full bg-[#eef4ff] px-3 py-1 text-[0.74rem] font-semibold uppercase tracking-[0.08em] text-[#1d4ed8]">
+          Task Manager
+        </span>
         <div className="grid gap-1">
           <h1 className="text-[1.4rem] font-semibold text-[#172b4d]">
             {mustChangePassword || mode === "force-change-password"
@@ -130,7 +133,7 @@ export default function AuthView({
                   ? "Reset password"
                 : "Sign in"}
           </h1>
-          <p className="text-[0.92rem] text-[#5e6c84]">
+          <p className="text-[0.92rem] text-[#526079]">
             {mustChangePassword || mode === "force-change-password"
               ? "Set a new password to continue."
               : mode === "forgot-password"
@@ -151,7 +154,7 @@ export default function AuthView({
               <span className="font-medium">Full name</span>
               <input
                 type="text"
-                className={`w-full rounded-[10px] border px-3 py-2 ${fieldErrors.name ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
+                className={`w-full rounded-[10px] border px-3 py-2 shadow-sm outline-none transition focus:border-[#2d64d9] focus:ring-2 focus:ring-[#dbe6ff] ${fieldErrors.name ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
                 placeholder="Enter your full name"
                 value={forcePasswordForm.name}
                 onChange={(event) => {
@@ -178,7 +181,7 @@ export default function AuthView({
               <div className="relative">
                 <input
                   type={showForceCurrentPassword ? "text" : "password"}
-                  className="w-full rounded-[10px] border border-[#c1c7d0] px-3 py-2 pr-10"
+                  className="w-full rounded-[10px] border border-[#c1c7d0] px-3 py-2 pr-10 shadow-sm outline-none transition focus:border-[#2d64d9] focus:ring-2 focus:ring-[#dbe6ff]"
                   placeholder="Enter current password"
                   value={forcePasswordForm.currentPassword}
                   onChange={(event) =>
@@ -207,7 +210,7 @@ export default function AuthView({
               <div className="relative">
                 <input
                   type={showForceNewPassword ? "text" : "password"}
-                  className={`w-full rounded-[10px] border px-3 py-2 pr-10 ${fieldErrors.newPassword ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
+                  className={`w-full rounded-[10px] border px-3 py-2 pr-10 shadow-sm outline-none transition focus:border-[#2d64d9] focus:ring-2 focus:ring-[#dbe6ff] ${fieldErrors.newPassword ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
                   placeholder="Enter new password"
                   value={forcePasswordForm.newPassword}
                   onChange={(event) => {
@@ -241,7 +244,7 @@ export default function AuthView({
           <label className="grid gap-1 text-[0.9rem] text-[#172b4d]">
             <span className="font-medium">Email</span>
             <input
-              className={`rounded-[10px] border px-3 py-2 ${fieldErrors.email ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
+              className={`rounded-[10px] border px-3 py-2 shadow-sm outline-none transition focus:border-[#2d64d9] focus:ring-2 focus:ring-[#dbe6ff] ${fieldErrors.email ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
               placeholder="name@company.com"
               value={forgotPasswordEmail}
               onChange={(event) => {
@@ -265,7 +268,7 @@ export default function AuthView({
               <div className="relative">
                 <input
                   type={showResetNewPassword ? "text" : "password"}
-                  className={`w-full rounded-[10px] border px-3 py-2 pr-10 ${fieldErrors.password ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
+                  className={`w-full rounded-[10px] border px-3 py-2 pr-10 shadow-sm outline-none transition focus:border-[#2d64d9] focus:ring-2 focus:ring-[#dbe6ff] ${fieldErrors.password ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
                   placeholder="Enter new password"
                   value={resetPasswordForm.password}
                   onChange={(event) => {
@@ -299,7 +302,7 @@ export default function AuthView({
               <div className="relative">
                 <input
                   type={showResetRepeatPassword ? "text" : "password"}
-                  className={`w-full rounded-[10px] border px-3 py-2 pr-10 ${fieldErrors.repeatPassword ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
+                  className={`w-full rounded-[10px] border px-3 py-2 pr-10 shadow-sm outline-none transition focus:border-[#2d64d9] focus:ring-2 focus:ring-[#dbe6ff] ${fieldErrors.repeatPassword ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
                   placeholder="Repeat new password"
                   value={resetRepeatPassword}
                   onChange={(event) => {
@@ -335,7 +338,7 @@ export default function AuthView({
             <label className="grid gap-1 text-[0.9rem] text-[#172b4d]">
               <span className="font-medium">Email</span>
               <input
-                className={`rounded-[10px] border px-3 py-2 ${fieldErrors.email ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
+                className={`rounded-[10px] border px-3 py-2 shadow-sm outline-none transition focus:border-[#2d64d9] focus:ring-2 focus:ring-[#dbe6ff] ${fieldErrors.email ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
                 placeholder="name@company.com"
                 value={form.email}
                 onChange={(event) => {
@@ -357,7 +360,7 @@ export default function AuthView({
               <div className="relative">
                 <input
                   type={showLoginPassword ? "text" : "password"}
-                  className={`w-full rounded-[10px] border px-3 py-2 pr-10 ${fieldErrors.password ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
+                  className={`w-full rounded-[10px] border px-3 py-2 pr-10 shadow-sm outline-none transition focus:border-[#2d64d9] focus:ring-2 focus:ring-[#dbe6ff] ${fieldErrors.password ? invalidFieldClassName(true) : "border-[#c1c7d0]"}`}
                   placeholder="Enter password"
                   value={form.password}
                   onChange={(event) => {
@@ -387,7 +390,7 @@ export default function AuthView({
         )}
         <button
           type="submit"
-          className="mt-1 rounded-[10px] bg-[#2d64d9] py-2.5 font-semibold text-white hover:bg-[#2454b8]"
+          className="mt-1 rounded-[10px] bg-[#2d64d9] py-2.5 font-semibold text-white shadow-[0_8px_20px_rgba(45,100,217,0.35)] transition hover:bg-[#2454b8] disabled:cursor-not-allowed disabled:opacity-70"
           disabled={loading}
         >
           {loading

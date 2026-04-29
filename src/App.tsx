@@ -287,6 +287,8 @@ function App() {
   const [projectNameHintById, setProjectNameHintById] = useState<any>({});
   const [activeSprintNameHintByProjectId, setActiveSprintNameHintByProjectId] =
     useState<any>({});
+  const [activeSprintIdHintByProjectId, setActiveSprintIdHintByProjectId] =
+    useState<any>({});
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setDebouncedFilters(filters);
@@ -398,6 +400,10 @@ function App() {
     const activeSprint = sprints.find((sprint) => sprint.status === "active");
     return activeSprint ? String(activeSprint.id) : "";
   }, [sprints]);
+  const effectiveActiveSprintId = useMemo(
+    () => activeSprintId || String(activeSprintIdHintByProjectId[String(currentProjectId)] || ""),
+    [activeSprintId, activeSprintIdHintByProjectId, currentProjectId],
+  );
   const activeSprintName = useMemo(() => {
     const activeSprint = sprints.find((sprint) => sprint.status === "active");
     return String(activeSprint?.name || "");
@@ -777,6 +783,7 @@ function App() {
       setBoardNextCursor,
       setBoardHasMore,
       setActiveSprintNameHintByProjectId,
+      setActiveSprintIdHintByProjectId,
     });
   };
 
@@ -1172,12 +1179,13 @@ function App() {
     if (activeView === "users") {
       fetchUsersPage({ reset: true }).catch(() => {});
     }
+    // Intentionally omit paging callbacks from deps to avoid reset loops.
+    // Those callbacks depend on cursor/loading states that change after each page fetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     token,
     loading,
     activeView,
-    fetchProjectsPage,
-    fetchUsersPage,
     showDisabledUsersFilter,
   ]);
 
@@ -1507,6 +1515,7 @@ function App() {
       { email, password },
       {
         setAuthLoading,
+        setLoading,
         setError,
         setToken,
         setCurrentUser,
@@ -1523,6 +1532,7 @@ function App() {
       { name, email, password },
       {
         setAuthLoading,
+        setLoading,
         setError,
         setToken,
         setCurrentUser,
@@ -1626,7 +1636,7 @@ function App() {
       taskType,
       currentProjectId,
       activeView,
-      activeSprintId,
+      activeSprintId: effectiveActiveSprintId,
       createTaskSprintId,
       createTaskDefaultStatus,
       storyPoints,
@@ -1743,7 +1753,7 @@ function App() {
     let nextSprintId = "";
     if (activeView === "board") {
       // Board creation always targets the active sprint.
-      nextSprintId = activeSprintId || "";
+      nextSprintId = effectiveActiveSprintId || "";
     } else if (normalizedTargetSprintId !== undefined) {
       nextSprintId =
         normalizedTargetSprintId == null ||
@@ -1756,7 +1766,7 @@ function App() {
       createTaskDescriptionRef.current.innerHTML = "";
     }
     setShowCreateTaskModal(true);
-  }, [activeSprintId, activeView, canManageProject, setShowCreateTaskModal]);
+  }, [effectiveActiveSprintId, activeView, canManageProject, setShowCreateTaskModal]);
   const runCreateTaskDescriptionCommand = useCallback(
     (command, value = null) => {
       if (!createTaskDescriptionRef.current) return;
@@ -1769,6 +1779,33 @@ function App() {
     () => setTaskBundle(null),
     [setTaskBundle],
   );
+  const applyTaskPatchLocally = useCallback(
+    (taskId, patch) => {
+      const id = String(taskId || "").trim();
+      if (!id) return;
+      const applyPatch = (task) => {
+        if (String(task?.id || "") !== id) return task;
+        return {
+          ...task,
+          ...patch,
+          id: task.id,
+          updatedAt: task.updatedAt,
+        };
+      };
+      setColumns((prev) =>
+        (Array.isArray(prev) ? prev : []).map((column) => ({
+          ...column,
+          tasks: (Array.isArray(column?.tasks) ? column.tasks : []).map(applyPatch),
+        })),
+      );
+      setBacklogTasks((prev) => (Array.isArray(prev) ? prev.map(applyPatch) : prev));
+      setAllTasks((prev) => (Array.isArray(prev) ? prev.map(applyPatch) : prev));
+      setDashboardAssignedTasks((prev) =>
+        Array.isArray(prev) ? prev.map(applyPatch) : prev,
+      );
+    },
+    [setColumns, setBacklogTasks, setAllTasks, setDashboardAssignedTasks],
+  );
 
   const saveTask = async (taskId, patch, options: AnyRecord = {}) => {
     await saveTaskController(taskId, patch, options, {
@@ -1776,6 +1813,7 @@ function App() {
       openTask,
       refetchAfterCrud,
       notify,
+      applyTaskPatchLocally,
     });
   };
 
@@ -2003,7 +2041,7 @@ function App() {
     );
   }
 
-  const safeColumns = useMemo(() => {
+  const safeColumns = (() => {
     const source = columns.length
       ? [...columns]
       : workflowStages.map((s) => ({
@@ -2020,7 +2058,7 @@ function App() {
       if (aRank !== bRank) return aRank - bRank;
       return 0;
     });
-  }, [columns, workflowStages]);
+  })();
   const scopedSearchLabel = activeView === "backlog" ? "Search backlog" : "Search board";
   const scopedClearSearchLabel =
     activeView === "backlog" ? "Clear backlog search" : "Clear board search";

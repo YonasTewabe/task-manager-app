@@ -59,7 +59,8 @@ export async function createTaskController(
 
   const noActiveSprint =
     deps.activeView === "board" && !deps.activeSprintId && !deps.createTaskSprintId;
-  const targetSprintId = deps.createTaskSprintId || null;
+  const targetSprintId =
+    deps.createTaskSprintId || (deps.activeView === "board" ? deps.activeSprintId : "") || null;
   const taskDescription = deps.createTaskDescriptionRef.current?.innerHTML || "";
   await createTaskApi({
     title: deps.taskTitle.trim(),
