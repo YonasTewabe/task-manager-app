@@ -2096,7 +2096,15 @@ function App() {
         onGlobalTaskSearch={searchGlobalTasks}
         onOpenGlobalTask={openTaskFromGlobalSearch}
       >
-        <div className={activeView === "dashboard" ? undefined : "p-4"}>
+        <div
+          className={
+            activeView === "dashboard"
+              ? undefined
+              : activeView === "board"
+                ? "flex h-[calc(100vh-190px)] min-h-0 flex-col overflow-hidden p-4"
+                : "p-4"
+          }
+        >
           {(activeView === "board" || activeView === "backlog") &&
           currentProjectId ? (
             <section
@@ -2769,22 +2777,24 @@ function App() {
           ) : null}
 
           {activeView === "board" ? (
-            <BoardView
-              columns={safeColumns}
-              workflowTransitions={workflowTransitions}
-              labelColorsByName={boardLabelColorsByName}
-              currentUser={currentUser}
-              userGroups={userGroups}
-              usersById={usersById}
-              userAvatarColor={getUserAvatarColor}
-              boardTotalsByStatus={boardTotalsByStatus}
-              assigneeFilterActive={selectedAssigneeIds.length > 0}
-              onMove={moveTask}
-              onOpenTask={openTask}
-              hasMore={boardHasMore}
-              loadingMore={boardLoadingMore}
-              onLoadMore={loadMoreBoard}
-            />
+            <div className="min-h-0 flex-1">
+              <BoardView
+                columns={safeColumns}
+                workflowTransitions={workflowTransitions}
+                labelColorsByName={boardLabelColorsByName}
+                currentUser={currentUser}
+                userGroups={userGroups}
+                usersById={usersById}
+                userAvatarColor={getUserAvatarColor}
+                boardTotalsByStatus={boardTotalsByStatus}
+                assigneeFilterActive={selectedAssigneeIds.length > 0}
+                onMove={moveTask}
+                onOpenTask={openTask}
+                hasMore={boardHasMore}
+                loadingMore={boardLoadingMore}
+                onLoadMore={loadMoreBoard}
+              />
+            </div>
           ) : null}
 
           {activeView === "summary" && currentProjectId ? (

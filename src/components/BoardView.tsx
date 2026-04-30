@@ -143,6 +143,7 @@ export default function BoardView({
   const movePulseTimeoutRef = useRef(null);
   const blockedTimeoutRef = useRef(null);
   const loadMoreSentinelRef = useRef(null);
+  const boardScrollRef = useRef(null);
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [columnRenderLimits, setColumnRenderLimits] = useState<Record<string, number>>({});
   const {
@@ -230,7 +231,7 @@ export default function BoardView({
         }
       },
       {
-        root: null,
+        root: boardScrollRef.current,
         // Start loading early to hide cross-domain roundtrip latency.
         rootMargin: "900px 0px",
         threshold: 0,
@@ -267,15 +268,9 @@ export default function BoardView({
 
   return (
     <section
-      className="flex items-stretch gap-[0.9rem] overflow-x-auto rounded-[12px] pb-[0.45rem] max-[640px]:snap-x max-[640px]:snap-mandatory"
+      ref={boardScrollRef}
+      className="flex h-full max-h-full items-start gap-[0.9rem] overflow-x-auto overflow-y-auto rounded-[12px] pb-[0.45rem] max-[640px]:snap-x max-[640px]:snap-mandatory"
       style={{ WebkitOverflowScrolling: "touch" }}
-      onWheel={(event) => {
-        // Prevent scroll trapping inside horizontal board container on some
-        // touchpads/browsers by forwarding dominant vertical wheel movement.
-        if (Math.abs(event.deltaY) > Math.abs(event.deltaX) && event.deltaY !== 0) {
-          window.scrollBy({ top: event.deltaY, left: 0 });
-        }
-      }}
     >
       {columns.map((column) =>
         (() => {
@@ -290,7 +285,7 @@ export default function BoardView({
           return (
             <article
               key={column.status}
-              className={`flex w-[280px] min-w-[280px] flex-col rounded-[10px] border border-[#d8e2ef] bg-[#f7f9fc] p-2 shadow-[0_1px_2px_rgba(9,30,66,0.06)] transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out hover:border-[#c3d3ea] hover:shadow-[0_6px_14px_rgba(9,30,66,0.09)] max-[1100px]:w-[min(90vw,320px)] max-[1100px]:min-w-[min(90vw,320px)] max-[640px]:w-[83vw] max-[640px]:min-w-[83vw] max-[640px]:snap-start ${
+              className={`flex min-h-full w-[280px] min-w-[280px] flex-col rounded-[10px] border border-[#d8e2ef] bg-[#f7f9fc] p-2 shadow-[0_1px_2px_rgba(9,30,66,0.06)] transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out hover:border-[#c3d3ea] hover:shadow-[0_6px_14px_rgba(9,30,66,0.09)] max-[1100px]:w-[min(90vw,320px)] max-[1100px]:min-w-[min(90vw,320px)] max-[640px]:w-[83vw] max-[640px]:min-w-[83vw] max-[640px]:snap-start ${
                 dragState.overStatus === column.status
                   ? "border-[#2f6feb] bg-[#eaf1ff] shadow-[inset_0_0_0_1px_rgba(47,111,235,0.22)]"
                   : ""
@@ -381,7 +376,7 @@ export default function BoardView({
                 }
               }}
             >
-              <header className="mb-2 flex flex-col items-stretch gap-[0.15rem] border-b border-[#dee6f2] px-[0.2rem] pb-[0.45rem] pt-[0.2rem]">
+              <header className="sticky top-0 z-[2] mb-2 flex flex-col items-stretch gap-[0.15rem] border-b border-[#dee6f2] bg-[#f7f9fc] px-[0.2rem] pb-[0.45rem] pt-[0.2rem]">
                 <div className="flex flex-wrap items-center gap-[0.45rem]">
                   <h3 className="min-w-0 flex-1 text-[0.92rem] text-[#172b4d]">
                     {column.name || column.status}
