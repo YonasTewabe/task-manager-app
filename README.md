@@ -9,7 +9,7 @@ This app helps teams:
 
 - plan and prioritize work in a backlog
 - execute tasks inside active sprints
-- manage task flow on a kanban-style board (`todo`, `in_progress`, `done`)
+- manage task flow on a kanban-style board (`to_do`, `in_progress`, `done`)
 - collaborate with comments, assignment, and activity history
 - control access with role-based permissions (`admin`, `member`)
 
