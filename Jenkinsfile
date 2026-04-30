@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         BRANCH = 'main'                  
-        SERVER_IP = '193.123.66.138'
+        SERVER_IP = 'your_server_ip'
         REMOTE_USER = 'ubuntu'
         REMOTE_DIR = "task-manager"
         FRONTEND_DIR = "${REMOTE_DIR}"
