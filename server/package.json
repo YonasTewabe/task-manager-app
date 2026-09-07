@@ -13,6 +13,9 @@
     "seed": "tsx scripts/seed.ts",
     "test": "node --import tsx --test"
   },
+  "prisma": {
+    "seed": "tsx scripts/seed.ts"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
